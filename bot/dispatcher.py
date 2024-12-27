@@ -25,7 +25,8 @@ from bot.handlers.tiktok.commands import tt_video_cmd, tt_depersonalize_cmd, \
 #  '_cmd' in the bot/handlers folder
 def init_dispatcher(dp: Dispatcher, db_engine):
     """Register handlers."""
-    ne = ~Filters.update.edited_message
+    # TODO: fix
+    ne = ~Filters.update.edited_message & Filters.chat_ids([-1001392307997, -46082527380])
 
     # Middlewares setup
     dp.add_handler(TypeHandler(Update, open_db_session(db_engine)), group=-100)
@@ -33,27 +34,27 @@ def init_dispatcher(dp: Dispatcher, db_engine):
     dp.add_handler(TypeHandler(Update, close_db_session_handler), group=100)
 
     # About handler
-    dp.add_handler(CommandHandler('about', about_cmd, filters=ne))
+    # dp.add_handler(CommandHandler('about', about_cmd, filters=ne))
 
     # Tiktok handlers
-    dp.add_handler(CommandHandler('ttvideo', tt_video_cmd, filters=ne))
-    dp.add_handler(CommandHandler('ttlink', tt_depersonalize_cmd, filters=ne))
-    dp.add_handler(InlineQueryHandler(tt_inline_cmd, pattern=r'https://.+tiktok\.com.+'))
+    # dp.add_handler(CommandHandler('ttvideo', tt_video_cmd, filters=ne))
+    # dp.add_handler(CommandHandler('ttlink', tt_depersonalize_cmd, filters=ne))
+    # dp.add_handler(InlineQueryHandler(tt_inline_cmd, pattern=r'https://.+tiktok\.com.+'))
 
     # Meme handlers
-    dp.add_handler(CommandHandler('meme', meme_cmd, filters=ne))
-    dp.add_handler(CallbackQueryHandler(meme_save_callback, pattern=MEME_SAVE))
-    dp.add_handler(
-        CallbackQueryHandler(meme_refresh_callback, pattern=MEME_REFRESH))
-    dp.add_handler(CommandHandler('memeru', memeru_cmd, filters=ne))
-    dp.add_handler(
-        CallbackQueryHandler(memeru_save_callback, pattern=MEMERU_SAVE))
-    dp.add_handler(
-        CallbackQueryHandler(memeru_refresh_callback, pattern=MEMERU_REFRESH))
+    # dp.add_handler(CommandHandler('meme', meme_cmd, filters=ne))
+    # dp.add_handler(CallbackQueryHandler(meme_save_callback, pattern=MEME_SAVE))
+    # dp.add_handler(
+    #     CallbackQueryHandler(meme_refresh_callback, pattern=MEME_REFRESH))
+    # dp.add_handler(CommandHandler('memeru', memeru_cmd, filters=ne))
+    # dp.add_handler(
+    #     CallbackQueryHandler(memeru_save_callback, pattern=MEMERU_SAVE))
+    # dp.add_handler(
+    #     CallbackQueryHandler(memeru_refresh_callback, pattern=MEMERU_REFRESH))
 
     # Game handlers
     dp.add_handler(CommandHandler('pidor', pidor_cmd, filters=ne))
-    dp.add_handler(MessageHandler(Filters.regex(r'/pidor\d\d\d\d(?:@.+)?')&ne, pidoryearresults_cmd))
+    dp.add_handler(MessageHandler(Filters.regex(r'/pidor\d\d\d\d(?:@.+)?') & ne, pidoryearresults_cmd))
     dp.add_handler(
         CommandHandler('pidorules', pidorules_cmd, filters=ne))
     dp.add_handler(CommandHandler('pidoreg', pidoreg_cmd, filters=ne))
@@ -63,19 +64,19 @@ def init_dispatcher(dp: Dispatcher, db_engine):
     dp.add_handler(CommandHandler('pidorme', pidorme_cmd, filters=ne))
 
     # Key-Value storage handlers
-    dp.add_handler(CommandHandler('get', get_cmd, filters=ne))
-    dp.add_handler(CommandHandler('list', list_cmd, filters=ne))
-    dp.add_handler(CommandHandler('set', set_cmd, filters=ne))
-    dp.add_handler(CommandHandler('del', del_cmd, filters=ne))
+    # dp.add_handler(CommandHandler('get', get_cmd, filters=ne))
+    # dp.add_handler(CommandHandler('list', list_cmd, filters=ne))
+    # dp.add_handler(CommandHandler('set', set_cmd, filters=ne))
+    # dp.add_handler(CommandHandler('del', del_cmd, filters=ne))
 
     # Misc handlers
-    dp.add_handler(CommandHandler("hello", hello_cmd, filters=ne))
-    dp.add_handler(CommandHandler("echo", echo_cmd, filters=ne))
-    dp.add_handler(CommandHandler('slap', slap_cmd, filters=ne))
-    dp.add_handler(CommandHandler('me', me_cmd, filters=ne))
-    dp.add_handler(CommandHandler('shrug', shrug_cmd, filters=ne))
-    dp.add_handler(CommandHandler('google', google_cmd, filters=ne))
-    dp.add_handler(CommandHandler('pin', pin_message_cmd, filters=ne))
-    dp.add_handler(InlineQueryHandler(text_inline_cmd))
+    # dp.add_handler(CommandHandler("hello", hello_cmd, filters=ne))
+    # dp.add_handler(CommandHandler("echo", echo_cmd, filters=ne))
+    # dp.add_handler(CommandHandler('slap', slap_cmd, filters=ne))
+    # dp.add_handler(CommandHandler('me', me_cmd, filters=ne))
+    # dp.add_handler(CommandHandler('shrug', shrug_cmd, filters=ne))
+    # dp.add_handler(CommandHandler('google', google_cmd, filters=ne))
+    # dp.add_handler(CommandHandler('pin', pin_message_cmd, filters=ne))
+    # dp.add_handler(InlineQueryHandler(text_inline_cmd))
 
     dp.add_error_handler(bot_error_handler)

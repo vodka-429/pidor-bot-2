@@ -5,7 +5,7 @@ metadata:
     helm.sh/hook: 'pre-install,pre-upgrade'
     helm.sh/hook-delete-policy: before-hook-creation
     helm.sh/hook-weight: '1'
-  name: {{ include "app.fullname" . }}
+  name: {{ include "app.fullname" . }}-init
   labels:
     {{- include "app.labels" . | nindent 4 }}
     app.kubernetes.io/component: init
@@ -31,7 +31,7 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.version }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "/bin/bash", "-c", "--" ]
-          args: [ "alembic upgrade head" ]
+          args: [ "alembic upgrade head && python3 bot/setup_commands.py" ]
           env:
           - name: DATABASE_URL
             valueFrom:
