@@ -16,7 +16,7 @@ spec:
   completions: 1
   manualSelector: false
   parallelism: 1
-  podReplacementPolicy: TerminatingOrFailed
+  podReplacementPolicy: Failed
   suspend: false
   template:
     metadata:
@@ -30,8 +30,8 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.version }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["alembic"]
-          args: ["upgrade", "head"]
+          command: [ "/bin/bash", "-c", "--" ]
+          args: [ "alembic upgrade head" ]
           env:
           - name: DATABASE_URL
             valueFrom:
