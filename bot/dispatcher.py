@@ -20,17 +20,18 @@ from bot.handlers.misc.commands import hello_cmd, echo_cmd, slap_cmd, me_cmd, \
 from bot.handlers.misc.error import bot_error_handler
 from bot.handlers.tiktok.commands import tt_video_cmd, tt_depersonalize_cmd, \
     tt_inline_cmd
+from bot.utils import chat_whitelist
 
 
 # TODO: Refactor this function to automatically scan for handlers ending with
 #  '_cmd' in the bot/handlers folder
 def init_dispatcher(dp: Dispatcher, db_engine):
     """Register handlers."""
-    # TODO: fix
-    # ne = ~Filters.update.edited_message & Filters.chat_ids([-1001392307997, -46082527380])
-    dp.add_handler(ChatJoinRequestHandler(chat_id=[-1001392307997, -46082527380]))
-
-    ne = ~Filters.update.edited_message
+    chats = chat_whitelist()
+    if chats:
+        ne = ~Filters.update.edited_message & Filters.chat_ids(chats)
+    else:
+        ne = ~Filters.update.edited_message
 
     # Middlewares setup
     dp.add_handler(TypeHandler(Update, open_db_session(db_engine)), group=-100)

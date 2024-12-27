@@ -1,3 +1,5 @@
+import os
+
 from sqlmodel import Session
 from telegram import User
 from telegram.ext import CallbackContext
@@ -18,3 +20,11 @@ class ECallbackContext(CallbackContext):
     """Extended CallbackContext with additional fields"""
     db_session: Session
     tg_user: TGUser
+
+
+def chat_whitelist():
+    env = os.environ.get('CHAT_WHITELIST', '')
+    if env:
+        return env.split(',')
+    else:
+        return []
