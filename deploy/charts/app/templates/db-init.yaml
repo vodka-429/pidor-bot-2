@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    helm.sh/hook: 'pre-install,pre-upgrade'
+    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-weight: '1'
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: init
+spec:
+  activeDeadlineSeconds: 300
+  backoffLimit: 5
+  completionMode: NonIndexed
+  completions: 1
+  manualSelector: false
+  parallelism: 1
+  podReplacementPolicy: TerminatingOrFailed
+  selector:
+    matchLabels:
+      batch.kubernetes.io/controller-uid: 3f9518ee-e1ce-4d4d-9f1b-4e358514b91f
+  suspend: false
+  template:
+    metadata:
+      labels:
+        {{- include "app.labels" . | nindent 4 }}
+        app.kubernetes.io/component: init
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.version }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["alembic"]
+          args: ["upgrade head"]
+          env:
+          - name: DATABASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: pidor-bot-secrets
+                key: pg_url
+      terminationGracePeriodSeconds: 30
