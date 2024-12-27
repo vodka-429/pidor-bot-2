@@ -3,7 +3,8 @@ LABEL maintainer="kanst9@ya.ru"
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    postgresql-client
+    postgresql-client \
+    vim
 
 ENV VENV_PATH=/opt/venv \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -25,6 +26,6 @@ COPY alembic.ini .
 RUN mkdir storage && \
     chown app:app storage
 
-USER app
+# USER app
 
 # CMD alembic upgrade head && python3 main.py
