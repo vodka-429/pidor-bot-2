@@ -29,7 +29,7 @@ def init_dispatcher(dp: Dispatcher, db_engine):
     """Register handlers."""
     chats = chat_whitelist()
     if chats:
-        ne = ~Filters.update.edited_message & Filters.chat_ids(chats)
+        ne = ~Filters.update.edited_message & Filters.chat(chats)
     else:
         ne = ~Filters.update.edited_message
 

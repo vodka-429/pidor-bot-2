@@ -25,6 +25,6 @@ class ECallbackContext(CallbackContext):
 def chat_whitelist():
     env = os.environ.get('CHAT_WHITELIST', '')
     if env:
-        return env.split(',')
+        return [int(x) for x in env.split(',')]
     else:
         return []
