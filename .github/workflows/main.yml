@@ -1,0 +1,55 @@
+# This is a basic workflow we will use in this demo
+
+name: demo-gitops
+permissions:
+  id-token: write # required to use OIDC authentication
+  contents: write # required
+  actions: read
+  security-events: write
+  statuses: write
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  ECR_REPOSITORY: gitops-argocd
+  VERSION: ${{ github.run_number }}-${{ github.sha }}
+
+jobs:
+  build:
+    name: Build and Pushing the Image
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    # Runs a single command using the runners shell
+    - name: Yandex Cloud CR "Login" Action for GitHub Actions
+      uses: yc-actions/yc-cr-login@v0.1-alpha
+      with:
+        yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
+
+    - name: Add SHORT_SHA env property with commit short sha
+      run: echo "SHORT_SHA=`echo ${GITHUB_SHA} | cut -c1-8`" >> $GITHUB_ENV
+
+    - name: Build, tag, and push image to Yandex Cloud Container Registry
+      env:
+        CR_REGISTRY: crpr9jlf6k4254l80050
+        CR_REPOSITORY: pidor_bot
+        IMAGE_TAG: ${{ env.VERSION }}
+      run: |
+        docker build -t cr.yandex/$CR_REGISTRY/$CR_REPOSITORY:$IMAGE_TAG . --file Dockerfile
+        docker push cr.yandex/$CR_REGISTRY/$CR_REPOSITORY:$IMAGE_TAG
+
+    - name: Update Version
+      run: |
+        sed -i "s|version: .*|version: ${{ env.VERSION }}|g" ./charts/app/values.yaml
+
+    - name: Commit and push changes
+      uses: devops-infra/action-commit-push@v0.3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        commit_message: Version charts/app/values.yaml updated
