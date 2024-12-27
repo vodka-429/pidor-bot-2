@@ -38,5 +38,10 @@ spec:
               secretKeyRef:
                 name: pidor-bot-secrets
                 key: pg_url
+          - name: TELEGRAM_BOT_API_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: pidor-bot-secrets
+                key: tg_token
       terminationGracePeriodSeconds: 30
       restartPolicy: OnFailure
