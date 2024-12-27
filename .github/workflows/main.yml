@@ -46,10 +46,10 @@ jobs:
 
     - name: Update Version
       run: |
-        sed -i "s|version: .*|version: ${{ env.VERSION }}|g" ./charts/app/values.yaml
+        sed -i "s|version: .*|version: ${{ env.version }}|g" ./deploy/charts/app/values.yaml
 
     - name: Commit and push changes
       uses: devops-infra/action-commit-push@v0.3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        commit_message: Version charts/app/values.yaml updated
+        commit_message: Version deploy/charts/app/values.yaml updated to ${{ env.version }}
