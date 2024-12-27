@@ -1,5 +1,5 @@
 FROM python:3.10-slim
-LABEL maintainer="super.mvk@yandex.ru"
+LABEL maintainer="kanst9@ya.ru"
 
 ENV VENV_PATH=/opt/venv \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -22,5 +22,4 @@ RUN mkdir storage && \
     chown app:app storage
 
 USER app
-
-CMD alembic upgrade head && python3 main.py
+# CMD alembic upgrade head && python3 main.py
