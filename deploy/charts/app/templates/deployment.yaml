@@ -31,15 +31,17 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.version }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["python"]
-          args: ["main.py"]
+            # command: ["python"]
+            # args: ["main.py"]
+          command: [ "/bin/bash", "-c", "--" ]
+          args: [ "while true;do echo 'sleep 322'; sleep 322 ;done" ]
           env:
-          - name: MONGO_URL
+          - name: DATABASE_URL
             valueFrom:
               secretKeyRef:
                 name: pidor-bot-secrets
-                key: mongo_url
-          - name: TG_API_TOKEN
+                key: pg_url
+          - name: TELEGRAM_BOT_API_SECRET
             valueFrom:
               secretKeyRef:
                 name: pidor-bot-secrets
