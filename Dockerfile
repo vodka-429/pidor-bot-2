@@ -26,4 +26,5 @@ RUN mkdir storage && \
     chown app:app storage
 
 USER app
+
 # CMD alembic upgrade head && python3 main.py
