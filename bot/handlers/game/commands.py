@@ -154,12 +154,13 @@ def pidoregmany_cmd(update: Update, context: GECallbackContext):
 
 @ensure_game
 def pidorunreg_cmd(update: Update, context: GECallbackContext):
-    if context.tg_user in context.game.players:
-        context.game.players.remove(context.tg_user)
-        context.db_session.commit()
-        update.effective_message.reply_markdown_v2(REMOVE_REGISTRATION)
-    else:
-        update.effective_message.reply_markdown_v2(REMOVE_REGISTRATION_ERROR)
+    update.effective_message.reply_markdown_v2('Хуй там плавал')
+    # if context.tg_user in context.game.players:
+    #     context.game.players.remove(context.tg_user)
+    #     context.db_session.commit()
+    #     update.effective_message.reply_markdown_v2(REMOVE_REGISTRATION)
+    # else:
+    #     update.effective_message.reply_markdown_v2(REMOVE_REGISTRATION_ERROR)
 
 
 def build_player_table(player_list: list[tuple[TGUser, int]]) -> str:
