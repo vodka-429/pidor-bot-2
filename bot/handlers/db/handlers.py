@@ -10,7 +10,7 @@ from bot.utils import ECallbackContext
 
 def tg_user_middleware_handler(update: Update, context: ECallbackContext):
     session = context.db_session
-    tg_user:TGUser = session.query(TGUser).filter_by(
+    tg_user: TGUser = session.query(TGUser).filter_by(
         tg_id=update.effective_user.id).one_or_none()
     if tg_user is None:
         tg_user = TGUser(tg_id=update.effective_user.id,
@@ -32,6 +32,41 @@ def tg_user_middleware_handler(update: Update, context: ECallbackContext):
         if update.effective_user.language_code is not None \
                 and tg_user.lang_code != update.effective_user.language_code:
             tg_user.lang_code = update.effective_user.language_code
+            updated = True
+        if updated:
+            tg_user.updated_at = datetime.utcnow()
+
+    tg_user.last_seen_at = datetime.utcnow()
+    session.add(tg_user)
+    session.commit()
+    session.refresh(tg_user)
+    context.tg_user = tg_user
+
+
+def tg_user_from_text(user, update: Update, context: ECallbackContext):
+    session = context.db_session
+    tg_user: TGUser = session.query(TGUser).filter_by(
+        tg_id=user.id).one_or_none()
+    if tg_user is None:
+        tg_user = TGUser(tg_id=user.id,
+                         username=user.username,
+                         first_name=user.first_name,
+                         last_name=user.last_name,
+                         lang_code=user.language_code)
+    else:
+        updated = False
+        if tg_user.username != user.username:
+            tg_user.username = user.username
+            updated = True
+        if tg_user.first_name != user.first_name:
+            tg_user.first_name = user.first_name
+            updated = True
+        if tg_user.last_name != user.last_name:
+            tg_user.last_name = user.last_name
+            updated = True
+        if update.effective_user.language_code is not None \
+                and tg_user.lang_code != user.language_code:
+            tg_user.lang_code = user.language_code
             updated = True
         if updated:
             tg_user.updated_at = datetime.utcnow()
