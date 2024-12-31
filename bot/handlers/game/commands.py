@@ -135,7 +135,6 @@ def pidoregmany_cmd(update: Update, context: GECallbackContext):
     load_dotenv()
     bot = Bot(os.environ['TELEGRAM_BOT_API_SECRET'])
 
-    print(context.tg_user)
     users = update.message.text.split()[1:]
     for user_id in users:
         try:
