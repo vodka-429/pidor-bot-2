@@ -15,6 +15,7 @@ commands = [
     ('pidor', 'play the game, see /pidorules first'),
     ('pidorules', 'POTD game rules'),
     ('pidoreg', 'register to the POTD game'),
+    ('pidoregmany', 'register many users to the POTD game'),
     ('pidorunreg', 'unregister from the POTD game'),
     ('pidorstats', 'POTD game stats for this year'),
     ('pidorall', 'POTD game stats for all time'),

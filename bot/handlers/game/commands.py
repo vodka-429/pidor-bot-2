@@ -135,7 +135,6 @@ def pidoregmany_cmd(update: Update, context: GECallbackContext):
     load_dotenv()
     bot = Bot(os.environ['TELEGRAM_BOT_API_SECRET'])
 
-    print(context.tg_user)
     users = update.message.text.split()[1:]
     for user_id in users:
         try:
@@ -155,12 +154,13 @@ def pidoregmany_cmd(update: Update, context: GECallbackContext):
 
 @ensure_game
 def pidorunreg_cmd(update: Update, context: GECallbackContext):
-    if context.tg_user in context.game.players:
-        context.game.players.remove(context.tg_user)
-        context.db_session.commit()
-        update.effective_message.reply_markdown_v2(REMOVE_REGISTRATION)
-    else:
-        update.effective_message.reply_markdown_v2(REMOVE_REGISTRATION_ERROR)
+    update.effective_message.reply_markdown_v2('Хуй там плавал')
+    # if context.tg_user in context.game.players:
+    #     context.game.players.remove(context.tg_user)
+    #     context.db_session.commit()
+    #     update.effective_message.reply_markdown_v2(REMOVE_REGISTRATION)
+    # else:
+    #     update.effective_message.reply_markdown_v2(REMOVE_REGISTRATION_ERROR)
 
 
 def build_player_table(player_list: list[tuple[TGUser, int]]) -> str:

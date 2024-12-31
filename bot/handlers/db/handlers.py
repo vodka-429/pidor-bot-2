@@ -64,7 +64,7 @@ def tg_user_from_text(user, update: Update, context: ECallbackContext):
         if tg_user.last_name != user.last_name:
             tg_user.last_name = user.last_name
             updated = True
-        if update.effective_user.language_code is not None \
+        if user.language_code is not None \
                 and tg_user.lang_code != user.language_code:
             tg_user.lang_code = user.language_code
             updated = True
