@@ -8,7 +8,7 @@ from bot.handlers.db.handlers import open_db_session, \
     tg_user_middleware_handler, close_db_session_handler
 from bot.handlers.game.commands import pidor_cmd, pidorules_cmd, pidoreg_cmd, \
     pidorunreg_cmd, pidorstats_cmd, pidorall_cmd, pidorme_cmd, \
-    pidoryearresults_cmd
+    pidoryearresults_cmd, pidoregmany_cmd
 from bot.handlers.kvstore.commands import get_cmd, set_cmd, del_cmd, list_cmd
 from bot.handlers.meme.commands import meme_cmd, memeru_cmd, \
     meme_refresh_callback, memeru_refresh_callback, meme_save_callback, \
