@@ -10,16 +10,16 @@ from sqlalchemy import func, text
 from sqlmodel import select
 from telegram import Update, ParseMode
 from telegram.ext import CallbackContext
-from telegram.bot import get_chat_member
 
 from bot.app.models import Game, GamePlayer, TGUser, GameResult
+from bot.handlers.db.handlers import tg_user_from_text
 from bot.handlers.game.phrases import stage1, stage2, stage3, stage4
 from bot.handlers.game.text_static import STATS_PERSONAL, \
     STATS_CURRENT_YEAR, \
     STATS_ALL_TIME, STATS_LIST_ITEM, REGISTRATION_SUCCESS, \
     ERROR_ALREADY_REGISTERED, ERROR_ZERO_PLAYERS, ERROR_NOT_ENOUGH_PLAYERS, \
     REMOVE_REGISTRATION, CURRENT_DAY_GAME_RESULT, REMOVE_REGISTRATION_ERROR, \
-    YEAR_RESULTS_MSG, YEAR_RESULTS_ANNOUNCEMENT
+    YEAR_RESULTS_MSG, YEAR_RESULTS_ANNOUNCEMENT, REGISTRATION_MANY_SUCCESS
 from bot.utils import escape_markdown2, ECallbackContext
 
 GAME_RESULT_TIME_DELAY = 2
@@ -127,11 +127,23 @@ def pidoreg_cmd(update: Update, context: GECallbackContext):
 def pidoregmany_cmd(update: Update, context: GECallbackContext):
     players: List[TGUser] = context.game.players
 
-    print(update)
-    print(update.message)
-    user_status = await get_chat_member(chat_id=update.message.chat.id, user_id=update.message.from_user.id)
-    print(type(user_status))
-    print(user_status)
+    import os
+    from dotenv import load_dotenv
+    from telegram import Bot
+
+    load_dotenv()
+    bot = Bot(os.environ['TELEGRAM_BOT_API_SECRET'])
+
+    print(context.tg_user)
+    users = update.message.text.split()[1:]
+    for user_id in users:
+        print(user_id)
+        try:
+            user_status = bot.get_chat_member(chat_id=update.message.chat.id, user_id=user_id)
+            tg_user_from_text(user_status.user, update, context)
+            update.effective_message.reply_markdown_v2(REGISTRATION_MANY_SUCCESS.format(username=context.tg_user.full_username()))
+        except Exception:
+            update.effective_message.reply_markdown_v2('Хуйня с {}'.format(user_id))
     # if len(players) == 0:
     #     update.effective_chat.send_message(
     #         ERROR_ZERO_PLAYERS.format(username=update.message.from_user.name))
