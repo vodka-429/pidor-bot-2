@@ -10,6 +10,7 @@ from sqlalchemy import func, text
 from sqlmodel import select
 from telegram import Update, ParseMode
 from telegram.ext import CallbackContext
+from telegram.bot import get_chat_member
 
 from bot.app.models import Game, GamePlayer, TGUser, GameResult
 from bot.handlers.game.phrases import stage1, stage2, stage3, stage4
@@ -120,6 +121,27 @@ def pidoreg_cmd(update: Update, context: GECallbackContext):
         update.effective_message.reply_markdown_v2(REGISTRATION_SUCCESS)
     else:
         update.effective_message.reply_markdown_v2(ERROR_ALREADY_REGISTERED)
+
+
+@ensure_game
+def pidoregmany_cmd(update: Update, context: GECallbackContext):
+    players: List[TGUser] = context.game.players
+
+    print(update)
+    print(update.message)
+    user_status = await get_chat_member(chat_id=update.message.chat.id, user_id=update.message.from_user.id)
+    print(type(user_status))
+    print(user_status)
+    # if len(players) == 0:
+    #     update.effective_chat.send_message(
+    #         ERROR_ZERO_PLAYERS.format(username=update.message.from_user.name))
+
+    # if context.tg_user not in context.game.players:
+    #     context.game.players.append(context.tg_user)
+    #     context.db_session.commit()
+    #     update.effective_message.reply_markdown_v2(REGISTRATION_SUCCESS)
+    # else:
+    #     update.effective_message.reply_markdown_v2(ERROR_ALREADY_REGISTERED)
 
 
 @ensure_game

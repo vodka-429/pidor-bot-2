@@ -63,6 +63,7 @@ def init_dispatcher(dp: Dispatcher, db_engine):
     dp.add_handler(
         CommandHandler('pidorules', pidorules_cmd, filters=ne))
     dp.add_handler(CommandHandler('pidoreg', pidoreg_cmd, filters=ne))
+    dp.add_handler(CommandHandler('pidoregmany', pidoregmany_cmd, filters=ne))
     dp.add_handler(CommandHandler('pidorunreg', pidorunreg_cmd, filters=ne))
     dp.add_handler(CommandHandler('pidorstats', pidorstats_cmd, filters=ne))
     dp.add_handler(CommandHandler('pidorall', pidorall_cmd, filters=ne))
