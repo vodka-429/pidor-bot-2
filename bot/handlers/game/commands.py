@@ -19,7 +19,8 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
     STATS_ALL_TIME, STATS_LIST_ITEM, REGISTRATION_SUCCESS, \
     ERROR_ALREADY_REGISTERED, ERROR_ZERO_PLAYERS, ERROR_NOT_ENOUGH_PLAYERS, \
     REMOVE_REGISTRATION, CURRENT_DAY_GAME_RESULT, REMOVE_REGISTRATION_ERROR, \
-    YEAR_RESULTS_MSG, YEAR_RESULTS_ANNOUNCEMENT, REGISTRATION_MANY_SUCCESS
+    YEAR_RESULTS_MSG, YEAR_RESULTS_ANNOUNCEMENT, REGISTRATION_MANY_SUCCESS, \
+    ERROR_ALREADY_REGISTERED_MANY
 from bot.utils import escape_markdown2, ECallbackContext
 
 GAME_RESULT_TIME_DELAY = 2
@@ -137,23 +138,19 @@ def pidoregmany_cmd(update: Update, context: GECallbackContext):
     print(context.tg_user)
     users = update.message.text.split()[1:]
     for user_id in users:
-        print(user_id)
         try:
             user_status = bot.get_chat_member(chat_id=update.message.chat.id, user_id=user_id)
             tg_user_from_text(user_status.user, update, context)
-            update.effective_message.reply_markdown_v2(REGISTRATION_MANY_SUCCESS.format(username=context.tg_user.full_username()))
-        except Exception:
-            update.effective_message.reply_markdown_v2('Хуйня с {}'.format(user_id))
-    # if len(players) == 0:
-    #     update.effective_chat.send_message(
-    #         ERROR_ZERO_PLAYERS.format(username=update.message.from_user.name))
 
-    # if context.tg_user not in context.game.players:
-    #     context.game.players.append(context.tg_user)
-    #     context.db_session.commit()
-    #     update.effective_message.reply_markdown_v2(REGISTRATION_SUCCESS)
-    # else:
-    #     update.effective_message.reply_markdown_v2(ERROR_ALREADY_REGISTERED)
+            if context.tg_user not in context.game.players:
+                context.game.players.append(context.tg_user)
+                context.db_session.commit()
+                update.effective_message.reply_markdown_v2(REGISTRATION_MANY_SUCCESS.format(username=context.tg_user.full_username()))
+            else:
+                update.effective_message.reply_markdown_v2(ERROR_ALREADY_REGISTERED_MANY.format(username=context.tg_user.full_username()))
+        except Exception:
+            logging.exception("Exception with user {}".format(user_id))
+            update.effective_message.reply_markdown_v2('Хуйня с {}'.format(user_id))
 
 
 @ensure_game

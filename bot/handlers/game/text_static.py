@@ -1,6 +1,7 @@
 REGISTRATION_SUCCESS = """*OK\!* Ты теперь участвуешь в игре "*Пидор Дня*"\!"""
-REGISTRATION_MANY_SUCCESS = """*OK\!* Ты ({username}) теперь участвуешь в игре "*Пидор Дня*"\!"""
+REGISTRATION_MANY_SUCCESS = """*OK\!* {username} теперь участвует в игре "*Пидор Дня*"\!"""
 ERROR_ALREADY_REGISTERED = """Эй\, ты уже в игре\!"""
+ERROR_ALREADY_REGISTERED_MANY = """Эй\, {username} уже в игре\!"""
 REMOVE_REGISTRATION = """*OK\!* Ты больше *не* участвуешь в игре "*Пидор Дня*"\!\n_P\.S\. Но всё равно пидор\!_"""
 REMOVE_REGISTRATION_ERROR = """Ээээ\, тьфу\, ты и так не зарегестрирован\!"""
 CURRENT_DAY_GAME_RESULT = """Согласно моей информации, по результатам сегодняшнего розыгрыша *пидор дня* \- {username}\!"""
