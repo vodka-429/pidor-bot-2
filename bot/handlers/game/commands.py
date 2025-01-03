@@ -126,8 +126,6 @@ def pidoreg_cmd(update: Update, context: GECallbackContext):
 
 @ensure_game
 def pidoregmany_cmd(update: Update, context: GECallbackContext):
-    players: List[TGUser] = context.game.players
-
     import os
     from dotenv import load_dotenv
     from telegram import Bot
@@ -174,13 +172,12 @@ def build_player_table(player_list: list[tuple[TGUser, int]]) -> str:
 
 @ensure_game
 def pidoryearresults_cmd(update: Update, context: GECallbackContext):
-    cur_year = current_datetime().year
-    result_year:int = int(update.effective_message.text.removeprefix('/pidor')[:4])
+    result_year: int = int(update.effective_message.text.removeprefix('/pidor')[:4])
 
     stmt = select(TGUser, func.count(GameResult.winner_id).label('count')) \
         .join(TGUser, GameResult.winner_id == TGUser.id) \
         .filter(GameResult.game_id == context.game.id, GameResult.year == result_year) \
-        .group_by(GameResult.winner_id) \
+        .group_by(TGUser) \
         .order_by(text('count DESC')) \
         .limit(50)
     db_results = context.db_session.exec(stmt).all()
@@ -225,13 +222,12 @@ def pidorall_cmd(update: Update, context: GECallbackContext):
 
     player_table = build_player_table(db_results)
     answer = STATS_ALL_TIME.format(player_stats=player_table,
-                                       player_count=len(context.game.players))
+                                   player_count=len(context.game.players))
     update.effective_chat.send_message(answer, parse_mode=ParseMode.MARKDOWN_V2)
 
 
 @ensure_game
 def pidorme_cmd(update: Update, context: GECallbackContext):
-    cur_year = current_datetime().year
     stmt = select(TGUser, func.count(GameResult.winner_id).label('count')) \
         .join(TGUser, GameResult.winner_id == TGUser.id) \
         .filter(GameResult.game_id == context.game.id, GameResult.winner_id == context.tg_user.id) \
