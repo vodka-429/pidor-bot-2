@@ -201,7 +201,7 @@ def pidorstats_cmd(update: Update, context: GECallbackContext):
         .filter(GameResult.game_id == context.game.id, GameResult.year == cur_year) \
         .group_by(TGUser) \
         .order_by(text('count DESC')) \
-        .limit(10)
+        .limit(50)
     db_results = context.db_session.exec(stmt).all()
 
     player_table = build_player_table(db_results)
@@ -217,7 +217,7 @@ def pidorall_cmd(update: Update, context: GECallbackContext):
         .filter(GameResult.game_id == context.game.id) \
         .group_by(TGUser) \
         .order_by(text('count DESC')) \
-        .limit(10)
+        .limit(50)
     db_results = context.db_session.exec(stmt).all()
 
     player_table = build_player_table(db_results)
