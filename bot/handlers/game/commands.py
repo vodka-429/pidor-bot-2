@@ -104,7 +104,7 @@ def pidorules_cmd(update: Update, _context: CallbackContext):
         "*Важно*, розыгрыш проходит только *раз в день*, повторная команда выведет *результат* игры\.\n"
         "\n"
         "Сброс розыгрыша происходит каждый день в 12 часов ночи по UTC\+2 \(примерно в два часа ночи по Москве\)\.\n\n"
-        "Поддержать бота можно по [ссылке](https://github.com/unaimillan/sublime-telegram-bot) :\)"
+        "Поддержать бота можно по [ссылке](https://github.com/vodka-429/pidor-bot-2/) :\)"
         , parse_mode=ParseMode.MARKDOWN_V2, disable_web_page_preview=True)
 
 

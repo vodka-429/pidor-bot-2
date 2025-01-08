@@ -13,7 +13,7 @@ This is _FAKE_ sources just **_imitating_** the functionality similar to the one
 
 ## Installation
 
-* Clone repository `git clone git@github.com:unaimillan/sublime-telegram-bot`
+* Clone repository `git clone git@github.com:vodka-429/pidor-bot-2/`
 * Create virtual environment `python -m venv venv`
 * Activate venv `source venv/bin/activate`
 * Install all dependencies `pip3 install -r requirements.txt`
