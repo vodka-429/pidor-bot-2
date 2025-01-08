@@ -70,10 +70,10 @@ def init_dispatcher(dp: Dispatcher, db_engine):
     dp.add_handler(CommandHandler('pidorme', pidorme_cmd, filters=ne))
 
     # Key-Value storage handlers
-    # dp.add_handler(CommandHandler('get', get_cmd, filters=ne))
-    # dp.add_handler(CommandHandler('list', list_cmd, filters=ne))
-    # dp.add_handler(CommandHandler('set', set_cmd, filters=ne))
-    # dp.add_handler(CommandHandler('del', del_cmd, filters=ne))
+    dp.add_handler(CommandHandler('get', get_cmd, filters=ne))
+    dp.add_handler(CommandHandler('list', list_cmd, filters=ne))
+    dp.add_handler(CommandHandler('set', set_cmd, filters=ne))
+    dp.add_handler(CommandHandler('del', del_cmd, filters=ne))
 
     # Misc handlers
     # dp.add_handler(CommandHandler("hello", hello_cmd, filters=ne))
