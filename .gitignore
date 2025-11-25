@@ -173,3 +173,6 @@ override.tf.json
 terraform.rc
 
 .terraform.lock.hcl
+
+.codeassistant
+*.code-workspace
