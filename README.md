@@ -1,10 +1,8 @@
 # Fake sublime telegram bot sources
 
+![Tests](https://github.com/vodka-429/pidor-bot-2/actions/workflows/tests.yml/badge.svg)
+
 This is _FAKE_ sources just **_imitating_** the functionality similar to the one by SublimeBot in Telegram
-
-> For any legal or copyright issues please [contact me via email](mailto:super.mvk@yandex.ru)
-
-> You can support original bot author [unicott](http://unicott.com/) via the [following link](https://www.paypal.me/unicott/2)
 
 ## Prerequisites
 
