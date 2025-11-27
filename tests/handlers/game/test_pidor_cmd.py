@@ -16,10 +16,10 @@ def test_pidor_cmd_not_enough_players(mock_update, mock_context, mock_game):
     mock_player = MagicMock()
     mock_game.players = [mock_player]
     mock_context.game = mock_game
-    
+
     # Execute
     pidor_cmd(mock_update, mock_context)
-    
+
     # Verify
     mock_update.effective_chat.send_message.assert_called_once_with(ERROR_NOT_ENOUGH_PLAYERS)
 
@@ -32,31 +32,31 @@ def test_pidor_cmd_existing_result_today(mock_update, mock_context, mock_game, m
     mock_player1.full_username.return_value = "@Player1"
     mock_player2 = MagicMock()
     mock_player2.full_username.return_value = "@Player2"
-    
+
     mock_game.players = [mock_player1, mock_player2]
     mock_context.game = mock_game
-    
+
     # Mock existing result for today
     mock_result = MagicMock()
     mock_result.winner = mock_player1
-    
+
     # Mock the query chain for both Game (in decorator) and GameResult (in function)
     # First call is for Game in ensure_game decorator
     mock_game_query = MagicMock()
     mock_game_query.filter_by.return_value = mock_game_query
     mock_game_query.one_or_none.return_value = mock_game
-    
+
     # Second call is for GameResult in pidor_cmd
     mock_result_query = MagicMock()
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = mock_result
-    
+
     # Setup query to return different results for Game and GameResult
     mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query]
-    
+
     # Execute
     pidor_cmd(mock_update, mock_context)
-    
+
     # Verify that reply_markdown_v2 was called with the existing result message
     mock_update.message.reply_markdown_v2.assert_called_once()
     call_args = str(mock_update.message.reply_markdown_v2.call_args)
@@ -69,21 +69,21 @@ def test_pidor_cmd_new_game_result(mock_update, mock_context, mock_game, sample_
     # Setup: game with enough players and no result for today
     mock_game.players = sample_players
     mock_context.game = mock_game
-    
+
     # Mock the query chain for both Game (in decorator) and GameResult (in function)
     # First call is for Game in ensure_game decorator
     mock_game_query = MagicMock()
     mock_game_query.filter_by.return_value = mock_game_query
     mock_game_query.one_or_none.return_value = mock_game
-    
+
     # Second call is for GameResult in pidor_cmd - should return None (no existing result)
     mock_result_query = MagicMock()
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
-    
+
     # Setup query to return different results for Game and GameResult
     mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query]
-    
+
     # Mock random.choice to return first player and phrases
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
         sample_players[0],  # winner selection
@@ -92,10 +92,10 @@ def test_pidor_cmd_new_game_result(mock_update, mock_context, mock_game, sample_
         "Stage 3 message",  # stage3 phrase
         "Stage 4 message: {username}",  # stage4 phrase
     ])
-    
+
     # Mock time.sleep to avoid delays
     mocker.patch('bot.handlers.game.commands.time.sleep')
-    
+
     # Mock current_datetime to return a non-last-day date
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -103,16 +103,16 @@ def test_pidor_cmd_new_game_result(mock_update, mock_context, mock_game, sample_
     mock_dt.day = 15
     mock_dt.timetuple.return_value.tm_yday = 167
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
-    
+
     # Execute
     pidor_cmd(mock_update, mock_context)
-    
+
     # Verify that 4 messages were sent (stage1-4)
     assert mock_update.effective_chat.send_message.call_count == 4
-    
+
     # Verify that game result was appended
     mock_game.results.append.assert_called_once()
-    
+
     # Verify that db session was committed
     mock_context.db_session.commit.assert_called_once()
 
@@ -123,18 +123,18 @@ def test_pidor_cmd_last_day_of_year(mock_update, mock_context, mock_game, sample
     # Setup: game with enough players
     mock_game.players = sample_players
     mock_context.game = mock_game
-    
+
     # Mock the query chain
     mock_game_query = MagicMock()
     mock_game_query.filter_by.return_value = mock_game_query
     mock_game_query.one_or_none.return_value = mock_game
-    
+
     mock_result_query = MagicMock()
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
-    
+
     mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query]
-    
+
     # Mock random.choice
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
         sample_players[0],
@@ -143,10 +143,10 @@ def test_pidor_cmd_last_day_of_year(mock_update, mock_context, mock_game, sample
         "Stage 3",
         "Stage 4: {username}",
     ])
-    
+
     # Mock time.sleep
     mocker.patch('bot.handlers.game.commands.time.sleep')
-    
+
     # Mock current_datetime to return December 31
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -154,13 +154,13 @@ def test_pidor_cmd_last_day_of_year(mock_update, mock_context, mock_game, sample
     mock_dt.day = 31
     mock_dt.timetuple.return_value.tm_yday = 366
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
-    
+
     # Execute
     pidor_cmd(mock_update, mock_context)
-    
+
     # Verify that 5 messages were sent (year announcement + 4 stages)
     assert mock_update.effective_chat.send_message.call_count == 5
-    
+
     # Verify year announcement was sent
     calls = mock_update.effective_chat.send_message.call_args_list
     first_call_str = str(calls[0])
@@ -173,18 +173,18 @@ def test_pidor_cmd_random_winner_selection(mock_update, mock_context, mock_game,
     # Setup
     mock_game.players = sample_players
     mock_context.game = mock_game
-    
+
     # Mock the query chain
     mock_game_query = MagicMock()
     mock_game_query.filter_by.return_value = mock_game_query
     mock_game_query.one_or_none.return_value = mock_game
-    
+
     mock_result_query = MagicMock()
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
-    
+
     mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query]
-    
+
     # Mock random.choice and capture the call
     mock_random_choice = mocker.patch('bot.handlers.game.commands.random.choice')
     mock_random_choice.side_effect = [
@@ -194,10 +194,10 @@ def test_pidor_cmd_random_winner_selection(mock_update, mock_context, mock_game,
         "Stage 3",
         "Stage 4: {username}",
     ]
-    
+
     # Mock time.sleep
     mocker.patch('bot.handlers.game.commands.time.sleep')
-    
+
     # Mock current_datetime
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -205,10 +205,10 @@ def test_pidor_cmd_random_winner_selection(mock_update, mock_context, mock_game,
     mock_dt.day = 15
     mock_dt.timetuple.return_value.tm_yday = 167
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
-    
+
     # Execute
     pidor_cmd(mock_update, mock_context)
-    
+
     # Verify random.choice was called with players list
     assert mock_random_choice.call_count >= 1
     first_call_args = mock_random_choice.call_args_list[0][0]
@@ -221,18 +221,18 @@ def test_pidor_cmd_time_delays(mock_update, mock_context, mock_game, sample_play
     # Setup
     mock_game.players = sample_players
     mock_context.game = mock_game
-    
+
     # Mock the query chain
     mock_game_query = MagicMock()
     mock_game_query.filter_by.return_value = mock_game_query
     mock_game_query.one_or_none.return_value = mock_game
-    
+
     mock_result_query = MagicMock()
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
-    
+
     mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query]
-    
+
     # Mock random.choice
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
         sample_players[0],
@@ -241,10 +241,10 @@ def test_pidor_cmd_time_delays(mock_update, mock_context, mock_game, sample_play
         "Stage 3",
         "Stage 4: {username}",
     ])
-    
+
     # Mock time.sleep and capture calls
     mock_sleep = mocker.patch('bot.handlers.game.commands.time.sleep')
-    
+
     # Mock current_datetime
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -252,10 +252,10 @@ def test_pidor_cmd_time_delays(mock_update, mock_context, mock_game, sample_play
     mock_dt.day = 15
     mock_dt.timetuple.return_value.tm_yday = 167
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
-    
+
     # Execute
     pidor_cmd(mock_update, mock_context)
-    
+
     # Verify time.sleep was called 3 times with GAME_RESULT_TIME_DELAY (2 seconds)
     assert mock_sleep.call_count == 3
     for call in mock_sleep.call_args_list:
