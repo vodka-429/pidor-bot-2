@@ -54,6 +54,7 @@ def ensure_game(func):
 # PIDOR Game
 @ensure_game
 def pidor_cmd(update: Update, context: GECallbackContext):
+    logging.info(f"pidor_cmd started for chat {update.effective_chat.id}")
     logging.info(f"Game {context.game.id} of the day started")
     players: List[TGUser] = context.game.players
 
@@ -71,19 +72,26 @@ def pidor_cmd(update: Update, context: GECallbackContext):
             CURRENT_DAY_GAME_RESULT.format(
                 username=escape_markdown2(game_result.winner.full_username())))
     else:
+        logging.debug("Creating new game result")
         winner: TGUser = random.choice(players)
         context.game.results.append(GameResult(game_id=context.game.id, year=cur_year, day=cur_day, winner=winner))
+        logging.debug("Committing game result to DB")
         context.db_session.commit()
 
         if last_day:
+            logging.debug("Sending year results announcement")
             update.effective_chat.send_message(YEAR_RESULTS_ANNOUNCEMENT.format(year=cur_year), parse_mode=ParseMode.MARKDOWN_V2)
 
+        logging.debug("Sending stage 1 message")
         update.effective_chat.send_message(random.choice(stage1.phrases))
         time.sleep(GAME_RESULT_TIME_DELAY)
+        logging.debug("Sending stage 2 message")
         update.effective_chat.send_message(random.choice(stage2.phrases))
         time.sleep(GAME_RESULT_TIME_DELAY)
+        logging.debug("Sending stage 3 message")
         update.effective_chat.send_message(random.choice(stage3.phrases))
         time.sleep(GAME_RESULT_TIME_DELAY)
+        logging.debug("Sending stage 4 message")
         update.effective_chat.send_message(random.choice(stage4.phrases).format(
             username=winner.full_username(mention=True)))
 
@@ -91,20 +99,20 @@ def pidor_cmd(update: Update, context: GECallbackContext):
 def pidorules_cmd(update: Update, _context: CallbackContext):
     logging.info("Game rules requested")
     update.effective_chat.send_message(
-        "Правила игры *Пидор Дня* \(только для групповых чатов\):\n"
-        "*1\.* Зарегистрируйтесь в игру по команде */pidoreg*\n"
-        "*2\.* Подождите пока зарегиструются все \(или большинство :\)\n"
-        "*3\.* Запустите розыгрыш по команде */pidor*\n"
-        "*4\.* Просмотр статистики канала по команде */pidorstats*, */pidorall*\n"
-        "*5\.* Личная статистика по команде */pidorme*\n"
-        "*6\.* Статистика за последний год по комнаде */pidor2020* \(так же есть за 2016\-2020\)\n"
-        "*7\. \(\!\!\! Только для администраторов чатов\)*: удалить из игры может только Админ канала, сначала выведя по команде список игроков: */pidormin* list\n"
-        "Удалить же игрока можно по команде \(используйте идентификатор пользователя \- цифры из списка пользователей\): */pidormin* del 123456\n"
+        "Правила игры *Пидор Дня* (только для групповых чатов):\n"
+        "*1.* Зарегистрируйтесь в игру по команде */pidoreg*\n"
+        "*2.* Подождите пока зарегиструются все (или большинство :)\n"
+        "*3.* Запустите розыгрыш по команде */pidor*\n"
+        "*4.* Просмотр статистики канала по команде */pidorstats*, */pidorall*\n"
+        "*5.* Личная статистика по команде */pidorme*\n"
+        "*6.* Статистика за последний год по комнаде */pidor2020* (так же есть за 2016-2020)\n"
+        "*7. (!!! Только для администраторов чатов)*: удалить из игры может только Админ канала, сначала выведя по команде список игроков: */pidormin* list\n"
+        "Удалить же игрока можно по команде (используйте идентификатор пользователя - цифры из списка пользователей): */pidormin* del 123456\n"
         "\n"
-        "*Важно*, розыгрыш проходит только *раз в день*, повторная команда выведет *результат* игры\.\n"
+        "*Важно*, розыгрыш проходит только *раз в день*, повторная команда выведет *результат* игры.\n"
         "\n"
-        "Сброс розыгрыша происходит каждый день в 12 часов ночи по UTC\+2 \(примерно в два часа ночи по Москве\)\.\n\n"
-        "Поддержать бота можно по [ссылке](https://github.com/vodka-429/pidor-bot-2/) :\)"
+        "Сброс розыгрыша происходит каждый день в 12 часов ночи по UTC+2 (примерно в два часа ночи по Москве).\n\n"
+        "Поддержать бота можно по [ссылке](https://github.com/vodka-429/pidor-bot-2/):)"
         , parse_mode=ParseMode.MARKDOWN_V2, disable_web_page_preview=True)
 
 
