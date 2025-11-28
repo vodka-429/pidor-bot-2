@@ -25,6 +25,7 @@ class TGUser(SQLModel, table=True):
 
     games: List['Game'] = Relationship(back_populates="players", link_model=GamePlayer)
     game_results: List['GameResult'] = Relationship(back_populates="winner")
+    final_voting_wins: List['FinalVoting'] = Relationship(back_populates="winner")
 
     created_at: datetime = Field(default=datetime.utcnow(), nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow,
@@ -45,6 +46,7 @@ class Game(SQLModel, table=True):
 
     players: List[TGUser] = Relationship(back_populates="games", link_model=GamePlayer)
     results: List['GameResult'] = Relationship(back_populates="game")
+    final_votings: List['FinalVoting'] = Relationship(back_populates="game")
 
 
 class GameResult(SQLModel, table=True):
@@ -59,6 +61,26 @@ class GameResult(SQLModel, table=True):
 
     __table_args__ = (
         UniqueConstraint('game_id', 'year', 'day', name='unique_game_result'),
+    )
+
+
+class FinalVoting(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id")
+    year: int
+    poll_id: str
+    poll_message_id: int
+    started_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    ended_at: Optional[datetime] = None
+    winner_id: Optional[int] = Field(default=None, foreign_key="tguser.id")
+    missed_days_count: int
+    missed_days_list: str  # JSON string with list of missed days
+
+    winner: Optional[TGUser] = Relationship(back_populates="final_voting_wins")
+    game: Game = Relationship(back_populates="final_votings")
+
+    __table_args__ = (
+        UniqueConstraint('game_id', 'year', name='unique_final_voting'),
     )
 
 
