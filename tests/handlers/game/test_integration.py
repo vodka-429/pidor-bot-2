@@ -66,13 +66,19 @@ def test_full_game_flow(mock_update, mock_context, mock_game, sample_players, mo
     # Reset mocks for game command
     mock_update.effective_chat.send_message.reset_mock()
     
+    # Mock query for checking missed days (no previous games)
+    mock_missed_query = MagicMock()
+    mock_missed_query.filter_by.return_value = mock_missed_query
+    mock_missed_query.order_by.return_value = mock_missed_query
+    mock_missed_query.first.return_value = None
+    
     # Mock GameResult query to return None (no existing result)
     mock_result_query = MagicMock()
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
     
-    # Setup query to return different results for Game and GameResult
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query]
+    # Setup query to return different results for Game, missed days check, and GameResult
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
     
     # Mock random.choice for stage phrases
     mock_choice.side_effect = [
@@ -86,8 +92,9 @@ def test_full_game_flow(mock_update, mock_context, mock_game, sample_players, mo
     # Step 4: Run the game
     pidor_cmd(mock_update, mock_context)
     
-    # Verify game execution - should send 4 stage messages
-    assert mock_update.effective_chat.send_message.call_count == 4
+    # Verify game execution - should send 5 messages (dramatic message + 4 stage messages)
+    # Since there are no previous games, missed_days = current_day - 1 = 167 - 1 = 166
+    assert mock_update.effective_chat.send_message.call_count == 5
     
     # Verify GameResult was created
     assert mock_game.results.append.called

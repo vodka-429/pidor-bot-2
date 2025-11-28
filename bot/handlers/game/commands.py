@@ -32,6 +32,67 @@ def current_datetime():
     return datetime.now(tz=MOSCOW_TZ)
 
 
+def get_missed_days_count(db_session, game_id: int, current_year: int, current_day: int) -> int:
+    """Подсчёт пропущенных дней с последнего розыгрыша"""
+    # Получаем последний результат игры в текущем году
+    last_result = db_session.query(GameResult).filter_by(
+        game_id=game_id,
+        year=current_year
+    ).order_by(GameResult.day.desc()).first()
+    
+    if last_result is None:
+        # Если игр в этом году не было, считаем все дни с начала года
+        return current_day - 1
+    
+    # Считаем пропущенные дни между последней игрой и текущим днём
+    missed = current_day - last_result.day - 1
+    return max(0, missed)
+
+
+def get_all_missed_days(db_session, game_id: int, current_year: int, current_day: int) -> list[int]:
+    """Получение списка всех пропущенных дней в году"""
+    # Получаем все дни, когда проводились игры в текущем году
+    played_days = db_session.query(GameResult.day).filter_by(
+        game_id=game_id,
+        year=current_year
+    ).all()
+    
+    played_days_set = {day[0] for day in played_days}
+    
+    # Все дни от 1 до текущего дня, которые не были сыграны
+    all_days = set(range(1, current_day))
+    missed_days = sorted(all_days - played_days_set)
+    
+    return missed_days
+
+
+def get_dramatic_message(days_count: int) -> str:
+    """Выбор драматического сообщения по количеству пропущенных дней"""
+    from bot.handlers.game.text_static import (
+        MISSED_DAYS_1, MISSED_DAYS_2_3, MISSED_DAYS_4_7,
+        MISSED_DAYS_8_14, MISSED_DAYS_15_30, MISSED_DAYS_31_PLUS
+    )
+    
+    if days_count == 1:
+        return MISSED_DAYS_1
+    elif 2 <= days_count <= 3:
+        return MISSED_DAYS_2_3.format(days=days_count)
+    elif 4 <= days_count <= 7:
+        return MISSED_DAYS_4_7.format(days=days_count)
+    elif 8 <= days_count <= 14:
+        return MISSED_DAYS_8_14.format(days=days_count)
+    elif 15 <= days_count <= 30:
+        return MISSED_DAYS_15_30.format(days=days_count)
+    else:  # 31+
+        return MISSED_DAYS_31_PLUS.format(days=days_count)
+
+
+def day_to_date(year: int, day: int) -> datetime:
+    """Преобразование номера дня в дату"""
+    from datetime import timedelta
+    return datetime(year, 1, 1, tzinfo=MOSCOW_TZ) + timedelta(days=day - 1)
+
+
 class GECallbackContext(ECallbackContext):
     """Extended bot context with additional game `Game` field"""
     game: Game
@@ -65,6 +126,14 @@ def pidor_cmd(update: Update, context: GECallbackContext):
     current_dt = current_datetime()
     cur_year, cur_day = current_dt.year, current_dt.timetuple().tm_yday
     last_day = current_dt.month == 12 and current_dt.day >= 31
+
+    # Проверка пропущенных дней
+    missed_days = get_missed_days_count(context.db_session, context.game.id, cur_year, cur_day)
+    if missed_days > 0:
+        logging.info(f"Missed {missed_days} days since last game")
+        dramatic_msg = get_dramatic_message(missed_days)
+        update.effective_chat.send_message(dramatic_msg, parse_mode=ParseMode.MARKDOWN_V2)
+        time.sleep(GAME_RESULT_TIME_DELAY)
 
     game_result: GameResult = context.db_session.query(GameResult).filter_by(game_id=context.game.id, year=cur_year, day=cur_day).one_or_none()
     if game_result:
