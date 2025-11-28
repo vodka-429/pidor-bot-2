@@ -24,6 +24,7 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
 from bot.utils import escape_markdown2, ECallbackContext
 
 GAME_RESULT_TIME_DELAY = 2
+MAX_MISSED_DAYS_FOR_FINAL_VOTING = 10  # Максимальное количество пропущенных дней для финального голосования
 
 MOSCOW_TZ = ZoneInfo('Europe/Moscow')
 
@@ -39,11 +40,11 @@ def get_missed_days_count(db_session, game_id: int, current_year: int, current_d
         game_id=game_id,
         year=current_year
     ).order_by(GameResult.day.desc()).first()
-    
+
     if last_result is None:
         # Если игр в этом году не было, считаем все дни с начала года
         return current_day - 1
-    
+
     # Считаем пропущенные дни между последней игрой и текущим днём
     missed = current_day - last_result.day - 1
     return max(0, missed)
@@ -56,13 +57,13 @@ def get_all_missed_days(db_session, game_id: int, current_year: int, current_day
         game_id=game_id,
         year=current_year
     ).all()
-    
+
     played_days_set = {day[0] for day in played_days}
-    
+
     # Все дни от 1 до текущего дня, которые не были сыграны
     all_days = set(range(1, current_day))
     missed_days = sorted(all_days - played_days_set)
-    
+
     return missed_days
 
 
@@ -72,7 +73,7 @@ def get_dramatic_message(days_count: int) -> str:
         MISSED_DAYS_1, MISSED_DAYS_2_3, MISSED_DAYS_4_7,
         MISSED_DAYS_8_14, MISSED_DAYS_15_30, MISSED_DAYS_31_PLUS
     )
-    
+
     if days_count == 1:
         return MISSED_DAYS_1
     elif 2 <= days_count <= 3:
@@ -315,3 +316,46 @@ def pidorme_cmd(update: Update, context: GECallbackContext):
     update.effective_chat.send_message(STATS_PERSONAL.format(
         username=tg_user.full_username(), amount=count),
         parse_mode=ParseMode.MARKDOWN_V2)
+
+
+@ensure_game
+def pidormissed_cmd(update: Update, context: GECallbackContext):
+    """Показать пропущенные дни в текущем году"""
+    from bot.handlers.game.text_static import MISSED_DAYS_INFO_WITH_LIST, MISSED_DAYS_INFO_COUNT_ONLY
+
+    logging.info(f"pidormissed_cmd started for chat {update.effective_chat.id}")
+
+    # Получаем текущий год и день
+    current_dt = current_datetime()
+    cur_year, cur_day = current_dt.year, current_dt.timetuple().tm_yday
+
+    # Получаем список всех пропущенных дней
+    missed_days = get_all_missed_days(context.db_session, context.game.id, cur_year, cur_day)
+    missed_count = len(missed_days)
+
+    if missed_count == 0:
+        update.effective_chat.send_message(
+            "✅ В этом году не пропущено ни одного дня\\! Отличная работа\\! 🎉",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+
+    # Если пропущено меньше MAX_MISSED_DAYS_FOR_FINAL_VOTING дней - показываем список с датами
+    if missed_count < MAX_MISSED_DAYS_FOR_FINAL_VOTING:
+        days_list_items = []
+        for day_num in missed_days:
+            date = day_to_date(cur_year, day_num)
+            # Форматируем дату как "1 января", "2 февраля" и т.д.
+            date_str = date.strftime("%d %B").lstrip('0')
+            # Экранируем для Markdown V2
+            date_str_escaped = escape_markdown2(date_str)
+            days_list_items.append(f"• {date_str_escaped}")
+
+        days_list = '\n'.join(days_list_items)
+        message = MISSED_DAYS_INFO_WITH_LIST.format(count=missed_count, days_list=days_list)
+    else:
+        # Если больше или равно MAX_MISSED_DAYS_FOR_FINAL_VOTING - показываем только количество
+        message = MISSED_DAYS_INFO_COUNT_ONLY.format(count=missed_count)
+
+    update.effective_chat.send_message(message, parse_mode=ParseMode.MARKDOWN_V2)
+    logging.info(f"Showed {missed_count} missed days for game {context.game.id}")
