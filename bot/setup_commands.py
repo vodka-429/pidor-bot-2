@@ -20,6 +20,7 @@ commands = [
     ('pidorstats', 'POTD game stats for this year'),
     ('pidorall', 'POTD game stats for all time'),
     ('pidorme', 'POTD personal stats'),
+    ('pidormissed', 'show missed days in current year'),
     # ('meme', 'get some random meme'),
     # ('memeru', 'get some random russian meme'),
     # ('ttvideo', 'get video from tiktok'),
