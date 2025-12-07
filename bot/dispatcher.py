@@ -1,14 +1,15 @@
 from telegram import Update
 from telegram.ext import Dispatcher, CommandHandler, Filters, \
     CallbackQueryHandler, InlineQueryHandler, TypeHandler, MessageHandler, \
-    ChatJoinRequestHandler
+    ChatJoinRequestHandler, PollHandler
 
 from bot.handlers.about.commands import about_cmd
 from bot.handlers.db.handlers import open_db_session, \
     tg_user_middleware_handler, close_db_session_handler
 from bot.handlers.game.commands import pidor_cmd, pidorules_cmd, pidoreg_cmd, \
     pidorunreg_cmd, pidorstats_cmd, pidorall_cmd, pidorme_cmd, \
-    pidoryearresults_cmd, pidoregmany_cmd, pidormissed_cmd
+    pidoryearresults_cmd, pidoregmany_cmd, pidormissed_cmd, pidorfinal_cmd, \
+    pidorfinalstatus_cmd, handle_poll_answer
 from bot.handlers.kvstore.commands import get_cmd, set_cmd, del_cmd, list_cmd
 from bot.handlers.meme.commands import meme_cmd, memeru_cmd, \
     meme_refresh_callback, memeru_refresh_callback, meme_save_callback, \
@@ -69,6 +70,9 @@ def init_dispatcher(dp: Dispatcher, db_engine):
     dp.add_handler(CommandHandler('pidorall', pidorall_cmd, filters=ne))
     dp.add_handler(CommandHandler('pidorme', pidorme_cmd, filters=ne))
     dp.add_handler(CommandHandler('pidormissed', pidormissed_cmd, filters=ne))
+    dp.add_handler(CommandHandler('pidorfinal', pidorfinal_cmd, filters=ne))
+    dp.add_handler(CommandHandler('pidorfinalstatus', pidorfinalstatus_cmd, filters=ne))
+    dp.add_handler(PollHandler(handle_poll_answer))
 
     # Key-Value storage handlers
     dp.add_handler(CommandHandler('get', get_cmd, filters=ne))
