@@ -21,6 +21,8 @@ commands = [
     ('pidorall', 'POTD game stats for all time'),
     ('pidorme', 'POTD personal stats'),
     ('pidormissed', 'show missed days in current year'),
+    ('pidorfinal', 'start final voting for missed days (Dec 29-30)'),
+    ('pidorfinalstatus', 'show final voting status'),
     # ('meme', 'get some random meme'),
     # ('memeru', 'get some random russian meme'),
     # ('ttvideo', 'get video from tiktok'),
