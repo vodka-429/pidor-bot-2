@@ -465,10 +465,12 @@ def pidorfinal_cmd(update: Update, context: GECallbackContext):
     # Создаём Telegram Poll
     poll_message = context.bot.send_poll(
         chat_id=update.effective_chat.id,
-        question=f"Кто заслуживает {missed_count} пропущенных дней?",
+        question=f"Выберите достойных кандидатов (можно несколько). Победитель получит {missed_count} пропущенных дней!",
         options=poll_options,
         is_anonymous=False,
-        allows_multiple_answers=False
+        allows_multiple_answers=True,
+        # TODO: change to 86400
+        open_period=3600
     )
 
     # Сохраняем запись в FinalVoting
@@ -659,8 +661,8 @@ def pidorfinalstatus_cmd(update: Update, context: GECallbackContext):
         ends_at = final_voting.started_at + timedelta(hours=24)
 
         # Форматируем даты для вывода
-        started_str = final_voting.started_at.strftime("%d\\.%m\\.%Y %H:%M")
-        ends_str = ends_at.strftime("%d\\.%m\\.%Y %H:%M")
+        started_str = final_voting.started_at.strftime("%d\\.%m\\.%Y %H:%M МСК")
+        ends_str = ends_at.strftime("%d\\.%m\\.%Y %H:%M МСК")
 
         message = FINAL_VOTING_STATUS_ACTIVE.format(
             started_at=started_str,
@@ -673,7 +675,7 @@ def pidorfinalstatus_cmd(update: Update, context: GECallbackContext):
 
     # Если ended_at is not None - показываем статус "завершено"
     winner_name = escape_markdown2(final_voting.winner.full_username())
-    ended_str = final_voting.ended_at.strftime("%d\\.%m\\.%Y %H:%M")
+    ended_str = final_voting.ended_at.strftime("%d\\.%m\\.%Y %H:%M МСК")
 
     message = FINAL_VOTING_STATUS_COMPLETED.format(
         winner=winner_name,
