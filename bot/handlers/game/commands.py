@@ -192,8 +192,9 @@ def pidorules_cmd(update: Update, _context: CallbackContext):
         "*Важно*, розыгрыш проходит только *раз в день*, повторная команда выведет *результат* игры.\n"
         "\n"
         "*Финальное голосование:* В конце года (29-30 декабря) можно запустить взвешенное голосование для распределения пропущенных дней. "
+        "Финальное голосование с кастомными кнопками (поддерживает любое количество участников). Результаты скрыты до завершения. "
         "Вес каждого голоса равен количеству побед игрока в текущем году. "
-        "Голосование доступно только если пропущено менее 10 дней.\n"
+        "Голосование доступно только если пропущено менее 10 дней. Завершить голосование: */pidorfinalclose*\n"
         "\n"
         "Сброс розыгрыша происходит каждый день в 12 часов ночи по UTC+2 (примерно в два часа ночи по Москве).\n\n"
         "Поддержать бота можно по [ссылке](https://github.com/vodka-429/pidor-bot-2/):)",
@@ -380,8 +381,10 @@ def pidorfinal_cmd(update: Update, context: GECallbackContext):
     """Запустить финальное голосование для распределения пропущенных дней"""
     from bot.handlers.game.text_static import (
         FINAL_VOTING_START, FINAL_VOTING_ERROR_DATE,
-        FINAL_VOTING_ERROR_TOO_MANY, FINAL_VOTING_ERROR_ALREADY_EXISTS
+        FINAL_VOTING_ERROR_TOO_MANY, FINAL_VOTING_ERROR_ALREADY_EXISTS,
+        FINAL_VOTING_INSTRUCTION
     )
+    from bot.handlers.game.voting_helpers import create_voting_keyboard, format_vote_callback_data
 
     logging.info(f"pidorfinal_cmd started for chat {update.effective_chat.id}")
 
@@ -459,169 +462,112 @@ def pidorfinal_cmd(update: Update, context: GECallbackContext):
     )
     update.effective_chat.send_message(info_message, parse_mode=ParseMode.MARKDOWN_V2)
 
-    # Создаём список кандидатов для poll (все игроки с весами)
-    poll_options = [player.full_username() for player, _ in player_weights]
+    # Создаём список кандидатов (все игроки с весами)
+    candidates = [player for player, _ in player_weights]
 
-    # Создаём Telegram Poll
-    poll_message = context.bot.send_poll(
-        chat_id=update.effective_chat.id,
-        question=f"Выберите достойных кандидатов (можно несколько). Победитель получит {missed_count} пропущенных дней!",
-        options=poll_options,
-        is_anonymous=False,
-        allows_multiple_answers=True,
-        # TODO: change to 86400
-        open_period=3600
-    )
-
-    # Сохраняем запись в FinalVoting
+    # Сначала создаём запись FinalVoting без voting_message_id
     final_voting = FinalVoting(
         game_id=context.game.id,
         year=cur_year,
-        poll_id=poll_message.poll.id,
-        poll_message_id=poll_message.message_id,
+        poll_id='',  # Больше не используется для кастомного голосования
+        poll_message_id=0,  # Временное значение, будет обновлено
         started_at=current_dt,
         missed_days_count=missed_count,
-        missed_days_list=json.dumps(missed_days)
+        missed_days_list=json.dumps(missed_days),
+        votes_data='{}',  # Инициализируем пустым JSON объектом
+        is_results_hidden=True,  # Скрываем результаты до завершения
+        voting_message_id=None  # Будет установлено после отправки сообщения
     )
     context.db_session.add(final_voting)
+    context.db_session.flush()  # Получаем ID для использования в callback_data
+
+    # Создаём клавиатуру с кнопками кандидатов
+    # Сначала создаём временную клавиатуру, затем заменим placeholder
+    keyboard = create_voting_keyboard(candidates, votes_per_row=2)
+
+    # Заменяем placeholder {voting_id} на реальный ID
+    for row in keyboard.inline_keyboard:
+        for button in row:
+            button.callback_data = button.callback_data.replace('{voting_id}', str(final_voting.id))
+
+    # Отправляем сообщение с кнопками голосования
+    voting_message = context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=FINAL_VOTING_INSTRUCTION.format(missed_days=missed_count),
+        parse_mode=ParseMode.MARKDOWN_V2,
+        reply_markup=keyboard
+    )
+
+    # Обновляем запись с ID сообщения голосования
+    final_voting.voting_message_id = voting_message.message_id
     context.db_session.commit()
 
-    logging.info(f"Final voting created for game {context.game.id}, year {cur_year}, poll_id {poll_message.poll.id}")
+    logging.info(f"Final voting created for game {context.game.id}, year {cur_year}, voting_message_id {voting_message.message_id}")
 
 
-def handle_poll_answer(update: Update, context: ECallbackContext):
-    """Обработчик завершения голосования (poll)"""
-    from bot.handlers.game.text_static import FINAL_VOTING_RESULTS
+def handle_vote_callback(update: Update, context: ECallbackContext):
+    """Обработчик нажатий на кнопки голосования"""
+    from bot.handlers.game.voting_helpers import parse_vote_callback_data
 
-    logging.info(f"handle_poll_answer called for poll {update.poll.id}")
+    logging.info("handle_vote_callback called")
 
-    # Получаем poll_id из update
-    poll_id = update.poll.id
+    query = update.callback_query
 
-    # Находим запись FinalVoting по poll_id
+    try:
+        # Парсим callback_data для получения voting_id и candidate_id
+        voting_id, candidate_id = parse_vote_callback_data(query.data)
+        logging.info(f"Parsed callback: voting_id={voting_id}, candidate_id={candidate_id}")
+    except ValueError as e:
+        logging.error(f"Failed to parse callback_data: {e}")
+        query.answer("❌ Ошибка обработки голоса")
+        return
+
+    # Загружаем FinalVoting по voting_id
     final_voting = context.db_session.query(FinalVoting).filter_by(
-        poll_id=poll_id
+        id=voting_id
     ).one_or_none()
 
     if final_voting is None:
-        logging.warning(f"FinalVoting not found for poll_id {poll_id}")
+        logging.warning(f"FinalVoting not found for id {voting_id}")
+        query.answer("❌ Голосование не найдено")
         return
 
-    # Проверяем, закрыт ли poll
-    if not update.poll.is_closed:
-        logging.debug(f"Poll {poll_id} is not closed yet")
-        return
-
-    # Если голосование уже обработано (ended_at установлен), пропускаем
+    # Проверяем, что голосование ещё активно
     if final_voting.ended_at is not None:
-        logging.info(f"Poll {poll_id} already processed")
+        logging.info(f"Voting {voting_id} already ended")
+        query.answer("❌ Голосование уже завершено")
         return
 
-    logging.info(f"Processing closed poll {poll_id} for game {final_voting.game_id}")
+    # Загружаем текущие голоса из votes_data
+    votes_data = json.loads(final_voting.votes_data)
+    user_id = str(query.from_user.id)  # Используем строковый ключ для JSON
 
-    # Получаем результаты голосования из update.poll.options
-    poll_options = update.poll.options
+    # Получаем список голосов пользователя (или создаём пустой)
+    user_votes = votes_data.get(user_id, [])
 
-    # Получаем веса игроков (количество побед в году)
-    stmt = select(TGUser, func.count(GameResult.winner_id).label('count')) \
-        .join(TGUser, GameResult.winner_id == TGUser.id) \
-        .filter(GameResult.game_id == final_voting.game_id, GameResult.year == final_voting.year) \
-        .group_by(TGUser) \
-        .order_by(text('count DESC'))
-    player_weights = context.db_session.exec(stmt).all()
+    # Toggle логика: добавляем или удаляем candidate_id
+    if candidate_id in user_votes:
+        # Удаляем голос
+        user_votes.remove(candidate_id)
+        answer_text = "✅ Голос отменён"
+        logging.info(f"User {user_id} removed vote for candidate {candidate_id}")
+    else:
+        # Добавляем голос
+        user_votes.append(candidate_id)
+        answer_text = "✅ Голос учтён"
+        logging.info(f"User {user_id} added vote for candidate {candidate_id}")
 
-    # Создаём словарь: username -> вес
-    weights_dict = {player.full_username(): weight for player, weight in player_weights}
+    # Обновляем голоса пользователя
+    votes_data[user_id] = user_votes
 
-    # Подсчитываем взвешенные голоса для каждого кандидата
-    weighted_votes = {}
-    voting_results_list = []
-
-    for option in poll_options:
-        candidate_name = option.text
-        vote_count = option.voter_count
-        weight = weights_dict.get(candidate_name, 1)  # Если игрока нет в весах, вес = 1
-        weighted_vote = vote_count * weight
-        weighted_votes[candidate_name] = weighted_vote
-
-        voting_results_list.append(
-            f"• {escape_markdown2(candidate_name)}: {vote_count} голосов × {weight} = *{weighted_vote}*"
-        )
-
-    # Определяем победителя (максимальный взвешенный результат)
-    if not weighted_votes:
-        logging.error(f"No weighted votes calculated for poll {poll_id}")
-        return
-
-    winner_name = max(weighted_votes, key=weighted_votes.get)
-    winner_weighted_votes = weighted_votes[winner_name]
-
-    logging.info(f"Winner: {winner_name} with {winner_weighted_votes} weighted votes")
-
-    # Находим TGUser победителя
-    winner_user = None
-    for player, _ in player_weights:
-        if player.full_username() == winner_name:
-            winner_user = player
-            break
-
-    if winner_user is None:
-        logging.error(f"Winner user not found for name {winner_name}")
-        return
-
-    # Получаем список пропущенных дней из FinalVoting
-    missed_days = json.loads(final_voting.missed_days_list)
-
-    # Создаём записи GameResult для всех пропущенных дней
-    # TODO: enable
-    # for day_num in missed_days:
-    #     game_result = GameResult(
-    #         game_id=final_voting.game_id,
-    #         year=final_voting.year,
-    #         day=day_num,
-    #         winner_id=winner_user.id
-    #     )
-    #     context.db_session.add(game_result)
-
-    logging.info(f"Created {len(missed_days)} GameResult records for winner {winner_name}")
-
-    # Обновляем FinalVoting: устанавливаем ended_at и winner_id
-    final_voting.ended_at = current_datetime()
-    final_voting.winner_id = winner_user.id
+    # Сохраняем обновлённые голоса обратно в votes_data
+    final_voting.votes_data = json.dumps(votes_data)
     context.db_session.commit()
 
-    logging.info(f"FinalVoting updated: ended_at={final_voting.ended_at}, winner_id={winner_user.id}")
+    # Отвечаем на callback (НЕ обновляем сообщение, результаты скрыты)
+    query.answer(answer_text)
 
-    # Получаем итоговую статистику года после добавления пропущенных дней
-    stmt_final = select(TGUser, func.count(GameResult.winner_id).label('count')) \
-        .join(TGUser, GameResult.winner_id == TGUser.id) \
-        .filter(GameResult.game_id == final_voting.game_id, GameResult.year == final_voting.year) \
-        .group_by(TGUser) \
-        .order_by(text('count DESC')) \
-        .limit(10)
-    final_stats = context.db_session.exec(stmt_final).all()
-
-    year_stats_list = build_player_table(final_stats)
-
-    # Формируем сообщение с результатами
-    voting_results_text = '\n'.join(voting_results_list)
-    results_message = FINAL_VOTING_RESULTS.format(
-        winner=escape_markdown2(winner_name),
-        voting_results=voting_results_text,
-        missed_days=final_voting.missed_days_count,
-        year_stats=year_stats_list
-    )
-
-    # Отправляем сообщение с результатами в чат
-    # Получаем game для доступа к chat_id
-    game = context.db_session.query(Game).filter_by(id=final_voting.game_id).one()
-    context.bot.send_message(
-        chat_id=game.chat_id,
-        text=results_message,
-        parse_mode=ParseMode.MARKDOWN_V2
-    )
-
-    logging.info(f"Final voting results sent to chat {game.chat_id}")
+    logging.info(f"Vote processed for voting {voting_id}, user {user_id}, candidate {candidate_id}")
 
 
 @ensure_game
@@ -684,3 +630,102 @@ def pidorfinalstatus_cmd(update: Update, context: GECallbackContext):
     )
     update.effective_chat.send_message(message, parse_mode=ParseMode.MARKDOWN_V2)
     logging.info(f"Final voting completed for game {context.game.id}, year {cur_year}, winner: {final_voting.winner.full_username()}")
+
+
+@ensure_game
+def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
+    """Завершить финальное голосование вручную (только для администраторов)"""
+    from bot.handlers.game.text_static import (
+        FINAL_VOTING_CLOSE_SUCCESS,
+        FINAL_VOTING_CLOSE_ERROR_NOT_ADMIN,
+        FINAL_VOTING_CLOSE_ERROR_NOT_ACTIVE
+    )
+    from bot.handlers.game.voting_helpers import finalize_voting
+
+    logging.info(f"pidorfinalclose_cmd started for chat {update.effective_chat.id}")
+
+    # Получаем текущий год
+    current_dt = current_datetime()
+    cur_year = current_dt.year
+
+    # Находим активное голосование для текущего года
+    final_voting = context.db_session.query(FinalVoting).filter_by(
+        game_id=context.game.id,
+        year=cur_year
+    ).one_or_none()
+
+    # Проверяем, что голосование существует и активно
+    if final_voting is None or final_voting.ended_at is not None:
+        update.effective_chat.send_message(
+            FINAL_VOTING_CLOSE_ERROR_NOT_ACTIVE,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        logging.warning(f"No active voting found for game {context.game.id}, year {cur_year}")
+        return
+
+    # Проверяем, что команду вызвал администратор чата
+    try:
+        chat_member = context.bot.get_chat_member(
+            chat_id=update.effective_chat.id,
+            user_id=update.effective_user.id
+        )
+        is_admin = chat_member.status in ['creator', 'administrator']
+    except Exception as e:
+        logging.error(f"Failed to check admin status: {e}")
+        is_admin = False
+
+    if not is_admin:
+        update.effective_chat.send_message(
+            FINAL_VOTING_CLOSE_ERROR_NOT_ADMIN,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        logging.warning(f"Non-admin user {update.effective_user.id} tried to close voting")
+        return
+
+    # Отправляем сообщение о начале подсчёта
+    update.effective_chat.send_message(
+        FINAL_VOTING_CLOSE_SUCCESS,
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+
+    # Вызываем функцию подсчёта результатов
+    winner, weighted_votes = finalize_voting(final_voting, context)
+
+    # Формируем сообщение с результатами
+    from bot.handlers.game.text_static import FINAL_VOTING_RESULTS
+    from bot.utils import escape_markdown2
+
+    voting_results_list = []
+    for candidate_id, weighted_vote in sorted(weighted_votes.items(), key=lambda x: x[1], reverse=True):
+        # Находим кандидата по ID
+        candidate = context.db_session.query(TGUser).filter_by(id=candidate_id).one()
+        voting_results_list.append(
+            f"• {escape_markdown2(candidate.full_username())}: *{weighted_vote}* взвешенных голосов"
+        )
+
+    # Получаем итоговую статистику года
+    stmt_final = select(TGUser, func.count(GameResult.winner_id).label('count')) \
+        .join(TGUser, GameResult.winner_id == TGUser.id) \
+        .filter(GameResult.game_id == final_voting.game_id, GameResult.year == final_voting.year) \
+        .group_by(TGUser) \
+        .order_by(text('count DESC')) \
+        .limit(10)
+    final_stats = context.db_session.exec(stmt_final).all()
+
+    year_stats_list = build_player_table(final_stats)
+
+    voting_results_text = '\n'.join(voting_results_list)
+    results_message = FINAL_VOTING_RESULTS.format(
+        winner=escape_markdown2(winner.full_username()),
+        voting_results=voting_results_text,
+        missed_days=final_voting.missed_days_count,
+        year_stats=year_stats_list
+    )
+
+    # Отправляем сообщение с результатами
+    update.effective_chat.send_message(
+        results_message,
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+
+    logging.info(f"Final voting manually closed for game {context.game.id}, year {cur_year}, winner: {winner.full_username()}")
