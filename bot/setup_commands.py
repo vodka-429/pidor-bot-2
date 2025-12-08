@@ -23,6 +23,7 @@ commands = [
     ('pidormissed', 'show missed days in current year'),
     ('pidorfinal', 'start final voting for missed days (Dec 29-30)'),
     ('pidorfinalstatus', 'show final voting status'),
+    ('pidorfinalclose', 'close final voting (admins only)'),
     # ('meme', 'get some random meme'),
     # ('memeru', 'get some random russian meme'),
     # ('ttvideo', 'get video from tiktok'),
