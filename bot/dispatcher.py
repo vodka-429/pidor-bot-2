@@ -88,7 +88,7 @@ def init_dispatcher(dp: Dispatcher, db_engine):
     logger.info(f"Callback handler will use chat filter: {chats if chats else 'No filter (all chats)'}")
 
     # Сохраняем список разрешённых чатов в bot_data для использования в обработчике
-    context.bot_data['chat_whitelist'] = chats
+    dp.bot_data['chat_whitelist'] = chats
 
     # Регистрируем обработчик без filters (не поддерживается в v13.x)
     dp.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_'))
