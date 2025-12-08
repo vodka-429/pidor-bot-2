@@ -80,18 +80,19 @@ def init_dispatcher(dp: Dispatcher, db_engine):
     dp.add_handler(CommandHandler('pidorfinal', pidorfinal_cmd, filters=ne))
     dp.add_handler(CommandHandler('pidorfinalstatus', pidorfinalstatus_cmd, filters=ne))
     dp.add_handler(CommandHandler('pidorfinalclose', pidorfinalclose_cmd, filters=ne))
+
     # Регистрируем CallbackQueryHandler для голосования
     # ВАЖНО: Callback queries не являются edited_message, поэтому используем только chat filter
     logger.info("Registering CallbackQueryHandler for vote callbacks with pattern r'^vote_'")
     logger.info(f"Callback handler will use chat filter: {chats if chats else 'No filter (all chats)'}")
-    
+
     # Создаём фильтр только для whitelist чатов, без фильтра edited_message
     if chats:
         callback_filter = Filters.chat(chats)
         dp.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_', filters=callback_filter))
     else:
         dp.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_'))
-    
+
     logger.info("CallbackQueryHandler registered successfully")
 
     # Key-Value storage handlers
