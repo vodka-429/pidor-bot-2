@@ -22,9 +22,9 @@ logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 
 # Устанавливаем уровень логирования для telegram библиотеки
-logging.getLogger('telegram').setLevel(logging.INFO)
-logging.getLogger('telegram.ext').setLevel(logging.INFO)
-logging.getLogger('telegram.bot').setLevel(logging.INFO)
+logging.getLogger('telegram').setLevel(logging.DEBUG)
+logging.getLogger('telegram.ext').setLevel(logging.DEBUG)
+logging.getLogger('telegram.bot').setLevel(logging.DEBUG)
 
 # Наши логи должны быть на уровне DEBUG
 logging.getLogger('bot').setLevel(logging.DEBUG)

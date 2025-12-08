@@ -23,6 +23,10 @@ COPY main.py .
 COPY migrations ./migrations/
 COPY alembic.ini .
 
+COPY test_bot_updates.py .
+COPY test_callback_format.py .
+COPY test_logging.py .
+
 RUN mkdir storage && \
     chown app:app storage
 

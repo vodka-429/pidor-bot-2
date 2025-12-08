@@ -19,9 +19,10 @@ def tg_user_middleware_handler(update: Update, context: ECallbackContext):
         update_type = "message"
     elif update.callback_query:
         update_type = f"callback_query (data: {update.callback_query.data})"
+        logger.info(f"🔔 CALLBACK_QUERY RECEIVED: {update.callback_query.data} from user {update.callback_query.from_user.id}")
     elif update.edited_message:
         update_type = "edited_message"
-
+    
     logger.debug(f"tg_user_middleware_handler: Processing {update_type}")
 
     session = context.db_session
