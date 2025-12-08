@@ -71,6 +71,8 @@ def mock_context(mock_db_session, mock_tg_user):
     context.db_session = mock_db_session
     context.tg_user = mock_tg_user
     context.game = None
+    # Инициализируем bot_data для поддержки chat_whitelist проверки
+    context.bot_data = {'chat_whitelist': None}  # None = нет ограничений (все чаты разрешены)
     return context
 
 
