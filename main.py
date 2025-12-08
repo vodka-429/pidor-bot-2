@@ -55,6 +55,8 @@ dispatch = updater.dispatcher
 init_dispatcher(updater.dispatcher, engine)
 
 # Run the bot
-updater.start_polling()
+# ВАЖНО: Явно указываем allowed_updates для получения callback_query
+updater.start_polling(allowed_updates=["message", "callback_query", "inline_query", "poll", "poll_answer"])
 logger.info(f"https://t.me/{updater.bot.get_me()['username']} started")
+logger.info("Bot is polling with allowed_updates: message, callback_query, inline_query, poll, poll_answer")
 updater.idle()
