@@ -7,6 +7,9 @@ from datetime import datetime
 from typing import List
 from zoneinfo import ZoneInfo
 
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
+
 from sqlalchemy import func, text
 from sqlmodel import select
 from telegram import Update, ParseMode
@@ -123,8 +126,8 @@ def ensure_game(func):
 # PIDOR Game
 @ensure_game
 def pidor_cmd(update: Update, context: GECallbackContext):
-    logging.info(f"pidor_cmd started for chat {update.effective_chat.id}")
-    logging.info(f"Game {context.game.id} of the day started")
+    logger.info(f"pidor_cmd started for chat {update.effective_chat.id}")
+    logger.info(f"Game {context.game.id} of the day started")
     players: List[TGUser] = context.game.players
 
     if len(players) < 2:
@@ -138,7 +141,7 @@ def pidor_cmd(update: Update, context: GECallbackContext):
     # Проверка пропущенных дней
     missed_days = get_missed_days_count(context.db_session, context.game.id, cur_year, cur_day)
     if missed_days > 0:
-        logging.info(f"Missed {missed_days} days since last game")
+        logger.info(f"Missed {missed_days} days since last game")
         dramatic_msg = get_dramatic_message(missed_days)
         update.effective_chat.send_message(dramatic_msg, parse_mode=ParseMode.MARKDOWN_V2)
         time.sleep(GAME_RESULT_TIME_DELAY)
@@ -149,32 +152,32 @@ def pidor_cmd(update: Update, context: GECallbackContext):
             CURRENT_DAY_GAME_RESULT.format(
                 username=escape_markdown2(game_result.winner.full_username())))
     else:
-        logging.debug("Creating new game result")
+        logger.debug("Creating new game result")
         winner: TGUser = random.choice(players)
         context.game.results.append(GameResult(game_id=context.game.id, year=cur_year, day=cur_day, winner=winner))
-        logging.debug("Committing game result to DB")
+        logger.debug("Committing game result to DB")
         context.db_session.commit()
 
         if last_day:
-            logging.debug("Sending year results announcement")
+            logger.debug("Sending year results announcement")
             update.effective_chat.send_message(YEAR_RESULTS_ANNOUNCEMENT.format(year=cur_year), parse_mode=ParseMode.MARKDOWN_V2)
 
-        logging.debug("Sending stage 1 message")
+        logger.debug("Sending stage 1 message")
         update.effective_chat.send_message(random.choice(stage1.phrases))
         time.sleep(GAME_RESULT_TIME_DELAY)
-        logging.debug("Sending stage 2 message")
+        logger.debug("Sending stage 2 message")
         update.effective_chat.send_message(random.choice(stage2.phrases))
         time.sleep(GAME_RESULT_TIME_DELAY)
-        logging.debug("Sending stage 3 message")
+        logger.debug("Sending stage 3 message")
         update.effective_chat.send_message(random.choice(stage3.phrases))
         time.sleep(GAME_RESULT_TIME_DELAY)
-        logging.debug("Sending stage 4 message")
+        logger.debug("Sending stage 4 message")
         update.effective_chat.send_message(random.choice(stage4.phrases).format(
             username=winner.full_username(mention=True)))
 
 
 def pidorules_cmd(update: Update, _context: CallbackContext):
-    logging.info("Game rules requested")
+    logger.info("Game rules requested")
     update.effective_chat.send_message(
         "Правила игры *Пидор Дня* (только для групповых чатов):\n"
         "*1.* Зарегистрируйтесь в игру по команде */pidoreg*\n"
@@ -239,7 +242,7 @@ def pidoregmany_cmd(update: Update, context: GECallbackContext):
             else:
                 update.effective_message.reply_markdown_v2(ERROR_ALREADY_REGISTERED_MANY.format(username=context.tg_user.full_username()))
         except Exception:
-            logging.exception("Exception with user {}".format(user_id))
+            logger.exception("Exception with user {}".format(user_id))
             update.effective_message.reply_markdown_v2('Хуйня с {}'.format(user_id))
 
 
@@ -338,7 +341,7 @@ def pidormissed_cmd(update: Update, context: GECallbackContext):
     """Показать пропущенные дни в текущем году"""
     from bot.handlers.game.text_static import MISSED_DAYS_INFO_WITH_LIST, MISSED_DAYS_INFO_COUNT_ONLY
 
-    logging.info(f"pidormissed_cmd started for chat {update.effective_chat.id}")
+    logger.info(f"pidormissed_cmd started for chat {update.effective_chat.id}")
 
     # Получаем текущий год и день
     current_dt = current_datetime()
@@ -373,7 +376,7 @@ def pidormissed_cmd(update: Update, context: GECallbackContext):
         message = MISSED_DAYS_INFO_COUNT_ONLY.format(count=missed_count)
 
     update.effective_chat.send_message(message, parse_mode=ParseMode.MARKDOWN_V2)
-    logging.info(f"Showed {missed_count} missed days for game {context.game.id}")
+    logger.info(f"Showed {missed_count} missed days for game {context.game.id}")
 
 
 @ensure_game
@@ -386,7 +389,7 @@ def pidorfinal_cmd(update: Update, context: GECallbackContext):
     )
     from bot.handlers.game.voting_helpers import create_voting_keyboard, format_vote_callback_data
 
-    logging.info(f"pidorfinal_cmd started for chat {update.effective_chat.id}")
+    logger.info(f"pidorfinal_cmd started for chat {update.effective_chat.id}")
 
     # Получаем текущую дату
     current_dt = current_datetime()
@@ -399,7 +402,7 @@ def pidorfinal_cmd(update: Update, context: GECallbackContext):
                 FINAL_VOTING_ERROR_DATE,
                 parse_mode=ParseMode.MARKDOWN_V2
             )
-            logging.warning(f"Attempt to start final voting on wrong date: {current_dt.date()}")
+            logger.warning(f"Attempt to start final voting on wrong date: {current_dt.date()}")
             return
 
     # Получаем список пропущенных дней
@@ -416,7 +419,7 @@ def pidorfinal_cmd(update: Update, context: GECallbackContext):
                 ),
                 parse_mode=ParseMode.MARKDOWN_V2
             )
-            logging.warning(f"Too many missed days for final voting: {missed_count}")
+            logger.warning(f"Too many missed days for final voting: {missed_count}")
             return
 
     # Проверяем, что голосование ещё не запущено
@@ -430,7 +433,7 @@ def pidorfinal_cmd(update: Update, context: GECallbackContext):
             FINAL_VOTING_ERROR_ALREADY_EXISTS,
             parse_mode=ParseMode.MARKDOWN_V2
         )
-        logging.warning(f"Final voting already exists for game {context.game.id}, year {cur_year}")
+        logger.warning(f"Final voting already exists for game {context.game.id}, year {cur_year}")
         return
 
     # Получаем веса игроков (количество побед в году)
@@ -446,7 +449,7 @@ def pidorfinal_cmd(update: Update, context: GECallbackContext):
             "❌ *Ошибка\\!* В этом году ещё не было ни одного розыгрыша\\. Финальное голосование невозможно\\.",
             parse_mode=ParseMode.MARKDOWN_V2
         )
-        logging.warning(f"No games played in year {cur_year} for game {context.game.id}")
+        logger.warning(f"No games played in year {cur_year} for game {context.game.id}")
         return
 
     # Формируем список весов для информационного сообщения
@@ -485,10 +488,15 @@ def pidorfinal_cmd(update: Update, context: GECallbackContext):
     # Сначала создаём временную клавиатуру, затем заменим placeholder
     keyboard = create_voting_keyboard(candidates, votes_per_row=2)
 
+    logger.info(f"Created keyboard with {len(keyboard.inline_keyboard)} rows")
+    logger.info(f"FinalVoting ID: {final_voting.id}")
+
     # Заменяем placeholder {voting_id} на реальный ID
-    for row in keyboard.inline_keyboard:
-        for button in row:
+    for row_idx, row in enumerate(keyboard.inline_keyboard):
+        for btn_idx, button in enumerate(row):
+            old_callback = button.callback_data
             button.callback_data = button.callback_data.replace('{voting_id}', str(final_voting.id))
+            logger.info(f"Button [{row_idx}][{btn_idx}] '{button.text}': {old_callback} -> {button.callback_data}")
 
     # Отправляем сообщение с кнопками голосования
     voting_message = context.bot.send_message(
@@ -502,23 +510,32 @@ def pidorfinal_cmd(update: Update, context: GECallbackContext):
     final_voting.voting_message_id = voting_message.message_id
     context.db_session.commit()
 
-    logging.info(f"Final voting created for game {context.game.id}, year {cur_year}, voting_message_id {voting_message.message_id}")
+    logger.info(f"Final voting created for game {context.game.id}, year {cur_year}, voting_message_id {voting_message.message_id}")
 
 
 def handle_vote_callback(update: Update, context: ECallbackContext):
     """Обработчик нажатий на кнопки голосования"""
     from bot.handlers.game.voting_helpers import parse_vote_callback_data
 
-    logging.info("handle_vote_callback called")
-
+    logger.info("=== handle_vote_callback CALLED ===")
+    logger.info(f"Update: {update}")
+    logger.info(f"Update.callback_query: {update.callback_query}")
+    
     query = update.callback_query
+    
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+    
+    logger.info(f"Callback data: {query.data}")
+    logger.info(f"User: {query.from_user.id} ({query.from_user.username})")
 
     try:
         # Парсим callback_data для получения voting_id и candidate_id
         voting_id, candidate_id = parse_vote_callback_data(query.data)
-        logging.info(f"Parsed callback: voting_id={voting_id}, candidate_id={candidate_id}")
+        logger.info(f"Parsed callback: voting_id={voting_id}, candidate_id={candidate_id}")
     except ValueError as e:
-        logging.error(f"Failed to parse callback_data: {e}")
+        logger.error(f"Failed to parse callback_data: {e}")
         query.answer("❌ Ошибка обработки голоса")
         return
 
@@ -528,13 +545,13 @@ def handle_vote_callback(update: Update, context: ECallbackContext):
     ).one_or_none()
 
     if final_voting is None:
-        logging.warning(f"FinalVoting not found for id {voting_id}")
+        logger.warning(f"FinalVoting not found for id {voting_id}")
         query.answer("❌ Голосование не найдено")
         return
 
     # Проверяем, что голосование ещё активно
     if final_voting.ended_at is not None:
-        logging.info(f"Voting {voting_id} already ended")
+        logger.info(f"Voting {voting_id} already ended")
         query.answer("❌ Голосование уже завершено")
         return
 
@@ -550,12 +567,12 @@ def handle_vote_callback(update: Update, context: ECallbackContext):
         # Удаляем голос
         user_votes.remove(candidate_id)
         answer_text = "✅ Голос отменён"
-        logging.info(f"User {user_id} removed vote for candidate {candidate_id}")
+        logger.info(f"User {user_id} removed vote for candidate {candidate_id}")
     else:
         # Добавляем голос
         user_votes.append(candidate_id)
         answer_text = "✅ Голос учтён"
-        logging.info(f"User {user_id} added vote for candidate {candidate_id}")
+        logger.info(f"User {user_id} added vote for candidate {candidate_id}")
 
     # Обновляем голоса пользователя
     votes_data[user_id] = user_votes
@@ -567,7 +584,7 @@ def handle_vote_callback(update: Update, context: ECallbackContext):
     # Отвечаем на callback (НЕ обновляем сообщение, результаты скрыты)
     query.answer(answer_text)
 
-    logging.info(f"Vote processed for voting {voting_id}, user {user_id}, candidate {candidate_id}")
+    logger.info(f"Vote processed for voting {voting_id}, user {user_id}, candidate {candidate_id}")
 
 
 @ensure_game
@@ -579,7 +596,7 @@ def pidorfinalstatus_cmd(update: Update, context: GECallbackContext):
         FINAL_VOTING_STATUS_COMPLETED
     )
 
-    logging.info(f"pidorfinalstatus_cmd started for chat {update.effective_chat.id}")
+    logger.info(f"pidorfinalstatus_cmd started for chat {update.effective_chat.id}")
 
     # Получаем текущий год
     current_dt = current_datetime()
@@ -597,7 +614,7 @@ def pidorfinalstatus_cmd(update: Update, context: GECallbackContext):
             FINAL_VOTING_STATUS_NOT_STARTED,
             parse_mode=ParseMode.MARKDOWN_V2
         )
-        logging.info(f"Final voting not started for game {context.game.id}, year {cur_year}")
+        logger.info(f"Final voting not started for game {context.game.id}, year {cur_year}")
         return
 
     # Если ended_at is None - показываем статус "активно"
@@ -616,7 +633,7 @@ def pidorfinalstatus_cmd(update: Update, context: GECallbackContext):
             missed_days=final_voting.missed_days_count
         )
         update.effective_chat.send_message(message, parse_mode=ParseMode.MARKDOWN_V2)
-        logging.info(f"Final voting active for game {context.game.id}, year {cur_year}")
+        logger.info(f"Final voting active for game {context.game.id}, year {cur_year}")
         return
 
     # Если ended_at is not None - показываем статус "завершено"
@@ -629,7 +646,7 @@ def pidorfinalstatus_cmd(update: Update, context: GECallbackContext):
         missed_days=final_voting.missed_days_count
     )
     update.effective_chat.send_message(message, parse_mode=ParseMode.MARKDOWN_V2)
-    logging.info(f"Final voting completed for game {context.game.id}, year {cur_year}, winner: {final_voting.winner.full_username()}")
+    logger.info(f"Final voting completed for game {context.game.id}, year {cur_year}, winner: {final_voting.winner.full_username()}")
 
 
 @ensure_game
@@ -642,7 +659,7 @@ def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     )
     from bot.handlers.game.voting_helpers import finalize_voting
 
-    logging.info(f"pidorfinalclose_cmd started for chat {update.effective_chat.id}")
+    logger.info(f"pidorfinalclose_cmd started for chat {update.effective_chat.id}")
 
     # Получаем текущий год
     current_dt = current_datetime()
@@ -660,7 +677,7 @@ def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
             FINAL_VOTING_CLOSE_ERROR_NOT_ACTIVE,
             parse_mode=ParseMode.MARKDOWN_V2
         )
-        logging.warning(f"No active voting found for game {context.game.id}, year {cur_year}")
+        logger.warning(f"No active voting found for game {context.game.id}, year {cur_year}")
         return
 
     # Проверяем, что команду вызвал администратор чата
@@ -671,7 +688,7 @@ def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
         )
         is_admin = chat_member.status in ['creator', 'administrator']
     except Exception as e:
-        logging.error(f"Failed to check admin status: {e}")
+        logger.error(f"Failed to check admin status: {e}")
         is_admin = False
 
     if not is_admin:
@@ -679,7 +696,7 @@ def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
             FINAL_VOTING_CLOSE_ERROR_NOT_ADMIN,
             parse_mode=ParseMode.MARKDOWN_V2
         )
-        logging.warning(f"Non-admin user {update.effective_user.id} tried to close voting")
+        logger.warning(f"Non-admin user {update.effective_user.id} tried to close voting")
         return
 
     # Отправляем сообщение о начале подсчёта
@@ -728,4 +745,4 @@ def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
         parse_mode=ParseMode.MARKDOWN_V2
     )
 
-    logging.info(f"Final voting manually closed for game {context.game.id}, year {cur_year}, winner: {winner.full_username()}")
+    logger.info(f"Final voting manually closed for game {context.game.id}, year {cur_year}, winner: {winner.full_username()}")

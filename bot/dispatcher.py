@@ -1,7 +1,12 @@
+import logging
+
 from telegram import Update
 from telegram.ext import Dispatcher, CommandHandler, Filters, \
     CallbackQueryHandler, InlineQueryHandler, TypeHandler, MessageHandler, \
     ChatJoinRequestHandler, PollHandler
+
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
 
 from bot.handlers.about.commands import about_cmd
 from bot.handlers.db.handlers import open_db_session, \
@@ -28,7 +33,9 @@ from bot.utils import chat_whitelist
 #  '_cmd' in the bot/handlers folder
 def init_dispatcher(dp: Dispatcher, db_engine):
     """Register handlers."""
+    logger.info("=== INITIALIZING DISPATCHER ===")
     chats = chat_whitelist()
+    logger.info(f"Chat whitelist: {chats}")
     if chats:
         ne = ~Filters.update.edited_message & Filters.chat(chats)
     else:
@@ -73,7 +80,10 @@ def init_dispatcher(dp: Dispatcher, db_engine):
     dp.add_handler(CommandHandler('pidorfinal', pidorfinal_cmd, filters=ne))
     dp.add_handler(CommandHandler('pidorfinalstatus', pidorfinalstatus_cmd, filters=ne))
     dp.add_handler(CommandHandler('pidorfinalclose', pidorfinalclose_cmd, filters=ne))
+    # Регистрируем CallbackQueryHandler для голосования
+    logger.info("Registering CallbackQueryHandler for vote callbacks with pattern r'^vote_'")
     dp.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_'))
+    logger.info("CallbackQueryHandler registered successfully")
 
     # Key-Value storage handlers
     dp.add_handler(CommandHandler('get', get_cmd, filters=ne))
