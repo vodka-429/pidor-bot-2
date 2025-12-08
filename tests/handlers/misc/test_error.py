@@ -12,14 +12,14 @@ def test_error_handler_with_none_update():
     context.error = Exception("Test error")
 
     # Execute - should not raise exception
-    with patch('bot.handlers.misc.error.logging') as mock_logging:
+    with patch('bot.handlers.misc.error.logger') as mock_logger:
         bot_error_handler(None, context)
 
         # Verify that error was logged
-        assert mock_logging.error.call_count >= 1
+        assert mock_logger.error.call_count >= 1
 
         # Verify that specific log about None update was made
-        calls = [str(call) for call in mock_logging.error.call_args_list]
+        calls = [str(call) for call in mock_logger.error.call_args_list]
         assert any("update or effective_chat is None" in call for call in calls)
 
 
@@ -36,14 +36,14 @@ def test_error_handler_with_none_chat():
     context.error = Exception("Test error")
 
     # Execute - should not raise exception
-    with patch('bot.handlers.misc.error.logging') as mock_logging:
+    with patch('bot.handlers.misc.error.logger') as mock_logger:
         bot_error_handler(update, context)
 
         # Verify that error was logged
-        assert mock_logging.error.call_count >= 1
+        assert mock_logger.error.call_count >= 1
 
         # Verify that specific log about None chat was made
-        calls = [str(call) for call in mock_logging.error.call_args_list]
+        calls = [str(call) for call in mock_logger.error.call_args_list]
         assert any("update or effective_chat is None" in call for call in calls)
 
 
@@ -63,14 +63,14 @@ def test_error_handler_logs_error():
     context.error = test_error
 
     # Execute
-    with patch('bot.handlers.misc.error.logging') as mock_logging:
+    with patch('bot.handlers.misc.error.logger') as mock_logger:
         bot_error_handler(update, context)
 
         # Verify that error was logged with correct information
-        assert mock_logging.error.call_count >= 1
+        assert mock_logger.error.call_count >= 1
 
         # Check that error details were logged
-        first_call = mock_logging.error.call_args_list[0]
+        first_call = mock_logger.error.call_args_list[0]
         log_message = str(first_call)
 
         assert "ValueError" in log_message
@@ -95,14 +95,14 @@ def test_error_handler_no_recursion():
     context.error = Exception("Original error")
 
     # Execute - should not raise exception and should not recurse
-    with patch('bot.handlers.misc.error.logging') as mock_logging:
+    with patch('bot.handlers.misc.error.logger') as mock_logger:
         bot_error_handler(update, context)
 
         # Verify that both errors were logged
-        assert mock_logging.error.call_count >= 2
+        assert mock_logger.error.call_count >= 2
 
         # Check that send failure was logged
-        calls = [str(call) for call in mock_logging.error.call_args_list]
+        calls = [str(call) for call in mock_logger.error.call_args_list]
         assert any("Failed to send error message" in call for call in calls)
 
         # Verify send_message was called only once (no recursion)
@@ -124,7 +124,7 @@ def test_error_handler_sends_message_to_user():
     context.error = Exception("Test error")
 
     # Execute
-    with patch('bot.handlers.misc.error.logging'):
+    with patch('bot.handlers.misc.error.logger'):
         bot_error_handler(update, context)
 
         # Verify that send_message was called
@@ -149,11 +149,11 @@ def test_error_handler_with_none_effective_user():
     context.error = Exception("Test error")
 
     # Execute - should not raise exception
-    with patch('bot.handlers.misc.error.logging') as mock_logging:
+    with patch('bot.handlers.misc.error.logger') as mock_logger:
         bot_error_handler(update, context)
 
         # Verify that error was logged
-        assert mock_logging.error.call_count >= 1
+        assert mock_logger.error.call_count >= 1
 
         # Verify that message was sent despite None user
         update.effective_chat.send_message.assert_called_once()

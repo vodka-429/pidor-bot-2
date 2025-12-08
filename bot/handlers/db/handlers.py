@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from sqlmodel import Session
@@ -7,8 +8,22 @@ from telegram.ext import CallbackContext
 from bot.app.models import TGUser
 from bot.utils import ECallbackContext
 
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
+
 
 def tg_user_middleware_handler(update: Update, context: ECallbackContext):
+    # Логируем тип обновления для отладки
+    update_type = "unknown"
+    if update.message:
+        update_type = "message"
+    elif update.callback_query:
+        update_type = f"callback_query (data: {update.callback_query.data})"
+    elif update.edited_message:
+        update_type = "edited_message"
+
+    logger.debug(f"tg_user_middleware_handler: Processing {update_type}")
+
     session = context.db_session
     tg_user: TGUser = session.query(TGUser).filter_by(
         tg_id=update.effective_user.id).one_or_none()
@@ -80,6 +95,17 @@ def tg_user_from_text(user, update: Update, context: ECallbackContext):
 
 def open_db_session(db):
     def open_db_session_handler(update: Update, context: ECallbackContext):
+        # Логируем открытие сессии для отладки
+        update_type = "unknown"
+        if update.message:
+            update_type = "message"
+        elif update.callback_query:
+            update_type = f"callback_query (data: {update.callback_query.data})"
+        elif update.edited_message:
+            update_type = "edited_message"
+
+        logger.debug(f"open_db_session_handler: Opening session for {update_type}")
+
         session = Session(db)
         context.db_session = session
     return open_db_session_handler

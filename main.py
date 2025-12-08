@@ -11,11 +11,24 @@ from telegram.ext import Updater
 from bot.dispatcher import init_dispatcher
 
 # Setup logging
-logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s - %(name)s - %(levelname)s \
-                    - %(message)s')
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)-8s - %(message)s',
+    handlers=[
+        logging.StreamHandler()  # Явно добавляем handler для stdout
+    ]
+)
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
+
+# Устанавливаем уровень логирования для telegram библиотеки
+logging.getLogger('telegram').setLevel(logging.INFO)
+logging.getLogger('telegram.ext').setLevel(logging.INFO)
+logging.getLogger('telegram.bot').setLevel(logging.INFO)
+
+# Наши логи должны быть на уровне DEBUG
+logging.getLogger('bot').setLevel(logging.DEBUG)
+logging.getLogger('__main__').setLevel(logging.DEBUG)
 
 # Load configs and create bot instance
 load_dotenv()  # load telegram bot token from .env file
