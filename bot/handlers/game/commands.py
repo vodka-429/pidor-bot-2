@@ -527,6 +527,13 @@ def handle_vote_callback(update: Update, context: ECallbackContext):
         logger.error("callback_query is None!")
         return
     
+    # Проверяем whitelist чатов (если настроен)
+    chat_whitelist = context.bot_data.get('chat_whitelist')
+    if chat_whitelist and update.effective_chat.id not in chat_whitelist:
+        logger.warning(f"Callback from non-whitelisted chat: {update.effective_chat.id}")
+        query.answer("❌ Этот чат не авторизован")
+        return
+    
     logger.info(f"Callback data: {query.data}")
     logger.info(f"User: {query.from_user.id} ({query.from_user.username})")
 

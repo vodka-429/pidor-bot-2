@@ -82,16 +82,16 @@ def init_dispatcher(dp: Dispatcher, db_engine):
     dp.add_handler(CommandHandler('pidorfinalclose', pidorfinalclose_cmd, filters=ne))
 
     # Регистрируем CallbackQueryHandler для голосования
-    # ВАЖНО: Callback queries не являются edited_message, поэтому используем только chat filter
+    # ВАЖНО: В python-telegram-bot v13.x CallbackQueryHandler не поддерживает filters параметр
+    # Фильтрация по чатам будет выполняться внутри обработчика
     logger.info("Registering CallbackQueryHandler for vote callbacks with pattern r'^vote_'")
     logger.info(f"Callback handler will use chat filter: {chats if chats else 'No filter (all chats)'}")
 
-    # Создаём фильтр только для whitelist чатов, без фильтра edited_message
-    if chats:
-        callback_filter = Filters.chat(chats)
-        dp.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_', filters=callback_filter))
-    else:
-        dp.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_'))
+    # Сохраняем список разрешённых чатов в bot_data для использования в обработчике
+    context.bot_data['chat_whitelist'] = chats
+
+    # Регистрируем обработчик без filters (не поддерживается в v13.x)
+    dp.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_'))
 
     logger.info("CallbackQueryHandler registered successfully")
 
