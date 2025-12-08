@@ -518,8 +518,9 @@ def handle_vote_callback(update: Update, context: ECallbackContext):
     from bot.handlers.game.voting_helpers import parse_vote_callback_data
 
     logger.info("=== handle_vote_callback CALLED ===")
-    logger.info(f"Update: {update}")
+    logger.info(f"Update object: {update.to_dict() if update else 'None'}")
     logger.info(f"Update.callback_query: {update.callback_query}")
+    logger.info(f"Effective chat ID: {update.effective_chat.id if update.effective_chat else 'None'}")
     
     query = update.callback_query
     

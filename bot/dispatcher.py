@@ -91,9 +91,17 @@ def init_dispatcher(dp: Dispatcher, db_engine):
     dp.bot_data['chat_whitelist'] = chats
 
     # Регистрируем обработчик без filters (не поддерживается в v13.x)
-    dp.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_'))
+    # ВАЖНО: Регистрируем в группе 0 (по умолчанию), чтобы он обрабатывался раньше других
+    dp.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_'), group=0)
 
-    logger.info("CallbackQueryHandler registered successfully")
+    logger.info("CallbackQueryHandler registered successfully in group 0")
+    
+    # Добавляем тестовый обработчик для ВСЕХ callback queries
+    def test_callback_handler(update: Update, context: CallbackContext):
+        logger.info(f"=== TEST: ANY callback received: {update.callback_query.data if update.callback_query else 'None'} ===")
+    
+    dp.add_handler(CallbackQueryHandler(test_callback_handler), group=1)
+    logger.info("Test callback handler registered for ALL callbacks in group 1")
 
     # Key-Value storage handlers
     dp.add_handler(CommandHandler('get', get_cmd, filters=ne))
