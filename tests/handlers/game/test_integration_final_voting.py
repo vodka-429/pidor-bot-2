@@ -80,8 +80,7 @@ async def test_full_final_voting_cycle(mock_update, mock_context, mock_game, sam
     
     await pidorfinal_cmd(mock_update, mock_context)
     
-    # Verify info message and voting message creation
-    assert mock_update.effective_chat.send_message.call_count == 1
+    # Verify voting message creation (now it's a single combined message)
     mock_context.bot.send_message.assert_called_once()
     mock_context.db_session.add.assert_called()
     mock_context.db_session.commit.assert_called()
@@ -318,12 +317,8 @@ async def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sa
     mock_game_query.one_or_none.return_value = mock_game
     mock_game_query.one.return_value = mock_game
     
-    # Mock current_datetime to return Dec 29
-    mock_dt = MagicMock()
-    mock_dt.year = 2024
-    mock_dt.month = 12
-    mock_dt.day = 29
-    mock_dt.timetuple.return_value.tm_yday = 364
+    # Mock current_datetime to return Dec 30 (чтобы прошло 24 часа)
+    mock_dt = datetime(2024, 12, 30, 12, 0, 0)  # Используем реальный datetime, через 24 часа
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
     
     # Step 1: Create voting
@@ -357,6 +352,7 @@ async def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sa
     mock_final_voting.votes_data = '{}'
     mock_final_voting.is_results_hidden = True
     mock_final_voting.voting_message_id = None
+    mock_final_voting.started_at = datetime(2024, 12, 29, 12, 0, 0)  # Добавляем реальную дату
     mock_final_voting.ended_at = None
     mock_final_voting.missed_days_count = 5
     mock_final_voting.missed_days_list = json.dumps(missed_days)
@@ -371,8 +367,7 @@ async def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sa
     
     await pidorfinal_cmd(mock_update, mock_context)
     
-    # Verify voting was created
-    assert mock_update.effective_chat.send_message.call_count == 1
+    # Verify voting was created (now it's a single combined message)
     assert mock_context.bot.send_message.call_count == 1
     mock_context.db_session.add.assert_called()
     mock_context.db_session.commit.assert_called()

@@ -7,9 +7,6 @@ from datetime import datetime
 from typing import List
 from zoneinfo import ZoneInfo
 
-# Получаем логгер для этого модуля
-logger = logging.getLogger(__name__)
-
 from sqlalchemy import func, text
 from sqlmodel import select
 from telegram import Update
@@ -26,6 +23,10 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
     YEAR_RESULTS_MSG, YEAR_RESULTS_ANNOUNCEMENT, REGISTRATION_MANY_SUCCESS, \
     ERROR_ALREADY_REGISTERED_MANY
 from bot.utils import escape_markdown2, ECallbackContext
+
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
+
 
 GAME_RESULT_TIME_DELAY = 2
 MAX_MISSED_DAYS_FOR_FINAL_VOTING = 10  # Максимальное количество пропущенных дней для финального голосования
@@ -384,11 +385,12 @@ async def pidormissed_cmd(update: Update, context: GECallbackContext):
 async def pidorfinal_cmd(update: Update, context: GECallbackContext):
     """Запустить финальное голосование для распределения пропущенных дней"""
     from bot.handlers.game.text_static import (
-        FINAL_VOTING_START, FINAL_VOTING_ERROR_DATE,
-        FINAL_VOTING_ERROR_TOO_MANY, FINAL_VOTING_ERROR_ALREADY_EXISTS,
-        FINAL_VOTING_INSTRUCTION
+        FINAL_VOTING_ERROR_DATE,
+        FINAL_VOTING_ERROR_TOO_MANY, FINAL_VOTING_ERROR_ALREADY_EXISTS
     )
-    from bot.handlers.game.voting_helpers import create_voting_keyboard, format_vote_callback_data
+    from bot.handlers.game.voting_helpers import (
+        create_voting_keyboard, get_player_weights, format_weights_message
+    )
 
     logger.info(f"pidorfinal_cmd started for chat {update.effective_chat.id}")
 
@@ -438,12 +440,7 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
         return
 
     # Получаем веса игроков (количество побед в году)
-    stmt = select(TGUser, func.count(GameResult.winner_id).label('count')) \
-        .join(TGUser, GameResult.winner_id == TGUser.id) \
-        .filter(GameResult.game_id == context.game.id, GameResult.year == cur_year) \
-        .group_by(TGUser) \
-        .order_by(text('count DESC'))
-    player_weights = context.db_session.exec(stmt).all()
+    player_weights = get_player_weights(context.db_session, context.game.id, cur_year)
 
     if len(player_weights) == 0:
         await update.effective_chat.send_message(
@@ -452,19 +449,6 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
         )
         logger.warning(f"No games played in year {cur_year} for game {context.game.id}")
         return
-
-    # Формируем список весов для информационного сообщения
-    weights_list = []
-    for player, weight in player_weights:
-        weights_list.append(f"• {escape_markdown2(player.full_username())}: *{weight}* побед")
-    weights_text = '\n'.join(weights_list)
-
-    # Отправляем информационное сообщение
-    info_message = FINAL_VOTING_START.format(
-        missed_days=missed_count,
-        player_weights=weights_text
-    )
-    await update.effective_chat.send_message(info_message, parse_mode="MarkdownV2")
 
     # Создаём список кандидатов (все игроки с весами)
     candidates = [player for player, _ in player_weights]
@@ -491,10 +475,11 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
     logger.info(f"Created keyboard with {len(keyboard.inline_keyboard)} rows")
     logger.info(f"FinalVoting ID: {final_voting.id}")
 
-    # Отправляем сообщение с кнопками голосования
+    # Формируем и отправляем объединённое сообщение с информацией и кнопками голосования
+    message_text = format_weights_message(player_weights, missed_count)
     voting_message = await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text=FINAL_VOTING_INSTRUCTION.format(missed_days=missed_count),
+        text=message_text,
         parse_mode="MarkdownV2",
         reply_markup=keyboard
     )
@@ -511,11 +496,11 @@ async def handle_vote_callback(update: Update, context: ECallbackContext):
     from bot.handlers.game.voting_helpers import parse_vote_callback_data
 
     query = update.callback_query
-    
+
     if query is None:
         logger.error("callback_query is None!")
         return
-    
+
     logger.info(f"Vote callback from user {query.from_user.id} in chat {update.effective_chat.id}")
     logger.info(f"Callback data: {query.data}")
 
@@ -570,7 +555,32 @@ async def handle_vote_callback(update: Update, context: ECallbackContext):
     final_voting.votes_data = json.dumps(votes_data)
     context.db_session.commit()
 
-    # Отвечаем на callback (НЕ обновляем сообщение, результаты скрыты)
+    # Получаем список кандидатов для обновления клавиатуры
+    from bot.handlers.game.voting_helpers import create_voting_keyboard
+    stmt = select(TGUser).join(GameResult, GameResult.winner_id == TGUser.id).filter(
+        GameResult.game_id == final_voting.game_id,
+        GameResult.year == final_voting.year
+    ).group_by(TGUser).order_by(func.count(GameResult.winner_id).desc())
+    candidates_result = context.db_session.exec(stmt).all()
+    
+    # Извлекаем только объекты TGUser из кортежей
+    candidates = []
+    if candidates_result:
+        for row in candidates_result:
+            if isinstance(row, tuple):
+                # Если это кортеж, берем первый элемент (TGUser)
+                candidates.append(row[0])
+            else:
+                # Если это одиночный объект
+                candidates.append(row)
+
+    # Создаём обновлённую клавиатуру с отметками выбранных кандидатов
+    updated_keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2, user_votes=user_votes)
+
+    # Обновляем сообщение с новой клавиатурой
+    await query.edit_message_reply_markup(reply_markup=updated_keyboard)
+
+    # Отвечаем на callback
     await query.answer(answer_text)
 
     logger.info(f"Vote processed for voting {voting_id}, user {user_id}, candidate {candidate_id}")
@@ -608,17 +618,11 @@ async def pidorfinalstatus_cmd(update: Update, context: GECallbackContext):
 
     # Если ended_at is None - показываем статус "активно"
     if final_voting.ended_at is None:
-        # Вычисляем время окончания (24 часа после старта)
-        from datetime import timedelta
-        ends_at = final_voting.started_at + timedelta(hours=24)
-
-        # Форматируем даты для вывода
+        # Форматируем дату для вывода
         started_str = final_voting.started_at.strftime("%d\\.%m\\.%Y %H:%M МСК")
-        ends_str = ends_at.strftime("%d\\.%m\\.%Y %H:%M МСК")
 
         message = FINAL_VOTING_STATUS_ACTIVE.format(
             started_at=started_str,
-            ends_at=ends_str,
             missed_days=final_voting.missed_days_count
         )
         await update.effective_chat.send_message(message, parse_mode="MarkdownV2")
@@ -688,6 +692,25 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
         logger.warning(f"Non-admin user {update.effective_user.id} tried to close voting")
         return
 
+    # Проверяем, что прошло не менее 24 часов с момента старта голосования (пропускаем для тестового чата)
+    if not is_test_chat(update.effective_chat.id):
+        from datetime import timedelta
+        min_voting_duration = timedelta(hours=24)
+        time_since_start = current_dt - final_voting.started_at
+
+        if time_since_start < min_voting_duration:
+            remaining_time = min_voting_duration - time_since_start
+            hours_remaining = int(remaining_time.total_seconds() // 3600)
+            minutes_remaining = int((remaining_time.total_seconds() % 3600) // 60)
+
+            await update.effective_chat.send_message(
+                f"❌ *Ошибка\\!* Голосование можно завершить только через 24 часа после старта\\.\n\n"
+                f"Осталось: *{hours_remaining}* ч\\. *{minutes_remaining}* мин\\.",
+                parse_mode="MarkdownV2"
+            )
+            logger.warning(f"Attempt to close voting too early. Time since start: {time_since_start}")
+            return
+
     # Отправляем сообщение о начале подсчёта
     await update.effective_chat.send_message(
         FINAL_VOTING_CLOSE_SUCCESS,
@@ -695,18 +718,37 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     )
 
     # Вызываем функцию подсчёта результатов
-    winner, weighted_votes = finalize_voting(final_voting, context)
+    winner, results = finalize_voting(final_voting, context)
 
     # Формируем сообщение с результатами
     from bot.handlers.game.text_static import FINAL_VOTING_RESULTS
     from bot.utils import escape_markdown2
 
     voting_results_list = []
-    for candidate_id, weighted_vote in sorted(weighted_votes.items(), key=lambda x: x[1], reverse=True):
+    for candidate_id, result_data in sorted(results.items(), key=lambda x: x[1]['weighted'], reverse=True):
         # Находим кандидата по ID
         candidate = context.db_session.query(TGUser).filter_by(id=candidate_id).one()
+        votes_count = result_data['votes']
+        weighted_points = result_data['weighted']
+
+        # Формируем правильное склонение для "голос"
+        if votes_count % 10 == 1 and votes_count % 100 != 11:
+            votes_word = "голос"
+        elif votes_count % 10 in [2, 3, 4] and votes_count % 100 not in [12, 13, 14]:
+            votes_word = "голоса"
+        else:
+            votes_word = "голосов"
+
+        # Формируем правильное склонение для "очко"
+        if weighted_points % 10 == 1 and weighted_points % 100 != 11:
+            points_word = "очко"
+        elif weighted_points % 10 in [2, 3, 4] and weighted_points % 100 not in [12, 13, 14]:
+            points_word = "очка"
+        else:
+            points_word = "очков"
+
         voting_results_list.append(
-            f"• {escape_markdown2(candidate.full_username())}: *{weighted_vote}* взвешенных голосов"
+            f"• {escape_markdown2(candidate.full_username())}: *{votes_count}* {votes_word}, *{weighted_points}* взвешенных {points_word}"
         )
 
     # Получаем итоговую статистику года
