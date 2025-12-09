@@ -164,10 +164,7 @@ async def test_pidorfinal_cmd_success(mock_update, mock_context, mock_game, samp
     # Execute
     await pidorfinal_cmd(mock_update, mock_context)
     
-    # Verify info message was sent
-    assert mock_update.effective_chat.send_message.call_count == 1
-    
-    # Verify voting message with keyboard was created
+    # Verify voting message with keyboard was created (now it's a single combined message)
     mock_context.bot.send_message.assert_called_once()
     
     # Verify FinalVoting was added to session
@@ -225,14 +222,11 @@ async def test_pidorfinal_cmd_test_chat_bypass_date_check(mock_update, mock_cont
     # Execute
     await pidorfinal_cmd(mock_update, mock_context)
     
-    # Verify info message was sent (not error about wrong date)
-    assert mock_update.effective_chat.send_message.call_count == 1
-    call_args = str(mock_update.effective_chat.send_message.call_args)
+    # Verify voting message with keyboard was created (not error about wrong date)
+    mock_context.bot.send_message.assert_called_once()
+    call_args = str(mock_context.bot.send_message.call_args)
     # Should NOT contain date error
     assert "29 или 30 декабря" not in call_args
-    
-    # Verify voting message with keyboard was created
-    mock_context.bot.send_message.assert_called_once()
     
     # Verify FinalVoting was added to session
     mock_context.db_session.add.assert_called_once()
@@ -289,14 +283,11 @@ async def test_pidorfinal_cmd_test_chat_bypass_missed_days_check(mock_update, mo
     # Execute
     await pidorfinal_cmd(mock_update, mock_context)
     
-    # Verify info message was sent (not error about too many days)
-    assert mock_update.effective_chat.send_message.call_count == 1
-    call_args = str(mock_update.effective_chat.send_message.call_args)
+    # Verify voting message with keyboard was created (not error about too many days)
+    mock_context.bot.send_message.assert_called_once()
+    call_args = str(mock_context.bot.send_message.call_args)
     # Should NOT contain "too many" error
     assert "Слишком много" not in call_args
-    
-    # Verify voting message with keyboard was created
-    mock_context.bot.send_message.assert_called_once()
     
     # Verify FinalVoting was added to session
     mock_context.db_session.add.assert_called_once()
@@ -608,16 +599,16 @@ async def test_pidorfinalclose_cmd_success(mock_update, mock_context, mock_game,
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
     
-    # Mock current_datetime
-    mock_dt = MagicMock()
-    mock_dt.year = 2024
+    # Mock current_datetime - 25 hours after voting started (more than 24 hours)
+    mock_dt = datetime(2024, 12, 30, 13, 0, 0)
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
     
-    # Setup active FinalVoting
+    # Setup active FinalVoting - started 25 hours ago
     mock_voting = MagicMock()
     mock_voting.id = 1
     mock_voting.game_id = mock_game.id
     mock_voting.year = 2024
+    mock_voting.started_at = datetime(2024, 12, 29, 12, 0, 0)  # Started 25 hours ago
     mock_voting.ended_at = None  # Active voting
     mock_voting.missed_days_count = 5
     mock_voting.missed_days_list = json.dumps([1, 2, 3, 4, 5])
@@ -631,9 +622,9 @@ async def test_pidorfinalclose_cmd_success(mock_update, mock_context, mock_game,
     # Mock finalize_voting
     winner = sample_players[0]
     winner.id = 1
-    weighted_votes = {1: 8, 2: 5}
+    results = {1: {'weighted': 8, 'votes': 2}, 2: {'weighted': 5, 'votes': 1}}
     from bot.handlers.game.voting_helpers import finalize_voting
-    mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winner, weighted_votes))
+    mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winner, results))
     
     # Mock player weights query
     mock_weights_result = MagicMock()
@@ -747,6 +738,105 @@ async def test_pidorfinalclose_cmd_already_ended(mock_update, mock_context, mock
     mock_update.effective_chat.send_message.assert_called_once()
     call_args = str(mock_update.effective_chat.send_message.call_args)
     assert "активного голосования" in call_args or "not active" in call_args.lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_pidorfinalclose_cmd_too_early(mock_update, mock_context, mock_game, mocker):
+    """Test error when trying to close voting before 24 hours have passed."""
+    # Setup
+    mock_context.game = mock_game
+    mock_update.effective_user.id = 999
+    mock_update.effective_chat.id = -123456789  # Regular chat (not test chat)
+    
+    # Mock current_datetime - only 12 hours after voting started (less than 24 hours)
+    mock_dt = datetime(2024, 12, 30, 0, 0, 0)
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+    
+    # Setup active FinalVoting - started 12 hours ago
+    mock_voting = MagicMock()
+    mock_voting.started_at = datetime(2024, 12, 29, 12, 0, 0)  # Started 12 hours ago
+    mock_voting.ended_at = None  # Active voting
+    
+    mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_voting
+    
+    # Mock admin check
+    mock_chat_member = MagicMock()
+    mock_chat_member.status = 'administrator'
+    mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)
+    
+    # Execute
+    await pidorfinalclose_cmd(mock_update, mock_context)
+    
+    # Verify error message was sent
+    mock_update.effective_chat.send_message.assert_called_once()
+    call_args = str(mock_update.effective_chat.send_message.call_args)
+    assert "24 часа" in call_args or "24 hours" in call_args.lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_pidorfinalclose_cmd_test_chat_bypass_time_check(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test that test chat bypasses 24-hour time check for closing voting."""
+    # Setup
+    mock_context.game = mock_game
+    mock_update.effective_user.id = 999
+    mock_update.effective_chat.id = -4608252738  # Test chat
+    
+    # Mock current_datetime - only 1 hour after voting started (less than 24 hours)
+    mock_dt = datetime(2024, 12, 29, 13, 0, 0)
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+    
+    # Setup active FinalVoting - started only 1 hour ago
+    mock_voting = MagicMock()
+    mock_voting.id = 1
+    mock_voting.game_id = mock_game.id
+    mock_voting.year = 2024
+    mock_voting.started_at = datetime(2024, 12, 29, 12, 0, 0)  # Started 1 hour ago
+    mock_voting.ended_at = None  # Active voting
+    mock_voting.missed_days_count = 5
+    mock_voting.missed_days_list = json.dumps([1, 2, 3, 4, 5])
+    mock_voting.votes_data = '{"1": [1, 2], "2": [1]}'
+    
+    # Mock admin check
+    mock_chat_member = MagicMock()
+    mock_chat_member.status = 'administrator'
+    mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)
+    
+    # Mock finalize_voting
+    winner = sample_players[0]
+    winner.id = 1
+    results = {1: {'weighted': 8, 'votes': 2}, 2: {'weighted': 5, 'votes': 1}}
+    from bot.handlers.game.voting_helpers import finalize_voting
+    mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winner, results))
+    
+    # Mock player weights query
+    mock_weights_result = MagicMock()
+    mock_weights_result.all.return_value = [(sample_players[0], 5), (sample_players[1], 3)]
+    
+    # Mock TGUser query for candidates
+    def query_side_effect(model):
+        if model == FinalVoting:
+            mock_q = MagicMock()
+            mock_q.filter_by.return_value.one_or_none.return_value = mock_voting
+            return mock_q
+        elif model == TGUser:
+            mock_q = MagicMock()
+            mock_q.filter_by.return_value.one.return_value = sample_players[0]
+            return mock_q
+        return MagicMock()
+    
+    mock_context.db_session.query.side_effect = query_side_effect
+    mock_context.db_session.exec.return_value = mock_weights_result
+    
+    # Execute
+    await pidorfinalclose_cmd(mock_update, mock_context)
+    
+    # Verify success message was sent (not error about 24 hours)
+    assert mock_update.effective_chat.send_message.call_count == 2  # Success + Results
+    call_args = str(mock_update.effective_chat.send_message.call_args_list)
+    # Should NOT contain 24 hours error
+    assert "24 часа" not in call_args
 
 
 @pytest.mark.asyncio

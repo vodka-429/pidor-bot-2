@@ -9,6 +9,9 @@ from bot.handlers.game.voting_helpers import (
     parse_vote_callback_data,
     format_vote_callback_data,
     finalize_voting,
+    format_player_with_wins,
+    get_player_weights,
+    format_weights_message,
     VOTE_CALLBACK_PREFIX
 )
 from bot.app.models import FinalVoting, GameResult, TGUser as DBUser
@@ -248,15 +251,18 @@ def test_finalize_voting_calculation(mock_context, sample_players):
     mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
     
     # Execute
-    result_winner, weighted_votes = finalize_voting(mock_voting, mock_context)
+    result_winner, results = finalize_voting(mock_voting, mock_context)
     
-    # Verify weighted votes calculation
-    # Candidate 1: voted by user 1 (weight 5) and user 2 (weight 3) = 5 + 3 = 8
-    # Candidate 2: voted by user 1 (weight 5) = 5
-    # Candidate 3: voted by user 3 (weight 2) = 2
-    assert weighted_votes[1] == 8
-    assert weighted_votes[2] == 5
-    assert weighted_votes[3] == 2
+    # Verify weighted votes and real votes calculation
+    # Candidate 1: voted by user 1 (weight 5) and user 2 (weight 3) = 5 + 3 = 8 weighted, 2 votes
+    # Candidate 2: voted by user 1 (weight 5) = 5 weighted, 1 vote
+    # Candidate 3: voted by user 3 (weight 2) = 2 weighted, 1 vote
+    assert results[1]['weighted'] == 8
+    assert results[1]['votes'] == 2
+    assert results[2]['weighted'] == 5
+    assert results[2]['votes'] == 1
+    assert results[3]['weighted'] == 2
+    assert results[3]['votes'] == 1
     
     # Verify winner is candidate 1 (highest weighted votes)
     assert result_winner.id == 1
@@ -303,14 +309,15 @@ def test_finalize_voting_no_votes(mock_context, sample_players, mocker):
     mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
     
     # Execute
-    result_winner, weighted_votes = finalize_voting(mock_voting, mock_context)
+    result_winner, results = finalize_voting(mock_voting, mock_context)
     
     # Verify the mocked random winner was selected
     assert result_winner.id == 2
     
-    # Verify weighted_votes contains the winner with 0 votes
-    assert 2 in weighted_votes
-    assert weighted_votes[2] == 0
+    # Verify results contains the winner with 0 votes
+    assert 2 in results
+    assert results[2]['weighted'] == 0
+    assert results[2]['votes'] == 0
     
     # Note: GameResult creation is currently commented out in finalize_voting
     # So we don't verify db_session.add calls
@@ -349,14 +356,145 @@ def test_finalize_voting_equal_weighted_votes(mock_context, sample_players):
     mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
     
     # Execute
-    result_winner, weighted_votes = finalize_voting(mock_voting, mock_context)
+    result_winner, results = finalize_voting(mock_voting, mock_context)
     
     # Verify both candidates have equal weighted votes
-    assert weighted_votes[1] == 4
-    assert weighted_votes[2] == 4
+    assert results[1]['weighted'] == 4
+    assert results[2]['weighted'] == 4
     
     # Verify a winner was selected (max() picks one deterministically)
     assert result_winner.id in [1, 2]
     
     # Verify commit was called
     mock_context.db_session.commit.assert_called_once()
+
+
+@pytest.mark.unit
+def test_format_player_with_wins():
+    """Test format_player_with_wins correctly formats player names with wins."""
+    # Create mock player
+    player = Mock(spec=TGUser)
+    player.first_name = "Иван"
+    player.last_name = "Иванов"
+    
+    # Test with 1 win (победа)
+    result = format_player_with_wins(player, 1)
+    assert result == "Иван Иванов (1 победа)"
+    
+    # Test with 2 wins (победы)
+    result = format_player_with_wins(player, 2)
+    assert result == "Иван Иванов (2 победы)"
+    
+    # Test with 5 wins (побед)
+    result = format_player_with_wins(player, 5)
+    assert result == "Иван Иванов (5 побед)"
+    
+    # Test with 11 wins (побед - exception for 11)
+    result = format_player_with_wins(player, 11)
+    assert result == "Иван Иванов (11 побед)"
+    
+    # Test with 21 wins (победа)
+    result = format_player_with_wins(player, 21)
+    assert result == "Иван Иванов (21 победа)"
+    
+    # Test with 22 wins (победы)
+    result = format_player_with_wins(player, 22)
+    assert result == "Иван Иванов (22 победы)"
+    
+    # Test player without last name
+    player.last_name = None
+    result = format_player_with_wins(player, 3)
+    assert result == "Иван (3 победы)"
+
+
+@pytest.mark.unit
+def test_get_player_weights(mock_context, sample_players):
+    """Test get_player_weights retrieves player weights correctly."""
+    # Setup mock query result
+    mock_weights_result = MagicMock()
+    player_weights = [
+        (sample_players[0], 5),
+        (sample_players[1], 3),
+        (sample_players[2], 2)
+    ]
+    mock_weights_result.all.return_value = player_weights
+    
+    mock_context.db_session.exec.return_value = mock_weights_result
+    
+    # Execute
+    result = get_player_weights(mock_context.db_session, game_id=1, year=2024)
+    
+    # Verify
+    assert len(result) == 3
+    assert result[0] == (sample_players[0], 5)
+    assert result[1] == (sample_players[1], 3)
+    assert result[2] == (sample_players[2], 2)
+
+
+@pytest.mark.unit
+def test_format_weights_message(sample_players):
+    """Test format_weights_message creates correct message."""
+    # Setup player weights
+    sample_players[0].first_name = "Алиса"
+    sample_players[0].last_name = "Смит"
+    sample_players[1].first_name = "Боб"
+    sample_players[1].last_name = None
+    sample_players[2].first_name = "Чарли"
+    sample_players[2].last_name = "Браун"
+    
+    player_weights = [
+        (sample_players[0], 5),
+        (sample_players[1], 3),
+        (sample_players[2], 2)
+    ]
+    
+    # Execute
+    result = format_weights_message(player_weights, missed_count=7)
+    
+    # Verify message contains expected elements
+    assert "7" in result  # missed days count
+    # Note: text is escaped for Markdown V2, so we check for escaped versions
+    assert "Алиса Смит \\(5 побед\\)" in result
+    assert "Боб \\(3 победы\\)" in result
+    assert "Чарли Браун \\(2 победы\\)" in result
+    assert "Финальное голосование года" in result
+    assert "Голосуйте мудро" in result
+
+
+@pytest.mark.unit
+def test_create_voting_keyboard_with_user_votes():
+    """Test create_voting_keyboard shows checkmarks for voted candidates."""
+    # Create mock candidates
+    candidate1 = Mock(spec=TGUser)
+    candidate1.id = 1
+    candidate1.first_name = "Alice"
+    candidate1.last_name = "Smith"
+    
+    candidate2 = Mock(spec=TGUser)
+    candidate2.id = 2
+    candidate2.first_name = "Bob"
+    candidate2.last_name = None
+    
+    candidate3 = Mock(spec=TGUser)
+    candidate3.id = 3
+    candidate3.first_name = "Charlie"
+    candidate3.last_name = "Brown"
+    
+    candidates = [candidate1, candidate2, candidate3]
+    
+    # User has voted for candidates 1 and 3
+    user_votes = [1, 3]
+    
+    # Create keyboard
+    voting_id = 123
+    keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2, user_votes=user_votes)
+    
+    # Verify checkmarks are added to voted candidates
+    assert keyboard.inline_keyboard[0][0].text == "✅ Alice Smith"  # Candidate 1 - voted
+    assert keyboard.inline_keyboard[0][1].text == "Bob"  # Candidate 2 - not voted
+    assert keyboard.inline_keyboard[1][0].text == "✅ Charlie Brown"  # Candidate 3 - voted
+    
+    # Verify callback_data is still correct
+    assert keyboard.inline_keyboard[0][0].callback_data == "vote_123_1"
+    assert keyboard.inline_keyboard[0][1].callback_data == "vote_123_2"
+    assert keyboard.inline_keyboard[1][0].callback_data == "vote_123_3"
