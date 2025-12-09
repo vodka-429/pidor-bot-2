@@ -43,9 +43,15 @@ def init_dispatcher(application: Application, db_engine):
 
     # Middlewares setup
     # В v20+ используем MessageHandler с filters.ALL для middleware
+    # Также добавляем middleware для CallbackQueryHandler
     application.add_handler(MessageHandler(filters.ALL, open_db_session(db_engine)), group=-100)
+    application.add_handler(CallbackQueryHandler(open_db_session(db_engine)), group=-100)
+    
     application.add_handler(MessageHandler(filters.ALL, tg_user_middleware_handler), group=-99)
+    application.add_handler(CallbackQueryHandler(tg_user_middleware_handler), group=-99)
+    
     application.add_handler(MessageHandler(filters.ALL, close_db_session_handler), group=100)
+    application.add_handler(CallbackQueryHandler(close_db_session_handler), group=100)
 
     # About handler
     # dp.add_handler(CommandHandler('about', about_cmd, filters=ne))
@@ -83,12 +89,9 @@ def init_dispatcher(application: Application, db_engine):
     application.add_handler(CommandHandler('pidorfinalclose', pidorfinalclose_cmd, filters=ne))
 
     # Регистрируем CallbackQueryHandler для голосования
-    # Фильтр чатов применяется через filters.Chat если whitelist настроен
-    if chats:
-        vote_filter = filters.Chat(chats)
-        application.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_', filters=vote_filter))
-    else:
-        application.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_'))
+    # В python-telegram-bot v21+ CallbackQueryHandler не поддерживает filters параметр
+    # Фильтрация чатов должна выполняться внутри обработчика
+    application.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_'))
 
     # Key-Value storage handlers
     application.add_handler(CommandHandler('get', get_cmd, filters=ne))
