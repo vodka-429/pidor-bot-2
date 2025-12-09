@@ -1,7 +1,7 @@
 """Tests for missed days functionality."""
 import pytest
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 from bot.handlers.game.commands import (
     get_missed_days_count,
     get_all_missed_days,
@@ -147,8 +147,9 @@ def test_get_dramatic_message_levels():
     assert "50" in msg_50
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidor_cmd_with_missed_days(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_pidor_cmd_with_missed_days(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test that pidor_cmd sends dramatic message when there are missed days."""
     # Setup: game with enough players
     mock_game.players = sample_players
@@ -184,8 +185,8 @@ def test_pidor_cmd_with_missed_days(mock_update, mock_context, mock_game, sample
         "Stage 4: {username}",
     ])
     
-    # Mock time.sleep
-    mocker.patch('bot.handlers.game.commands.time.sleep')
+    # Mock asyncio.sleep
+    mocker.patch('asyncio.sleep', new_callable=AsyncMock)
     
     # Mock current_datetime
     mock_dt = MagicMock()
@@ -196,7 +197,7 @@ def test_pidor_cmd_with_missed_days(mock_update, mock_context, mock_game, sample
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
     
     # Execute
-    pidor_cmd(mock_update, mock_context)
+    await pidor_cmd(mock_update, mock_context)
     
     # Verify that 5 messages were sent (dramatic message + 4 stages)
     assert mock_update.effective_chat.send_message.call_count == 5
@@ -208,8 +209,9 @@ def test_pidor_cmd_with_missed_days(mock_update, mock_context, mock_game, sample
     assert "5" in first_message or "дней" in first_message or "days" in first_message
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidor_cmd_no_missed_days(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_pidor_cmd_no_missed_days(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test that pidor_cmd doesn't send dramatic message when there are no missed days."""
     # Setup: game with enough players
     mock_game.players = sample_players
@@ -244,8 +246,8 @@ def test_pidor_cmd_no_missed_days(mock_update, mock_context, mock_game, sample_p
         "Stage 4: {username}",
     ])
     
-    # Mock time.sleep
-    mocker.patch('bot.handlers.game.commands.time.sleep')
+    # Mock asyncio.sleep
+    mocker.patch('asyncio.sleep', new_callable=AsyncMock)
     
     # Mock current_datetime
     mock_dt = MagicMock()
@@ -256,7 +258,7 @@ def test_pidor_cmd_no_missed_days(mock_update, mock_context, mock_game, sample_p
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
     
     # Execute
-    pidor_cmd(mock_update, mock_context)
+    await pidor_cmd(mock_update, mock_context)
     
     # Verify that only 4 messages were sent (no dramatic message, just 4 stages)
     assert mock_update.effective_chat.send_message.call_count == 4
@@ -284,8 +286,9 @@ def test_day_to_date_conversion():
 
 # Tests for /pidormissed command
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidormissed_cmd_no_missed_days(mock_update, mock_context, mock_game, mocker):
+async def test_pidormissed_cmd_no_missed_days(mock_update, mock_context, mock_game, mocker):
     """Test pidormissed command when there are no missed days."""
     # Setup
     mock_context.game = mock_game
@@ -307,7 +310,7 @@ def test_pidormissed_cmd_no_missed_days(mock_update, mock_context, mock_game, mo
     
     # Execute
     from bot.handlers.game.commands import pidormissed_cmd
-    pidormissed_cmd(mock_update, mock_context)
+    await pidormissed_cmd(mock_update, mock_context)
     
     # Verify success message was sent
     mock_update.effective_chat.send_message.assert_called_once()
@@ -315,8 +318,9 @@ def test_pidormissed_cmd_no_missed_days(mock_update, mock_context, mock_game, mo
     assert "не пропущено" in call_args or "Отличная работа" in call_args
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidormissed_cmd_few_missed_days(mock_update, mock_context, mock_game, mocker):
+async def test_pidormissed_cmd_few_missed_days(mock_update, mock_context, mock_game, mocker):
     """Test pidormissed command when there are few missed days (< 10)."""
     # Setup
     mock_context.game = mock_game
@@ -339,7 +343,7 @@ def test_pidormissed_cmd_few_missed_days(mock_update, mock_context, mock_game, m
     
     # Execute
     from bot.handlers.game.commands import pidormissed_cmd
-    pidormissed_cmd(mock_update, mock_context)
+    await pidormissed_cmd(mock_update, mock_context)
     
     # Verify message with list was sent
     mock_update.effective_chat.send_message.assert_called_once()
@@ -349,8 +353,9 @@ def test_pidormissed_cmd_few_missed_days(mock_update, mock_context, mock_game, m
     assert "Список" in call_args or "days_list" in call_args
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidormissed_cmd_many_missed_days(mock_update, mock_context, mock_game, mocker):
+async def test_pidormissed_cmd_many_missed_days(mock_update, mock_context, mock_game, mocker):
     """Test pidormissed command when there are many missed days (>= 10)."""
     # Setup
     mock_context.game = mock_game
@@ -373,7 +378,7 @@ def test_pidormissed_cmd_many_missed_days(mock_update, mock_context, mock_game, 
     
     # Execute
     from bot.handlers.game.commands import pidormissed_cmd
-    pidormissed_cmd(mock_update, mock_context)
+    await pidormissed_cmd(mock_update, mock_context)
     
     # Verify message with count only was sent (no list)
     mock_update.effective_chat.send_message.assert_called_once()

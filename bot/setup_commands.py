@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 from dotenv import load_dotenv
@@ -31,10 +32,14 @@ commands = [
     # ('about', 'some info about github repo'),
 ]
 
-if __name__ == '__main__':
+async def main():
     load_dotenv()
-    bot = Bot(os.environ['TELEGRAM_BOT_API_SECRET'])
-    bot.delete_my_commands()
-    # Setup similar commands for both 'en' and 'ru' users
-    bot.set_my_commands(commands)
-    print('Updated commands for', bot.get_me()['username'])
+    async with Bot(os.environ['TELEGRAM_BOT_API_SECRET']) as bot:
+        await bot.delete_my_commands()
+        # Setup similar commands for both 'en' and 'ru' users
+        await bot.set_my_commands(commands)
+        bot_info = await bot.get_me()
+        print('Updated commands for', bot_info.username)
+
+if __name__ == '__main__':
+    asyncio.run(main())

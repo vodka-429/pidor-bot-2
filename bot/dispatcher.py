@@ -1,8 +1,8 @@
 import logging
 
 from telegram import Update
-from telegram.ext import Dispatcher, CommandHandler, Filters, \
-    CallbackQueryHandler, InlineQueryHandler, TypeHandler, MessageHandler, \
+from telegram.ext import Application, CommandHandler, filters, \
+    CallbackQueryHandler, InlineQueryHandler, MessageHandler, \
     ChatJoinRequestHandler, PollHandler
 
 # Получаем логгер для этого модуля
@@ -31,20 +31,21 @@ from bot.utils import chat_whitelist
 
 # TODO: Refactor this function to automatically scan for handlers ending with
 #  '_cmd' in the bot/handlers folder
-def init_dispatcher(dp: Dispatcher, db_engine):
+def init_dispatcher(application: Application, db_engine):
     """Register handlers."""
     logger.info("=== INITIALIZING DISPATCHER ===")
     chats = chat_whitelist()
     logger.info(f"Chat whitelist: {chats}")
     if chats:
-        ne = ~Filters.update.edited_message & Filters.chat(chats)
+        ne = ~filters.UpdateType.EDITED_MESSAGE & filters.Chat(chats)
     else:
-        ne = ~Filters.update.edited_message
+        ne = ~filters.UpdateType.EDITED_MESSAGE
 
     # Middlewares setup
-    dp.add_handler(TypeHandler(Update, open_db_session(db_engine)), group=-100)
-    dp.add_handler(TypeHandler(Update, tg_user_middleware_handler), group=-99)
-    dp.add_handler(TypeHandler(Update, close_db_session_handler), group=100)
+    # В v20+ используем MessageHandler с filters.ALL для middleware
+    application.add_handler(MessageHandler(filters.ALL, open_db_session(db_engine)), group=-100)
+    application.add_handler(MessageHandler(filters.ALL, tg_user_middleware_handler), group=-99)
+    application.add_handler(MessageHandler(filters.ALL, close_db_session_handler), group=100)
 
     # About handler
     # dp.add_handler(CommandHandler('about', about_cmd, filters=ne))
@@ -66,48 +67,34 @@ def init_dispatcher(dp: Dispatcher, db_engine):
     #     CallbackQueryHandler(memeru_refresh_callback, pattern=MEMERU_REFRESH))
 
     # Game handlers
-    dp.add_handler(CommandHandler('pidor', pidor_cmd, filters=ne))
-    dp.add_handler(MessageHandler(Filters.regex(r'/pidor\d\d\d\d(?:@.+)?') & ne, pidoryearresults_cmd))
-    dp.add_handler(
+    application.add_handler(CommandHandler('pidor', pidor_cmd, filters=ne))
+    application.add_handler(MessageHandler(filters.Regex(r'/pidor\d\d\d\d(?:@.+)?') & ne, pidoryearresults_cmd))
+    application.add_handler(
         CommandHandler('pidorules', pidorules_cmd, filters=ne))
-    dp.add_handler(CommandHandler('pidoreg', pidoreg_cmd, filters=ne))
-    dp.add_handler(CommandHandler('pidoregmany', pidoregmany_cmd, filters=ne))
-    dp.add_handler(CommandHandler('pidorunreg', pidorunreg_cmd, filters=ne))
-    dp.add_handler(CommandHandler('pidorstats', pidorstats_cmd, filters=ne))
-    dp.add_handler(CommandHandler('pidorall', pidorall_cmd, filters=ne))
-    dp.add_handler(CommandHandler('pidorme', pidorme_cmd, filters=ne))
-    dp.add_handler(CommandHandler('pidormissed', pidormissed_cmd, filters=ne))
-    dp.add_handler(CommandHandler('pidorfinal', pidorfinal_cmd, filters=ne))
-    dp.add_handler(CommandHandler('pidorfinalstatus', pidorfinalstatus_cmd, filters=ne))
-    dp.add_handler(CommandHandler('pidorfinalclose', pidorfinalclose_cmd, filters=ne))
+    application.add_handler(CommandHandler('pidoreg', pidoreg_cmd, filters=ne))
+    application.add_handler(CommandHandler('pidoregmany', pidoregmany_cmd, filters=ne))
+    application.add_handler(CommandHandler('pidorunreg', pidorunreg_cmd, filters=ne))
+    application.add_handler(CommandHandler('pidorstats', pidorstats_cmd, filters=ne))
+    application.add_handler(CommandHandler('pidorall', pidorall_cmd, filters=ne))
+    application.add_handler(CommandHandler('pidorme', pidorme_cmd, filters=ne))
+    application.add_handler(CommandHandler('pidormissed', pidormissed_cmd, filters=ne))
+    application.add_handler(CommandHandler('pidorfinal', pidorfinal_cmd, filters=ne))
+    application.add_handler(CommandHandler('pidorfinalstatus', pidorfinalstatus_cmd, filters=ne))
+    application.add_handler(CommandHandler('pidorfinalclose', pidorfinalclose_cmd, filters=ne))
 
     # Регистрируем CallbackQueryHandler для голосования
-    # ВАЖНО: В python-telegram-bot v13.x CallbackQueryHandler не поддерживает filters параметр
-    # Фильтрация по чатам будет выполняться внутри обработчика
-    logger.info("Registering CallbackQueryHandler for vote callbacks with pattern r'^vote_'")
-    logger.info(f"Callback handler will use chat filter: {chats if chats else 'No filter (all chats)'}")
-
-    # Сохраняем список разрешённых чатов в bot_data для использования в обработчике
-    dp.bot_data['chat_whitelist'] = chats
-
-    # Регистрируем обработчик без filters (не поддерживается в v13.x)
-    # ВАЖНО: Регистрируем в группе 0 (по умолчанию), чтобы он обрабатывался раньше других
-    dp.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_'), group=0)
-
-    logger.info("CallbackQueryHandler registered successfully in group 0")
-    
-    # Добавляем тестовый обработчик для ВСЕХ callback queries
-    def test_callback_handler(update: Update, context: CallbackContext):
-        logger.info(f"=== TEST: ANY callback received: {update.callback_query.data if update.callback_query else 'None'} ===")
-    
-    dp.add_handler(CallbackQueryHandler(test_callback_handler), group=1)
-    logger.info("Test callback handler registered for ALL callbacks in group 1")
+    # Фильтр чатов применяется через filters.Chat если whitelist настроен
+    if chats:
+        vote_filter = filters.Chat(chats)
+        application.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_', filters=vote_filter))
+    else:
+        application.add_handler(CallbackQueryHandler(handle_vote_callback, pattern=r'^vote_'))
 
     # Key-Value storage handlers
-    dp.add_handler(CommandHandler('get', get_cmd, filters=ne))
-    dp.add_handler(CommandHandler('list', list_cmd, filters=ne))
-    dp.add_handler(CommandHandler('set', set_cmd, filters=ne))
-    dp.add_handler(CommandHandler('del', del_cmd, filters=ne))
+    application.add_handler(CommandHandler('get', get_cmd, filters=ne))
+    application.add_handler(CommandHandler('list', list_cmd, filters=ne))
+    application.add_handler(CommandHandler('set', set_cmd, filters=ne))
+    application.add_handler(CommandHandler('del', del_cmd, filters=ne))
 
     # Misc handlers
     # dp.add_handler(CommandHandler("hello", hello_cmd, filters=ne))
@@ -119,4 +106,4 @@ def init_dispatcher(dp: Dispatcher, db_engine):
     # dp.add_handler(CommandHandler('pin', pin_message_cmd, filters=ne))
     # dp.add_handler(InlineQueryHandler(text_inline_cmd))
 
-    dp.add_error_handler(bot_error_handler)
+    application.add_error_handler(bot_error_handler)

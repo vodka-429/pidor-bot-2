@@ -2,7 +2,7 @@
 import pytest
 import json
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 
 from bot.handlers.game.commands import (
     pidor_cmd,
@@ -15,8 +15,9 @@ from bot.handlers.game.commands import (
 from bot.app.models import FinalVoting, GameResult
 
 
+@pytest.mark.asyncio
 @pytest.mark.integration
-def test_full_final_voting_cycle(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_full_final_voting_cycle(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test full final voting cycle from start to completion."""
     # Setup game with players
     mock_game.players = sample_players
@@ -43,7 +44,7 @@ def test_full_final_voting_cycle(mock_update, mock_context, mock_game, sample_pl
     
     mock_context.db_session.query.side_effect = [mock_game_query, mock_voting_query_empty]
     
-    pidorfinalstatus_cmd(mock_update, mock_context)
+    await pidorfinalstatus_cmd(mock_update, mock_context)
     
     # Verify "not started" message
     assert mock_update.effective_chat.send_message.call_count == 1
@@ -75,9 +76,9 @@ def test_full_final_voting_cycle(mock_update, mock_context, mock_game, sample_pl
     # Mock bot.send_message for voting keyboard
     mock_voting_message = MagicMock()
     mock_voting_message.message_id = 12345
-    mock_context.bot.send_message = MagicMock(return_value=mock_voting_message)
+    mock_context.bot.send_message = AsyncMock(return_value=mock_voting_message)
     
-    pidorfinal_cmd(mock_update, mock_context)
+    await pidorfinal_cmd(mock_update, mock_context)
     
     # Verify info message and voting message creation
     assert mock_update.effective_chat.send_message.call_count == 1
@@ -102,7 +103,7 @@ def test_full_final_voting_cycle(mock_update, mock_context, mock_game, sample_pl
     
     mock_context.db_session.query.side_effect = [mock_game_query, mock_voting_query_active]
     
-    pidorfinalstatus_cmd(mock_update, mock_context)
+    await pidorfinalstatus_cmd(mock_update, mock_context)
     
     # Verify "active" message
     assert mock_update.effective_chat.send_message.call_count == 1
@@ -128,7 +129,7 @@ def test_full_final_voting_cycle(mock_update, mock_context, mock_game, sample_pl
     
     mock_context.db_session.query.side_effect = [mock_game_query, mock_voting_query_completed]
     
-    pidorfinalstatus_cmd(mock_update, mock_context)
+    await pidorfinalstatus_cmd(mock_update, mock_context)
     
     # Verify "completed" message
     assert mock_update.effective_chat.send_message.call_count == 1
@@ -136,8 +137,9 @@ def test_full_final_voting_cycle(mock_update, mock_context, mock_game, sample_pl
     assert "завершено" in call_args or "completed" in call_args.lower()
 
 
+@pytest.mark.asyncio
 @pytest.mark.integration
-def test_missed_days_and_final_voting(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_missed_days_and_final_voting(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test integration between missed days commands and final voting."""
     # Setup game with players
     mock_game.players = sample_players
@@ -163,7 +165,7 @@ def test_missed_days_and_final_voting(mock_update, mock_context, mock_game, samp
     
     mock_context.db_session.query.return_value = mock_game_query
     
-    pidormissed_cmd(mock_update, mock_context)
+    await pidormissed_cmd(mock_update, mock_context)
     
     # Verify missed days message was sent
     assert mock_update.effective_chat.send_message.call_count == 1
@@ -190,9 +192,9 @@ def test_missed_days_and_final_voting(mock_update, mock_context, mock_game, samp
     # Mock bot.send_message for voting keyboard
     mock_voting_message = MagicMock()
     mock_voting_message.message_id = 12345
-    mock_context.bot.send_message = MagicMock(return_value=mock_voting_message)
+    mock_context.bot.send_message = AsyncMock(return_value=mock_voting_message)
     
-    pidorfinal_cmd(mock_update, mock_context)
+    await pidorfinal_cmd(mock_update, mock_context)
     
     # Verify voting message was created with correct missed days
     mock_context.bot.send_message.assert_called_once()
@@ -206,8 +208,9 @@ def test_missed_days_and_final_voting(mock_update, mock_context, mock_game, samp
     mock_context.db_session.commit.assert_called()
 
 
+@pytest.mark.asyncio
 @pytest.mark.integration
-def test_multiple_games_final_voting(mock_update, mock_context, sample_players, mocker):
+async def test_multiple_games_final_voting(mock_update, mock_context, sample_players, mocker):
     """Test final voting with multiple games in different chats."""
     # Create two different games
     mock_game1 = MagicMock()
@@ -255,9 +258,9 @@ def test_multiple_games_final_voting(mock_update, mock_context, sample_players, 
     # Mock bot.send_message for game 1
     mock_voting_message1 = MagicMock()
     mock_voting_message1.message_id = 11111
-    mock_context.bot.send_message = MagicMock(return_value=mock_voting_message1)
+    mock_context.bot.send_message = AsyncMock(return_value=mock_voting_message1)
     
-    pidorfinal_cmd(mock_update, mock_context)
+    await pidorfinal_cmd(mock_update, mock_context)
     
     # Verify voting message was created for game 1
     assert mock_context.bot.send_message.call_count == 1
@@ -288,9 +291,9 @@ def test_multiple_games_final_voting(mock_update, mock_context, sample_players, 
     # Mock bot.send_message for game 2
     mock_voting_message2 = MagicMock()
     mock_voting_message2.message_id = 22222
-    mock_context.bot.send_message = MagicMock(return_value=mock_voting_message2)
+    mock_context.bot.send_message = AsyncMock(return_value=mock_voting_message2)
     
-    pidorfinal_cmd(mock_update, mock_context)
+    await pidorfinal_cmd(mock_update, mock_context)
     
     # Verify voting message was created for game 2
     assert mock_context.bot.send_message.call_count == 1
@@ -301,8 +304,9 @@ def test_multiple_games_final_voting(mock_update, mock_context, sample_players, 
     assert mock_voting_message1.message_id != mock_voting_message2.message_id
 
 
+@pytest.mark.asyncio
 @pytest.mark.integration
-def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test full custom voting cycle: create → vote → close → verify results."""
     # Setup game with players
     mock_game.players = sample_players
@@ -343,7 +347,7 @@ def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sample_p
     # Mock bot.send_message for voting keyboard
     mock_voting_message = MagicMock()
     mock_voting_message.message_id = 99999
-    mock_context.bot.send_message = MagicMock(return_value=mock_voting_message)
+    mock_context.bot.send_message = AsyncMock(return_value=mock_voting_message)
     
     # Create a mock FinalVoting object that will be added
     mock_final_voting = MagicMock()
@@ -365,7 +369,7 @@ def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sample_p
     
     mock_context.db_session.add.side_effect = capture_final_voting
     
-    pidorfinal_cmd(mock_update, mock_context)
+    await pidorfinal_cmd(mock_update, mock_context)
     
     # Verify voting was created
     assert mock_update.effective_chat.send_message.call_count == 1
@@ -380,9 +384,8 @@ def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sample_p
     
     # Step 2: Users vote
     # Mock callback query for voting
-    mock_callback_query = MagicMock()
+    mock_callback_query = AsyncMock()
     mock_callback_query.from_user.id = 100000001  # player1's tg_id
-    mock_callback_query.answer = MagicMock()
     mock_update.callback_query = mock_callback_query
     
     # Vote for candidate 1 (player1 votes for player1)
@@ -396,7 +399,7 @@ def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sample_p
     mock_context.db_session.query.side_effect = None
     mock_context.db_session.query.return_value = mock_voting_query_for_vote
     
-    handle_vote_callback(mock_update, mock_context)
+    await handle_vote_callback(mock_update, mock_context)
     
     # Verify vote was recorded
     mock_callback_query.answer.assert_called_once()
@@ -413,7 +416,7 @@ def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sample_p
     
     # Vote for candidate 2 (player1 also votes for player2)
     mock_callback_query.data = "vote_1_2"
-    handle_vote_callback(mock_update, mock_context)
+    await handle_vote_callback(mock_update, mock_context)
     
     # Verify second vote was recorded
     votes_data = json.loads(mock_final_voting.votes_data)
@@ -427,7 +430,7 @@ def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sample_p
     # Player 2 votes for candidate 1
     mock_callback_query.from_user.id = 100000002
     mock_callback_query.data = "vote_1_1"
-    handle_vote_callback(mock_update, mock_context)
+    await handle_vote_callback(mock_update, mock_context)
     
     # Verify player 2's vote
     votes_data = json.loads(mock_final_voting.votes_data)
@@ -445,7 +448,7 @@ def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sample_p
     # Mock admin check
     mock_chat_member = MagicMock()
     mock_chat_member.status = 'administrator'
-    mock_context.bot.get_chat_member = MagicMock(return_value=mock_chat_member)
+    mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)
     
     # Mock FinalVoting query for close command
     mock_voting_query_for_close = MagicMock()
@@ -477,7 +480,7 @@ def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sample_p
     
     mock_context.db_session.query.side_effect = query_side_effect_for_close
     
-    pidorfinalclose_cmd(mock_update, mock_context)
+    await pidorfinalclose_cmd(mock_update, mock_context)
     
     # Verify voting was closed
     assert mock_final_voting.ended_at is not None

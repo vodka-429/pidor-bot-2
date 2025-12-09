@@ -40,7 +40,7 @@ def get_tt_video_info(url: str, download=False) -> str | tuple[str, bytes]:
     return video_link, result
 
 
-def tt_video_cmd(update: Update, context: CallbackContext) -> None:
+async def tt_video_cmd(update: Update, context: CallbackContext) -> None:
     with sentry_sdk.start_transaction(op='tt_video_cmd',
                                       name='Download Tiktok video command'):
         source_url = ''
@@ -50,48 +50,48 @@ def tt_video_cmd(update: Update, context: CallbackContext) -> None:
                 update.effective_message.reply_to_message.text) > 10:
             source_url = update.effective_message.reply_to_message.text
         else:
-            update.effective_message.reply_text(
+            await update.effective_message.reply_text(
                 "Provide a TikTok link after the command or reply to the link")
             return
 
         try:
-            msg = update.effective_message.reply_text(PROCESSING_STARTED)
+            msg = await update.effective_message.reply_text(PROCESSING_STARTED)
             video_link, video_bytes = get_tt_video_info(source_url,
                                                         download=True)
-            update.effective_message.reply_video(video_bytes,
+            await update.effective_message.reply_video(video_bytes,
                                                  reply_markup=InlineKeyboardMarkup(
                                                      [
                                                          [
                                                              InlineKeyboardButton(
                                                                  text='🔗',
                                                                  url=video_link)]]))
-            msg.delete()
+            await msg.delete()
         except yt_dlp.utils.DownloadError:
-            update.effective_chat.send_message(
+            await update.effective_chat.send_message(
                 'Failed to process the link, please, try another one')
 
 
-def tt_depersonalize_cmd(update: Update, context: CallbackContext) -> None:
+async def tt_depersonalize_cmd(update: Update, context: CallbackContext) -> None:
     if context.args and len(context.args) == 1:
         source_url = context.args[0]
     elif update.effective_message.reply_to_message and len(
             update.effective_message.reply_to_message.text) > 10:
         source_url = update.effective_message.reply_to_message.text
     else:
-        update.effective_message.reply_text(
+        await update.effective_message.reply_text(
             "Provide a TikTok link after the command or reply to the link")
         return
 
     try:
-        msg = update.effective_message.reply_text(PROCESSING_STARTED)
-        update.effective_chat.send_message(get_tt_video_info(source_url))
-        msg.delete()
+        msg = await update.effective_message.reply_text(PROCESSING_STARTED)
+        await update.effective_chat.send_message(get_tt_video_info(source_url))
+        await msg.delete()
     except yt_dlp.utils.DownloadError:
-        update.effective_chat.send_message(
+        await update.effective_chat.send_message(
             'Failed to process the link, please, try another one')
 
 
-def tt_inline_cmd(update: Update, context: ECallbackContext):
+async def tt_inline_cmd(update: Update, context: ECallbackContext):
     with sentry_sdk.start_transaction(op='tt_inline_cmd',
                                       name='Download Tiktok video inline command'):
         query = update.inline_query.query.strip()
@@ -108,12 +108,12 @@ def tt_inline_cmd(update: Update, context: ECallbackContext):
                 video_link, video_bytes = get_tt_video_info(query,
                                                             download=True)
             except yt_dlp.utils.DownloadError:
-                update.inline_query.answer([])
+                await update.inline_query.answer([])
                 return
 
             # Special chat for uploading video to telegram servers
             special_chat_id = -1001856672797
-            video_msg: Message = context.bot.send_video(special_chat_id,
+            video_msg: Message = await context.bot.send_video(special_chat_id,
                                                         video_bytes,
                                                         caption=video_link)
             telegram_video_id = video_msg.video.file_id
@@ -140,7 +140,7 @@ def tt_inline_cmd(update: Update, context: ECallbackContext):
         ]
 
         try:
-            update.inline_query.answer(results, cache_time=24 * 60 * 60)
+            await update.inline_query.answer(results, cache_time=24 * 60 * 60)
         except BadRequest as e:
             if str(e) == 'Document_invalid':
                 context.db_session.delete(tt_cache)

@@ -5,8 +5,9 @@ from bot.handlers.game.commands import pidorstats_cmd
 from bot.handlers.game.text_static import STATS_CURRENT_YEAR
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorstats_cmd_with_results(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_pidorstats_cmd_with_results(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test that statistics are displayed with results."""
     # Setup: game with players
     mock_game.players = sample_players
@@ -35,7 +36,7 @@ def test_pidorstats_cmd_with_results(mock_update, mock_context, mock_game, sampl
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
     
     # Execute
-    pidorstats_cmd(mock_update, mock_context)
+    await pidorstats_cmd(mock_update, mock_context)
     
     # Verify that exec was called with a select statement
     mock_context.db_session.exec.assert_called_once()
@@ -46,8 +47,9 @@ def test_pidorstats_cmd_with_results(mock_update, mock_context, mock_game, sampl
     assert "player" in call_args.lower() or str(len(sample_players)) in call_args
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorstats_cmd_current_year_filter(mock_update, mock_context, mock_game, mocker):
+async def test_pidorstats_cmd_current_year_filter(mock_update, mock_context, mock_game, mocker):
     """Test that query filters by current year."""
     # Setup
     mock_game.players = []
@@ -70,7 +72,7 @@ def test_pidorstats_cmd_current_year_filter(mock_update, mock_context, mock_game
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
     
     # Execute
-    pidorstats_cmd(mock_update, mock_context)
+    await pidorstats_cmd(mock_update, mock_context)
     
     # Verify that exec was called
     assert mock_context.db_session.exec.called
@@ -82,8 +84,9 @@ def test_pidorstats_cmd_current_year_filter(mock_update, mock_context, mock_game
     assert call_args is not None
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorstats_cmd_correct_sql_query(mock_update, mock_context, mock_game, mocker):
+async def test_pidorstats_cmd_correct_sql_query(mock_update, mock_context, mock_game, mocker):
     """Test that SQL query has correct structure."""
     # Setup
     mock_game.players = []
@@ -107,7 +110,7 @@ def test_pidorstats_cmd_correct_sql_query(mock_update, mock_context, mock_game, 
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
     
     # Execute
-    pidorstats_cmd(mock_update, mock_context)
+    await pidorstats_cmd(mock_update, mock_context)
     
     # Verify exec was called (query structure is validated by SQLModel)
     mock_context.db_session.exec.assert_called_once()
@@ -116,8 +119,9 @@ def test_pidorstats_cmd_correct_sql_query(mock_update, mock_context, mock_game, 
     mock_update.effective_chat.send_message.assert_called_once()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorstats_cmd_formats_message(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_pidorstats_cmd_formats_message(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test that message is formatted correctly with player table and count."""
     # Setup
     mock_game.players = sample_players
@@ -144,7 +148,7 @@ def test_pidorstats_cmd_formats_message(mock_update, mock_context, mock_game, sa
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
     
     # Execute
-    pidorstats_cmd(mock_update, mock_context)
+    await pidorstats_cmd(mock_update, mock_context)
     
     # Verify send_message was called
     mock_update.effective_chat.send_message.assert_called_once()

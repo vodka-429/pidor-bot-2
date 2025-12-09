@@ -1,11 +1,12 @@
 """Tests for error handler."""
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 from bot.handlers.misc.error import bot_error_handler
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_error_handler_with_none_update():
+async def test_error_handler_with_none_update():
     """Test that error handler doesn't crash when update is None."""
     # Setup
     context = MagicMock()
@@ -13,7 +14,7 @@ def test_error_handler_with_none_update():
 
     # Execute - should not raise exception
     with patch('bot.handlers.misc.error.logger') as mock_logger:
-        bot_error_handler(None, context)
+        await bot_error_handler(None, context)
 
         # Verify that error was logged
         assert mock_logger.error.call_count >= 1
@@ -23,8 +24,9 @@ def test_error_handler_with_none_update():
         assert any("update or effective_chat is None" in call for call in calls)
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_error_handler_with_none_chat():
+async def test_error_handler_with_none_chat():
     """Test that error handler doesn't crash when update.effective_chat is None."""
     # Setup
     update = MagicMock()
@@ -37,7 +39,7 @@ def test_error_handler_with_none_chat():
 
     # Execute - should not raise exception
     with patch('bot.handlers.misc.error.logger') as mock_logger:
-        bot_error_handler(update, context)
+        await bot_error_handler(update, context)
 
         # Verify that error was logged
         assert mock_logger.error.call_count >= 1
@@ -47,14 +49,15 @@ def test_error_handler_with_none_chat():
         assert any("update or effective_chat is None" in call for call in calls)
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_error_handler_logs_error():
+async def test_error_handler_logs_error():
     """Test that error handler logs error information correctly."""
     # Setup
     update = MagicMock()
     update.effective_chat = MagicMock()
     update.effective_chat.id = 987654321
-    update.effective_chat.send_message = MagicMock()
+    update.effective_chat.send_message = AsyncMock()
     update.effective_user = MagicMock()
     update.effective_user.id = 12345
 
@@ -64,7 +67,7 @@ def test_error_handler_logs_error():
 
     # Execute
     with patch('bot.handlers.misc.error.logger') as mock_logger:
-        bot_error_handler(update, context)
+        await bot_error_handler(update, context)
 
         # Verify that error was logged with correct information
         assert mock_logger.error.call_count >= 1
@@ -79,15 +82,16 @@ def test_error_handler_logs_error():
         assert "12345" in log_message  # user_id
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_error_handler_no_recursion():
+async def test_error_handler_no_recursion():
     """Test that error handler doesn't recurse when send_message fails."""
     # Setup
     update = MagicMock()
     update.effective_chat = MagicMock()
     update.effective_chat.id = 987654321
     # Make send_message raise an exception
-    update.effective_chat.send_message = MagicMock(side_effect=Exception("Send failed"))
+    update.effective_chat.send_message = AsyncMock(side_effect=Exception("Send failed"))
     update.effective_user = MagicMock()
     update.effective_user.id = 12345
 
@@ -96,7 +100,7 @@ def test_error_handler_no_recursion():
 
     # Execute - should not raise exception and should not recurse
     with patch('bot.handlers.misc.error.logger') as mock_logger:
-        bot_error_handler(update, context)
+        await bot_error_handler(update, context)
 
         # Verify that both errors were logged
         assert mock_logger.error.call_count >= 2
@@ -109,14 +113,15 @@ def test_error_handler_no_recursion():
         assert update.effective_chat.send_message.call_count == 1
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_error_handler_sends_message_to_user():
+async def test_error_handler_sends_message_to_user():
     """Test that error handler sends error message to user when possible."""
     # Setup
     update = MagicMock()
     update.effective_chat = MagicMock()
     update.effective_chat.id = 987654321
-    update.effective_chat.send_message = MagicMock()
+    update.effective_chat.send_message = AsyncMock()
     update.effective_user = MagicMock()
     update.effective_user.id = 12345
 
@@ -125,7 +130,7 @@ def test_error_handler_sends_message_to_user():
 
     # Execute
     with patch('bot.handlers.misc.error.logger'):
-        bot_error_handler(update, context)
+        await bot_error_handler(update, context)
 
         # Verify that send_message was called
         update.effective_chat.send_message.assert_called_once()
@@ -135,14 +140,15 @@ def test_error_handler_sends_message_to_user():
         assert 'An error occurred while processing the update.' in str(call_args)
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_error_handler_with_none_effective_user():
+async def test_error_handler_with_none_effective_user():
     """Test that error handler works when effective_user is None."""
     # Setup
     update = MagicMock()
     update.effective_chat = MagicMock()
     update.effective_chat.id = 987654321
-    update.effective_chat.send_message = MagicMock()
+    update.effective_chat.send_message = AsyncMock()
     update.effective_user = None
 
     context = MagicMock()
@@ -150,7 +156,7 @@ def test_error_handler_with_none_effective_user():
 
     # Execute - should not raise exception
     with patch('bot.handlers.misc.error.logger') as mock_logger:
-        bot_error_handler(update, context)
+        await bot_error_handler(update, context)
 
         # Verify that error was logged
         assert mock_logger.error.call_count >= 1

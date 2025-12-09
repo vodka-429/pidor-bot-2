@@ -2,16 +2,17 @@
 
 import pytest
 from datetime import datetime
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, AsyncMock
 
 from bot.handlers.game.commands import pidor_cmd, pidoreg_cmd, pidorstats_cmd
 
 
+@pytest.mark.asyncio
 @pytest.mark.integration
-def test_full_game_flow(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_full_game_flow(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test full game flow: registration -> game -> stats."""
-    # Mock time to avoid delays
-    mocker.patch('bot.handlers.game.commands.time.sleep')
+    # Mock asyncio.sleep to avoid delays
+    mocker.patch('asyncio.sleep', new_callable=AsyncMock)
     
     # Mock random.choice to return first player
     mock_choice = mocker.patch('bot.handlers.game.commands.random.choice')
@@ -38,7 +39,7 @@ def test_full_game_flow(mock_update, mock_context, mock_game, sample_players, mo
     mock_context.tg_user = sample_players[0]
     mock_context.db_session.query.return_value = mock_game_query
     
-    pidoreg_cmd(mock_update, mock_context)
+    await pidoreg_cmd(mock_update, mock_context)
     
     # Verify first player registration
     assert sample_players[0] in mock_game.players
@@ -48,7 +49,7 @@ def test_full_game_flow(mock_update, mock_context, mock_game, sample_players, mo
     mock_context.tg_user = sample_players[1]
     mock_update.effective_message.reply_markdown_v2.reset_mock()
     
-    pidoreg_cmd(mock_update, mock_context)
+    await pidoreg_cmd(mock_update, mock_context)
     
     # Verify second player registration
     assert sample_players[1] in mock_game.players
@@ -57,7 +58,7 @@ def test_full_game_flow(mock_update, mock_context, mock_game, sample_players, mo
     mock_context.tg_user = sample_players[2]
     mock_update.effective_message.reply_markdown_v2.reset_mock()
     
-    pidoreg_cmd(mock_update, mock_context)
+    await pidoreg_cmd(mock_update, mock_context)
     
     # Verify third player registration
     assert sample_players[2] in mock_game.players
@@ -90,7 +91,7 @@ def test_full_game_flow(mock_update, mock_context, mock_game, sample_players, mo
     ]
     
     # Step 4: Run the game
-    pidor_cmd(mock_update, mock_context)
+    await pidor_cmd(mock_update, mock_context)
     
     # Verify game execution - should send 5 messages (dramatic message + 4 stage messages)
     # Since there are no previous games, missed_days = current_day - 1 = 167 - 1 = 166
@@ -118,7 +119,7 @@ def test_full_game_flow(mock_update, mock_context, mock_game, sample_players, mo
     mock_context.db_session.query.return_value = mock_game_query
     
     # Step 5: Check stats
-    pidorstats_cmd(mock_update, mock_context)
+    await pidorstats_cmd(mock_update, mock_context)
     
     # Verify stats were displayed
     assert mock_update.effective_chat.send_message.called

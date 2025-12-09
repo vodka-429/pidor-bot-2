@@ -2,7 +2,7 @@
 Общие фикстуры для тестирования игровых команд
 """
 import pytest
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, AsyncMock
 from datetime import datetime
 
 
@@ -53,11 +53,11 @@ def mock_update():
     update = MagicMock()
     update.effective_chat = MagicMock()
     update.effective_chat.id = 987654321
-    update.effective_chat.send_message = MagicMock()
+    update.effective_chat.send_message = AsyncMock()
     update.effective_message = MagicMock()
-    update.effective_message.reply_markdown_v2 = MagicMock()
+    update.effective_message.reply_markdown_v2 = AsyncMock()
     update.message = MagicMock()
-    update.message.reply_markdown_v2 = MagicMock()
+    update.message.reply_markdown_v2 = AsyncMock()
     update.message.from_user = MagicMock()
     update.message.from_user.name = "TestUser"
     update.message.text = "/pidor"
@@ -73,6 +73,10 @@ def mock_context(mock_db_session, mock_tg_user):
     context.game = None
     # Инициализируем bot_data для поддержки chat_whitelist проверки
     context.bot_data = {'chat_whitelist': None}  # None = нет ограничений (все чаты разрешены)
+    # Мокируем bot с async методами
+    context.bot = MagicMock()
+    context.bot.send_message = AsyncMock()
+    context.bot.get_chat_member = AsyncMock()
     return context
 
 

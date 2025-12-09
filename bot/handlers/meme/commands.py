@@ -32,28 +32,28 @@ def get_random_en_meme() -> (str, str):
     return meme_link, source_link
 
 
-def meme_cmd(update: Update, _context: CallbackContext):
+async def meme_cmd(update: Update, _context: CallbackContext):
     try:
         meme_link, source_link = get_random_en_meme()
-        update.message.reply_photo(meme_link,
+        await update.message.reply_photo(meme_link,
                                    reply_markup=generate_keyboard(source_link,
                                                                   MEME_SAVE,
                                                                   MEME_REFRESH))
     except requests.exceptions.RequestException as exception:
-        update.message.reply_text('Srry, smth went wrong(')
+        await update.message.reply_text('Srry, smth went wrong(')
         raise exception
 
 
-def meme_save_callback(update: Update, context: CallbackContext):
+async def meme_save_callback(update: Update, context: CallbackContext):
     query = update.callback_query
     old_markup = update.effective_message.reply_markup
     old_url = old_markup.inline_keyboard[0][0].url
     new_meme_link, source_link = get_random_en_meme()
     answer_message = ''
     try:
-        update.effective_message.edit_reply_markup(
+        await update.effective_message.edit_reply_markup(
             InlineKeyboardMarkup([[InlineKeyboardButton('🔗', url=old_url)]]))
-        update.effective_chat.send_photo(new_meme_link,
+        await update.effective_chat.send_photo(new_meme_link,
                                      reply_markup=generate_keyboard(
                                          source_link, MEME_SAVE,
                                          MEME_REFRESH))
@@ -65,15 +65,15 @@ def meme_save_callback(update: Update, context: CallbackContext):
         logging.debug(f'MEMERU Bad request link: {new_meme_link}')
         logging.debug(f'Exception: {exception}')
         answer_message = 'Error! Try again'
-    query.answer(answer_message)
+    await query.answer(answer_message)
 
 
-def meme_refresh_callback(update: Update, context: CallbackContext):
+async def meme_refresh_callback(update: Update, context: CallbackContext):
     query = update.callback_query
     meme_link, source_link = get_random_en_meme()
     answer_message = ''
     try:
-        update.effective_message.edit_media(InputMediaPhoto(meme_link),
+        await update.effective_message.edit_media(InputMediaPhoto(meme_link),
                                             reply_markup=generate_keyboard(
                                                 source_link,
                                                 MEME_SAVE,
@@ -86,7 +86,7 @@ def meme_refresh_callback(update: Update, context: CallbackContext):
         logging.debug(f'MEMERU Bad request link: {meme_link}')
         logging.debug(f'Exception: {exception}')
         answer_message = 'Error! Try again'
-    query.answer(answer_message)
+    await query.answer(answer_message)
 
 
 ru_meme_channel_list = [
@@ -107,10 +107,10 @@ def get_random_ru_meme() -> str:
 
 # TODO: Add next button and callback_data handles for it
 # InlineKeyboardButton('🔁', callback_data='MEMERU_NEXT')
-def memeru_cmd(update: Update, _context: CallbackContext):
+async def memeru_cmd(update: Update, _context: CallbackContext):
     meme_link = get_random_ru_meme()
     try:
-        update.message.reply_photo(meme_link,
+        await update.message.reply_photo(meme_link,
                                    reply_markup=generate_keyboard(meme_link,
                                                                   MEMERU_SAVE,
                                                                   MEMERU_REFRESH))
@@ -125,12 +125,12 @@ def memeru_cmd(update: Update, _context: CallbackContext):
 
 
 
-def memeru_refresh_callback(update: Update, context: CallbackContext):
+async def memeru_refresh_callback(update: Update, context: CallbackContext):
     query = update.callback_query
     meme_link = get_random_ru_meme()
     answer_message = ''
     try:
-        update.effective_message.edit_media(InputMediaPhoto(meme_link),
+        await update.effective_message.edit_media(InputMediaPhoto(meme_link),
                                             reply_markup=generate_keyboard(
                                                 meme_link,
                                                 MEMERU_SAVE,
@@ -143,18 +143,18 @@ def memeru_refresh_callback(update: Update, context: CallbackContext):
         logging.debug(f'MEMERU Bad request link: {meme_link}')
         logging.debug(f'Exception: {exception}')
         answer_message = 'Error! Try again'
-    query.answer(answer_message)
+    await query.answer(answer_message)
 
-def memeru_save_callback(update: Update, context: CallbackContext):
+async def memeru_save_callback(update: Update, context: CallbackContext):
     query = update.callback_query
     new_meme_link = get_random_ru_meme()
     answer_message = ''
     try:
         old_markup = update.effective_message.reply_markup
         old_url = old_markup.inline_keyboard[0][0].url
-        update.effective_message.edit_reply_markup(
+        await update.effective_message.edit_reply_markup(
             InlineKeyboardMarkup([[InlineKeyboardButton('🔗', url=old_url)]]))
-        update.effective_chat.send_photo(new_meme_link,
+        await update.effective_chat.send_photo(new_meme_link,
                                          reply_markup=generate_keyboard(
                                              new_meme_link,
                                              MEMERU_SAVE,
@@ -167,4 +167,4 @@ def memeru_save_callback(update: Update, context: CallbackContext):
         logging.debug(f'MEMERU Bad request link: {new_meme_link}')
         logging.debug(f'Exception: {exception}')
         answer_message = 'Error! Try again'
-    query.answer(answer_message)
+    await query.answer(answer_message)
