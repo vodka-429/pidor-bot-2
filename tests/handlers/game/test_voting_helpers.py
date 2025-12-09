@@ -87,8 +87,9 @@ def test_create_voting_keyboard_two_candidates():
     
     candidates = [candidate1, candidate2]
     
-    # Create keyboard
-    keyboard = create_voting_keyboard(candidates, votes_per_row=2)
+    # Create keyboard with voting_id
+    voting_id = 123
+    keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2)
     
     # Verify structure
     assert len(keyboard.inline_keyboard) == 1  # 1 row
@@ -98,9 +99,9 @@ def test_create_voting_keyboard_two_candidates():
     assert keyboard.inline_keyboard[0][0].text == "Alice Smith"
     assert keyboard.inline_keyboard[0][1].text == "Bob"
     
-    # Verify callback_data contains placeholder
-    assert "vote_{voting_id}_1" in keyboard.inline_keyboard[0][0].callback_data
-    assert "vote_{voting_id}_2" in keyboard.inline_keyboard[0][1].callback_data
+    # Verify callback_data contains voting_id
+    assert keyboard.inline_keyboard[0][0].callback_data == "vote_123_1"
+    assert keyboard.inline_keyboard[0][1].callback_data == "vote_123_2"
 
 
 @pytest.mark.unit
@@ -116,7 +117,8 @@ def test_create_voting_keyboard_five_candidates():
         candidates.append(candidate)
     
     # Create keyboard with 2 buttons per row
-    keyboard = create_voting_keyboard(candidates, votes_per_row=2)
+    voting_id = 456
+    keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2)
     
     # Verify structure: 5 candidates / 2 per row = 3 rows (2+2+1)
     assert len(keyboard.inline_keyboard) == 3
@@ -147,7 +149,8 @@ def test_create_voting_keyboard_ten_candidates():
         candidates.append(candidate)
     
     # Create keyboard with 2 buttons per row
-    keyboard = create_voting_keyboard(candidates, votes_per_row=2)
+    voting_id = 789
+    keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2)
     
     # Verify structure: 10 candidates / 2 per row = 5 rows
     assert len(keyboard.inline_keyboard) == 5
@@ -172,7 +175,8 @@ def test_create_voting_keyboard_fifteen_candidates():
         candidates.append(candidate)
     
     # Create keyboard with 3 buttons per row
-    keyboard = create_voting_keyboard(candidates, votes_per_row=3)
+    voting_id = 999
+    keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=3)
     
     # Verify structure: 15 candidates / 3 per row = 5 rows
     assert len(keyboard.inline_keyboard) == 5
@@ -199,14 +203,16 @@ def test_create_voting_keyboard_custom_votes_per_row():
         candidate.last_name = None
         candidates.append(candidate)
     
+    voting_id = 111
+    
     # Test with 3 buttons per row
-    keyboard = create_voting_keyboard(candidates, votes_per_row=3)
+    keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=3)
     assert len(keyboard.inline_keyboard) == 2  # 6 / 3 = 2 rows
     assert len(keyboard.inline_keyboard[0]) == 3
     assert len(keyboard.inline_keyboard[1]) == 3
     
     # Test with 1 button per row
-    keyboard = create_voting_keyboard(candidates, votes_per_row=1)
+    keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=1)
     assert len(keyboard.inline_keyboard) == 6  # 6 / 1 = 6 rows
     for row in keyboard.inline_keyboard:
         assert len(row) == 1

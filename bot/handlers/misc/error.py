@@ -7,7 +7,7 @@ from telegram.ext import CallbackContext
 logger = logging.getLogger(__name__)
 
 
-def bot_error_handler(update: Update, context: CallbackContext) -> None:
+async def bot_error_handler(update: Update, context: CallbackContext) -> None:
     """
     Handle errors that occur during update processing.
 
@@ -38,7 +38,7 @@ def bot_error_handler(update: Update, context: CallbackContext) -> None:
 
     # Try to send error message to user, but catch any exceptions to prevent recursion
     try:
-        update.effective_chat.send_message('An error occurred while processing the update.')
+        await update.effective_chat.send_message('An error occurred while processing the update.')
     except Exception as send_error:
         # Log the error but don't try to send another message (prevent recursion)
         logger.error(

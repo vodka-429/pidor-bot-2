@@ -9,8 +9,9 @@ from bot.handlers.game.text_static import (
 )
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidor_cmd_not_enough_players(mock_update, mock_context, mock_game):
+async def test_pidor_cmd_not_enough_players(mock_update, mock_context, mock_game):
     """Test that error is sent when there are less than 2 players."""
     # Setup: game with only 1 player
     mock_player = MagicMock()
@@ -18,14 +19,15 @@ def test_pidor_cmd_not_enough_players(mock_update, mock_context, mock_game):
     mock_context.game = mock_game
 
     # Execute
-    pidor_cmd(mock_update, mock_context)
+    await pidor_cmd(mock_update, mock_context)
 
     # Verify
     mock_update.effective_chat.send_message.assert_called_once_with(ERROR_NOT_ENOUGH_PLAYERS)
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidor_cmd_existing_result_today(mock_update, mock_context, mock_game, mocker):
+async def test_pidor_cmd_existing_result_today(mock_update, mock_context, mock_game, mocker):
     """Test that existing result message is sent when game was already played today."""
     # Setup: game with enough players
     mock_player1 = MagicMock()
@@ -62,7 +64,7 @@ def test_pidor_cmd_existing_result_today(mock_update, mock_context, mock_game, m
     mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
 
     # Execute
-    pidor_cmd(mock_update, mock_context)
+    await pidor_cmd(mock_update, mock_context)
 
     # Verify that reply_markdown_v2 was called with the existing result message
     mock_update.message.reply_markdown_v2.assert_called_once()
@@ -70,8 +72,9 @@ def test_pidor_cmd_existing_result_today(mock_update, mock_context, mock_game, m
     assert "Player1" in call_args or CURRENT_DAY_GAME_RESULT[:20] in call_args
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidor_cmd_new_game_result(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_pidor_cmd_new_game_result(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test that new game result is created and 4 stage messages are sent."""
     # Setup: game with enough players and no result for today
     mock_game.players = sample_players
@@ -106,8 +109,8 @@ def test_pidor_cmd_new_game_result(mock_update, mock_context, mock_game, sample_
         "Stage 4 message: {username}",  # stage4 phrase
     ])
 
-    # Mock time.sleep to avoid delays
-    mocker.patch('bot.handlers.game.commands.time.sleep')
+    # Mock asyncio.sleep to avoid delays
+    mocker.patch('bot.handlers.game.commands.asyncio.sleep')
 
     # Mock current_datetime to return a non-last-day date
     mock_dt = MagicMock()
@@ -118,7 +121,7 @@ def test_pidor_cmd_new_game_result(mock_update, mock_context, mock_game, sample_
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
 
     # Execute
-    pidor_cmd(mock_update, mock_context)
+    await pidor_cmd(mock_update, mock_context)
 
     # Verify that 5 messages were sent (dramatic message + stage1-4)
     # Since there are no previous games, missed_days = current_day - 1 = 167 - 1 = 166
@@ -131,8 +134,9 @@ def test_pidor_cmd_new_game_result(mock_update, mock_context, mock_game, sample_
     mock_context.db_session.commit.assert_called_once()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidor_cmd_last_day_of_year(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_pidor_cmd_last_day_of_year(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test that year results announcement is sent on December 31."""
     # Setup: game with enough players
     mock_game.players = sample_players
@@ -164,8 +168,8 @@ def test_pidor_cmd_last_day_of_year(mock_update, mock_context, mock_game, sample
         "Stage 4: {username}",
     ])
 
-    # Mock time.sleep
-    mocker.patch('bot.handlers.game.commands.time.sleep')
+    # Mock asyncio.sleep
+    mocker.patch('bot.handlers.game.commands.asyncio.sleep')
 
     # Mock current_datetime to return December 31
     mock_dt = MagicMock()
@@ -176,7 +180,7 @@ def test_pidor_cmd_last_day_of_year(mock_update, mock_context, mock_game, sample
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
 
     # Execute
-    pidor_cmd(mock_update, mock_context)
+    await pidor_cmd(mock_update, mock_context)
 
     # Verify that 6 messages were sent (dramatic message + year announcement + 4 stages)
     # Since there are no previous games, missed_days = current_day - 1 = 366 - 1 = 365
@@ -188,8 +192,9 @@ def test_pidor_cmd_last_day_of_year(mock_update, mock_context, mock_game, sample
     assert "2024" in second_call_str or "Новым Годом" in second_call_str
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidor_cmd_random_winner_selection(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_pidor_cmd_random_winner_selection(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test that winner is randomly selected from players list."""
     # Setup
     mock_game.players = sample_players
@@ -222,8 +227,8 @@ def test_pidor_cmd_random_winner_selection(mock_update, mock_context, mock_game,
         "Stage 4: {username}",
     ]
 
-    # Mock time.sleep
-    mocker.patch('bot.handlers.game.commands.time.sleep')
+    # Mock asyncio.sleep
+    mocker.patch('bot.handlers.game.commands.asyncio.sleep')
 
     # Mock current_datetime
     mock_dt = MagicMock()
@@ -234,7 +239,7 @@ def test_pidor_cmd_random_winner_selection(mock_update, mock_context, mock_game,
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
 
     # Execute
-    pidor_cmd(mock_update, mock_context)
+    await pidor_cmd(mock_update, mock_context)
 
     # Verify random.choice was called with players list
     assert mock_random_choice.call_count >= 1
@@ -242,8 +247,9 @@ def test_pidor_cmd_random_winner_selection(mock_update, mock_context, mock_game,
     assert first_call_args[0] == sample_players
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidor_cmd_time_delays(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_pidor_cmd_time_delays(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test that time delays are called between messages."""
     # Setup
     mock_game.players = sample_players
@@ -275,8 +281,8 @@ def test_pidor_cmd_time_delays(mock_update, mock_context, mock_game, sample_play
         "Stage 4: {username}",
     ])
 
-    # Mock time.sleep and capture calls
-    mock_sleep = mocker.patch('bot.handlers.game.commands.time.sleep')
+    # Mock asyncio.sleep and capture calls
+    mock_sleep = mocker.patch('bot.handlers.game.commands.asyncio.sleep')
 
     # Mock current_datetime
     mock_dt = MagicMock()
@@ -287,9 +293,9 @@ def test_pidor_cmd_time_delays(mock_update, mock_context, mock_game, sample_play
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
 
     # Execute
-    pidor_cmd(mock_update, mock_context)
-
-    # Verify time.sleep was called 4 times with GAME_RESULT_TIME_DELAY (2 seconds)
+    await pidor_cmd(mock_update, mock_context)
+    
+    # Verify asyncio.sleep was called 4 times with GAME_RESULT_TIME_DELAY (2 seconds)
     # 1 for dramatic message + 3 for stages
     assert mock_sleep.call_count == 4
     for call in mock_sleep.call_args_list:

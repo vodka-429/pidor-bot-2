@@ -54,12 +54,13 @@ def parse_vote_callback_data(callback_data: str) -> Tuple[int, int]:
     return voting_id, candidate_id
 
 
-def create_voting_keyboard(candidates: List[TGUser], votes_per_row: int = 2) -> InlineKeyboardMarkup:
+def create_voting_keyboard(candidates: List[TGUser], voting_id: int, votes_per_row: int = 2) -> InlineKeyboardMarkup:
     """
     Создаёт клавиатуру с кнопками для голосования за кандидатов.
 
     Args:
         candidates: Список кандидатов (TGUser объекты)
+        voting_id: ID голосования для формирования callback_data
         votes_per_row: Количество кнопок в одном ряду (по умолчанию 2)
 
     Returns:
@@ -74,12 +75,10 @@ def create_voting_keyboard(candidates: List[TGUser], votes_per_row: int = 2) -> 
         if candidate.last_name:
             button_text += f" {candidate.last_name}"
 
-        # Создаём кнопку с callback_data
-        # Используем candidate.id для voting_id (будет заменено при использовании)
-        # и candidate.id для candidate_id
+        # Создаём кнопку с callback_data, используя реальный voting_id
         button = InlineKeyboardButton(
             text=button_text,
-            callback_data=f"vote_{{voting_id}}_{candidate.id}"
+            callback_data=format_vote_callback_data(voting_id, candidate.id)
         )
 
         row.append(button)

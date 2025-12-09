@@ -2,7 +2,7 @@
 import pytest
 import json
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 from bot.handlers.game.commands import (
     pidorfinal_cmd,
     pidorfinalstatus_cmd,
@@ -11,8 +11,9 @@ from bot.handlers.game.commands import (
 from bot.app.models import FinalVoting, GameResult, TGUser
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorfinal_cmd_wrong_date(mock_update, mock_context, mock_game, mocker):
+async def test_pidorfinal_cmd_wrong_date(mock_update, mock_context, mock_game, mocker):
     """Test pidorfinal command fails when called on wrong date (not Dec 29-30)."""
     # Setup
     mock_context.game = mock_game
@@ -32,7 +33,7 @@ def test_pidorfinal_cmd_wrong_date(mock_update, mock_context, mock_game, mocker)
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
     
     # Execute
-    pidorfinal_cmd(mock_update, mock_context)
+    await pidorfinal_cmd(mock_update, mock_context)
     
     # Verify error message was sent
     mock_update.effective_chat.send_message.assert_called_once()
@@ -40,8 +41,9 @@ def test_pidorfinal_cmd_wrong_date(mock_update, mock_context, mock_game, mocker)
     assert "29 или 30 декабря" in call_args or "wrong date" in call_args.lower()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorfinal_cmd_too_many_missed_days(mock_update, mock_context, mock_game, mocker):
+async def test_pidorfinal_cmd_too_many_missed_days(mock_update, mock_context, mock_game, mocker):
     """Test pidorfinal command fails when there are too many missed days."""
     # Setup
     mock_context.game = mock_game
@@ -65,7 +67,7 @@ def test_pidorfinal_cmd_too_many_missed_days(mock_update, mock_context, mock_gam
     mocker.patch('bot.handlers.game.commands.get_all_missed_days', return_value=missed_days)
     
     # Execute
-    pidorfinal_cmd(mock_update, mock_context)
+    await pidorfinal_cmd(mock_update, mock_context)
     
     # Verify error message was sent
     mock_update.effective_chat.send_message.assert_called_once()
@@ -73,8 +75,9 @@ def test_pidorfinal_cmd_too_many_missed_days(mock_update, mock_context, mock_gam
     assert "Слишком много" in call_args or "too many" in call_args.lower()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorfinal_cmd_already_exists(mock_update, mock_context, mock_game, mocker):
+async def test_pidorfinal_cmd_already_exists(mock_update, mock_context, mock_game, mocker):
     """Test pidorfinal command fails when voting already exists."""
     # Setup
     mock_context.game = mock_game
@@ -106,7 +109,7 @@ def test_pidorfinal_cmd_already_exists(mock_update, mock_context, mock_game, moc
     mocker.patch('bot.handlers.game.commands.get_all_missed_days', return_value=missed_days)
     
     # Execute
-    pidorfinal_cmd(mock_update, mock_context)
+    await pidorfinal_cmd(mock_update, mock_context)
     
     # Verify error message was sent
     mock_update.effective_chat.send_message.assert_called_once()
@@ -114,8 +117,9 @@ def test_pidorfinal_cmd_already_exists(mock_update, mock_context, mock_game, moc
     assert "уже запущено" in call_args or "already exists" in call_args.lower()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorfinal_cmd_success(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_pidorfinal_cmd_success(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test successful creation of final voting."""
     # Setup
     mock_game.players = sample_players
@@ -155,10 +159,10 @@ def test_pidorfinal_cmd_success(mock_update, mock_context, mock_game, sample_pla
     # Mock bot.send_message for voting keyboard
     mock_voting_message = MagicMock()
     mock_voting_message.message_id = 12345
-    mock_context.bot.send_message = MagicMock(return_value=mock_voting_message)
+    mock_context.bot.send_message = AsyncMock(return_value=mock_voting_message)
     
     # Execute
-    pidorfinal_cmd(mock_update, mock_context)
+    await pidorfinal_cmd(mock_update, mock_context)
     
     # Verify info message was sent
     assert mock_update.effective_chat.send_message.call_count == 1
@@ -171,8 +175,9 @@ def test_pidorfinal_cmd_success(mock_update, mock_context, mock_game, sample_pla
     mock_context.db_session.commit.assert_called_once()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorfinal_cmd_test_chat_bypass_date_check(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_pidorfinal_cmd_test_chat_bypass_date_check(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test that test chat bypasses date check for pidorfinal command."""
     # Setup
     mock_game.players = sample_players
@@ -215,10 +220,10 @@ def test_pidorfinal_cmd_test_chat_bypass_date_check(mock_update, mock_context, m
     # Mock bot.send_message for voting keyboard
     mock_voting_message = MagicMock()
     mock_voting_message.message_id = 12345
-    mock_context.bot.send_message = MagicMock(return_value=mock_voting_message)
+    mock_context.bot.send_message = AsyncMock(return_value=mock_voting_message)
     
     # Execute
-    pidorfinal_cmd(mock_update, mock_context)
+    await pidorfinal_cmd(mock_update, mock_context)
     
     # Verify info message was sent (not error about wrong date)
     assert mock_update.effective_chat.send_message.call_count == 1
@@ -234,8 +239,9 @@ def test_pidorfinal_cmd_test_chat_bypass_date_check(mock_update, mock_context, m
     mock_context.db_session.commit.assert_called_once()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorfinal_cmd_test_chat_bypass_missed_days_check(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_pidorfinal_cmd_test_chat_bypass_missed_days_check(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test that test chat bypasses missed days count check for pidorfinal command."""
     # Setup
     mock_game.players = sample_players
@@ -278,10 +284,10 @@ def test_pidorfinal_cmd_test_chat_bypass_missed_days_check(mock_update, mock_con
     # Mock bot.send_message for voting keyboard
     mock_voting_message = MagicMock()
     mock_voting_message.message_id = 12345
-    mock_context.bot.send_message = MagicMock(return_value=mock_voting_message)
+    mock_context.bot.send_message = AsyncMock(return_value=mock_voting_message)
     
     # Execute
-    pidorfinal_cmd(mock_update, mock_context)
+    await pidorfinal_cmd(mock_update, mock_context)
     
     # Verify info message was sent (not error about too many days)
     assert mock_update.effective_chat.send_message.call_count == 1
@@ -297,8 +303,9 @@ def test_pidorfinal_cmd_test_chat_bypass_missed_days_check(mock_update, mock_con
     mock_context.db_session.commit.assert_called_once()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorfinal_cmd_regular_chat_date_check_enforced(mock_update, mock_context, mock_game, mocker):
+async def test_pidorfinal_cmd_regular_chat_date_check_enforced(mock_update, mock_context, mock_game, mocker):
     """Test that regular chats still enforce date check for pidorfinal command."""
     # Setup
     mock_context.game = mock_game
@@ -321,7 +328,7 @@ def test_pidorfinal_cmd_regular_chat_date_check_enforced(mock_update, mock_conte
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
     
     # Execute
-    pidorfinal_cmd(mock_update, mock_context)
+    await pidorfinal_cmd(mock_update, mock_context)
     
     # Verify error message about wrong date was sent
     mock_update.effective_chat.send_message.assert_called_once()
@@ -329,8 +336,9 @@ def test_pidorfinal_cmd_regular_chat_date_check_enforced(mock_update, mock_conte
     assert "29 или 30 декабря" in call_args or "wrong date" in call_args.lower()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorfinalstatus_cmd_not_started(mock_update, mock_context, mock_game, mocker):
+async def test_pidorfinalstatus_cmd_not_started(mock_update, mock_context, mock_game, mocker):
     """Test pidorfinalstatus command when voting is not started."""
     # Setup
     mock_context.game = mock_game
@@ -353,7 +361,7 @@ def test_pidorfinalstatus_cmd_not_started(mock_update, mock_context, mock_game, 
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
     
     # Execute
-    pidorfinalstatus_cmd(mock_update, mock_context)
+    await pidorfinalstatus_cmd(mock_update, mock_context)
     
     # Verify "not started" message was sent
     mock_update.effective_chat.send_message.assert_called_once()
@@ -361,8 +369,9 @@ def test_pidorfinalstatus_cmd_not_started(mock_update, mock_context, mock_game, 
     assert "не запущено" in call_args or "not started" in call_args.lower()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorfinalstatus_cmd_active(mock_update, mock_context, mock_game, mocker):
+async def test_pidorfinalstatus_cmd_active(mock_update, mock_context, mock_game, mocker):
     """Test pidorfinalstatus command when voting is active."""
     # Setup
     mock_context.game = mock_game
@@ -390,7 +399,7 @@ def test_pidorfinalstatus_cmd_active(mock_update, mock_context, mock_game, mocke
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
     
     # Execute
-    pidorfinalstatus_cmd(mock_update, mock_context)
+    await pidorfinalstatus_cmd(mock_update, mock_context)
     
     # Verify "active" message was sent
     mock_update.effective_chat.send_message.assert_called_once()
@@ -398,8 +407,9 @@ def test_pidorfinalstatus_cmd_active(mock_update, mock_context, mock_game, mocke
     assert "активно" in call_args or "active" in call_args.lower()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorfinalstatus_cmd_completed(mock_update, mock_context, mock_game, mock_tg_user, mocker):
+async def test_pidorfinalstatus_cmd_completed(mock_update, mock_context, mock_game, mock_tg_user, mocker):
     """Test pidorfinalstatus command when voting is completed."""
     # Setup
     mock_context.game = mock_game
@@ -428,7 +438,7 @@ def test_pidorfinalstatus_cmd_completed(mock_update, mock_context, mock_game, mo
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
     
     # Execute
-    pidorfinalstatus_cmd(mock_update, mock_context)
+    await pidorfinalstatus_cmd(mock_update, mock_context)
     
     # Verify "completed" message was sent
     mock_update.effective_chat.send_message.assert_called_once()
@@ -436,13 +446,14 @@ def test_pidorfinalstatus_cmd_completed(mock_update, mock_context, mock_game, mo
     assert "завершено" in call_args or "completed" in call_args.lower()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_handle_vote_callback_add_vote(mock_update, mock_context, mocker):
+async def test_handle_vote_callback_add_vote(mock_update, mock_context, mocker):
     """Test handle_vote_callback adds a vote correctly."""
     from bot.handlers.game.commands import handle_vote_callback
     
     # Setup callback query
-    mock_query = MagicMock()
+    mock_query = AsyncMock()
     mock_query.data = "vote_1_123"  # voting_id=1, candidate_id=123
     mock_query.from_user.id = 456
     mock_update.callback_query = mock_query
@@ -456,7 +467,7 @@ def test_handle_vote_callback_add_vote(mock_update, mock_context, mocker):
     mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_voting
     
     # Execute
-    handle_vote_callback(mock_update, mock_context)
+    await handle_vote_callback(mock_update, mock_context)
     
     # Verify vote was added
     import json
@@ -471,13 +482,14 @@ def test_handle_vote_callback_add_vote(mock_update, mock_context, mocker):
     mock_context.db_session.commit.assert_called_once()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_handle_vote_callback_remove_vote(mock_update, mock_context, mocker):
+async def test_handle_vote_callback_remove_vote(mock_update, mock_context, mocker):
     """Test handle_vote_callback removes a vote (toggle)."""
     from bot.handlers.game.commands import handle_vote_callback
     
     # Setup callback query
-    mock_query = MagicMock()
+    mock_query = AsyncMock()
     mock_query.data = "vote_1_123"  # voting_id=1, candidate_id=123
     mock_query.from_user.id = 456
     mock_update.callback_query = mock_query
@@ -491,7 +503,7 @@ def test_handle_vote_callback_remove_vote(mock_update, mock_context, mocker):
     mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_voting
     
     # Execute
-    handle_vote_callback(mock_update, mock_context)
+    await handle_vote_callback(mock_update, mock_context)
     
     # Verify vote was removed
     import json
@@ -507,13 +519,14 @@ def test_handle_vote_callback_remove_vote(mock_update, mock_context, mocker):
     mock_context.db_session.commit.assert_called_once()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_handle_vote_callback_multiple_votes(mock_update, mock_context, mocker):
+async def test_handle_vote_callback_multiple_votes(mock_update, mock_context, mocker):
     """Test handle_vote_callback allows voting for multiple candidates."""
     from bot.handlers.game.commands import handle_vote_callback
     
     # Setup callback query for first vote
-    mock_query = MagicMock()
+    mock_query = AsyncMock()
     mock_query.data = "vote_1_123"
     mock_query.from_user.id = 456
     mock_update.callback_query = mock_query
@@ -527,7 +540,7 @@ def test_handle_vote_callback_multiple_votes(mock_update, mock_context, mocker):
     mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_voting
     
     # First vote
-    handle_vote_callback(mock_update, mock_context)
+    await handle_vote_callback(mock_update, mock_context)
     
     import json
     votes_after_first = json.loads(mock_voting.votes_data)
@@ -538,7 +551,7 @@ def test_handle_vote_callback_multiple_votes(mock_update, mock_context, mocker):
     
     # Second vote for different candidate
     mock_query.data = "vote_1_789"
-    handle_vote_callback(mock_update, mock_context)
+    await handle_vote_callback(mock_update, mock_context)
     
     # Verify both votes are present
     votes_after_second = json.loads(mock_voting.votes_data)
@@ -551,8 +564,9 @@ def test_handle_vote_callback_multiple_votes(mock_update, mock_context, mocker):
     mock_context.db_session.commit.assert_called_once()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_handle_vote_callback_voting_ended(mock_update, mock_context, mocker):
+async def test_handle_vote_callback_voting_ended(mock_update, mock_context, mocker):
     """Test handle_vote_callback rejects votes after voting ended."""
     from bot.handlers.game.commands import handle_vote_callback
     from datetime import datetime
@@ -572,7 +586,7 @@ def test_handle_vote_callback_voting_ended(mock_update, mock_context, mocker):
     mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_voting
     
     # Execute
-    handle_vote_callback(mock_update, mock_context)
+    await handle_vote_callback(mock_update, mock_context)
     
     # Verify vote was NOT added
     import json
@@ -586,8 +600,9 @@ def test_handle_vote_callback_voting_ended(mock_update, mock_context, mocker):
     mock_context.db_session.commit.assert_not_called()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorfinalclose_cmd_success(mock_update, mock_context, mock_game, sample_players, mocker):
+async def test_pidorfinalclose_cmd_success(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test successful manual closing of voting by admin."""
     # Setup
     mock_context.game = mock_game
@@ -611,7 +626,7 @@ def test_pidorfinalclose_cmd_success(mock_update, mock_context, mock_game, sampl
     # Mock admin check
     mock_chat_member = MagicMock()
     mock_chat_member.status = 'administrator'
-    mock_context.bot.get_chat_member.return_value = mock_chat_member
+    mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)
     
     # Mock finalize_voting
     winner = sample_players[0]
@@ -640,7 +655,7 @@ def test_pidorfinalclose_cmd_success(mock_update, mock_context, mock_game, sampl
     mock_context.db_session.exec.return_value = mock_weights_result
     
     # Execute
-    pidorfinalclose_cmd(mock_update, mock_context)
+    await pidorfinalclose_cmd(mock_update, mock_context)
     
     # Verify success message was sent
     assert mock_update.effective_chat.send_message.call_count == 2  # Success + Results
@@ -650,8 +665,9 @@ def test_pidorfinalclose_cmd_success(mock_update, mock_context, mock_game, sampl
     # Note: we can't assert on the mocked function directly, but we verified it was called via mocker.patch
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorfinalclose_cmd_not_admin(mock_update, mock_context, mock_game, mocker):
+async def test_pidorfinalclose_cmd_not_admin(mock_update, mock_context, mock_game, mocker):
     """Test that non-admin cannot close voting."""
     # Setup
     mock_context.game = mock_game
@@ -671,10 +687,10 @@ def test_pidorfinalclose_cmd_not_admin(mock_update, mock_context, mock_game, moc
     # Mock non-admin check
     mock_chat_member = MagicMock()
     mock_chat_member.status = 'member'  # Not admin
-    mock_context.bot.get_chat_member.return_value = mock_chat_member
+    mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)
     
     # Execute
-    pidorfinalclose_cmd(mock_update, mock_context)
+    await pidorfinalclose_cmd(mock_update, mock_context)
     
     # Verify error message was sent
     mock_update.effective_chat.send_message.assert_called_once()
@@ -682,8 +698,9 @@ def test_pidorfinalclose_cmd_not_admin(mock_update, mock_context, mock_game, moc
     assert "администратор" in call_args or "admin" in call_args.lower()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorfinalclose_cmd_no_active_voting(mock_update, mock_context, mock_game, mocker):
+async def test_pidorfinalclose_cmd_no_active_voting(mock_update, mock_context, mock_game, mocker):
     """Test error when no active voting exists."""
     # Setup
     mock_context.game = mock_game
@@ -697,7 +714,7 @@ def test_pidorfinalclose_cmd_no_active_voting(mock_update, mock_context, mock_ga
     mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = None
     
     # Execute
-    pidorfinalclose_cmd(mock_update, mock_context)
+    await pidorfinalclose_cmd(mock_update, mock_context)
     
     # Verify error message was sent
     mock_update.effective_chat.send_message.assert_called_once()
@@ -705,8 +722,9 @@ def test_pidorfinalclose_cmd_no_active_voting(mock_update, mock_context, mock_ga
     assert "активного голосования" in call_args or "not active" in call_args.lower()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_pidorfinalclose_cmd_already_ended(mock_update, mock_context, mock_game, mocker):
+async def test_pidorfinalclose_cmd_already_ended(mock_update, mock_context, mock_game, mocker):
     """Test error when voting already ended."""
     # Setup
     mock_context.game = mock_game
@@ -723,7 +741,7 @@ def test_pidorfinalclose_cmd_already_ended(mock_update, mock_context, mock_game,
     mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_voting
     
     # Execute
-    pidorfinalclose_cmd(mock_update, mock_context)
+    await pidorfinalclose_cmd(mock_update, mock_context)
     
     # Verify error message was sent
     mock_update.effective_chat.send_message.assert_called_once()
@@ -731,8 +749,9 @@ def test_pidorfinalclose_cmd_already_ended(mock_update, mock_context, mock_game,
     assert "активного голосования" in call_args or "not active" in call_args.lower()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_handle_vote_callback_voting_not_found(mock_update, mock_context, mocker):
+async def test_handle_vote_callback_voting_not_found(mock_update, mock_context, mocker):
     """Test handle_vote_callback handles missing voting gracefully."""
     from bot.handlers.game.commands import handle_vote_callback
     
@@ -746,7 +765,7 @@ def test_handle_vote_callback_voting_not_found(mock_update, mock_context, mocker
     mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = None
     
     # Execute
-    handle_vote_callback(mock_update, mock_context)
+    await handle_vote_callback(mock_update, mock_context)
     
     # Verify error message
     mock_query.answer.assert_called_once_with("❌ Голосование не найдено")
@@ -755,8 +774,9 @@ def test_handle_vote_callback_voting_not_found(mock_update, mock_context, mocker
     mock_context.db_session.commit.assert_not_called()
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
-def test_handle_vote_callback_invalid_callback_data(mock_update, mock_context, mocker):
+async def test_handle_vote_callback_invalid_callback_data(mock_update, mock_context, mocker):
     """Test handle_vote_callback handles invalid callback_data."""
     from bot.handlers.game.commands import handle_vote_callback
     
@@ -766,7 +786,7 @@ def test_handle_vote_callback_invalid_callback_data(mock_update, mock_context, m
     mock_update.callback_query = mock_query
     
     # Execute
-    handle_vote_callback(mock_update, mock_context)
+    await handle_vote_callback(mock_update, mock_context)
     
     # Verify error message
     mock_query.answer.assert_called_once_with("❌ Ошибка обработки голоса")

@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlmodel import Session
 from telegram import Update
-from telegram.ext import CallbackContext
+from telegram.ext import ContextTypes
 
 from bot.app.models import TGUser
 from bot.utils import ECallbackContext
@@ -12,7 +12,7 @@ from bot.utils import ECallbackContext
 logger = logging.getLogger(__name__)
 
 
-def tg_user_middleware_handler(update: Update, context: ECallbackContext):
+async def tg_user_middleware_handler(update: Update, context: ECallbackContext):
     # Логируем тип обновления для отладки
     update_type = "unknown"
     if update.message:
@@ -59,7 +59,7 @@ def tg_user_middleware_handler(update: Update, context: ECallbackContext):
     context.tg_user = tg_user
 
 
-def tg_user_from_text(user, update: Update, context: ECallbackContext):
+async def tg_user_from_text(user, update: Update, context: ECallbackContext):
     session = context.db_session
     tg_user: TGUser = session.query(TGUser).filter_by(
         tg_id=user.id).one_or_none()
@@ -95,7 +95,7 @@ def tg_user_from_text(user, update: Update, context: ECallbackContext):
 
 
 def open_db_session(db):
-    def open_db_session_handler(update: Update, context: ECallbackContext):
+    async def open_db_session_handler(update: Update, context: ECallbackContext):
         # Логируем открытие сессии для отладки
         update_type = "unknown"
         if update.message:
@@ -112,5 +112,5 @@ def open_db_session(db):
     return open_db_session_handler
 
 
-def close_db_session_handler(update: Update, context: ECallbackContext):
+async def close_db_session_handler(update: Update, context: ECallbackContext):
     context.db_session.close()
