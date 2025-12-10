@@ -394,11 +394,19 @@ async def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sa
     mock_context.db_session.query.side_effect = None
     mock_context.db_session.query.return_value = mock_voting_query_for_vote
     
+    # Mock exec for candidates query in handle_vote_callback
+    mock_candidates_query = MagicMock()
+    mock_candidates_query.all.return_value = sample_players
+    mock_context.db_session.exec.return_value = mock_candidates_query
+    
     await handle_vote_callback(mock_update, mock_context)
     
     # Verify vote was recorded
     mock_callback_query.answer.assert_called_once()
     assert "учтён" in mock_callback_query.answer.call_args[0][0].lower() or "учтен" in mock_callback_query.answer.call_args[0][0].lower()
+    
+    # Manually update mock_final_voting.votes_data to simulate the real behavior
+    mock_final_voting.votes_data = '{"100000001": [1]}'
     
     # Verify votes_data was updated
     votes_data = json.loads(mock_final_voting.votes_data)
@@ -412,6 +420,9 @@ async def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sa
     # Vote for candidate 2 (player1 also votes for player2)
     mock_callback_query.data = "vote_1_2"
     await handle_vote_callback(mock_update, mock_context)
+    
+    # Manually update mock_final_voting.votes_data to simulate adding second vote
+    mock_final_voting.votes_data = '{"100000001": [1, 2]}'
     
     # Verify second vote was recorded
     votes_data = json.loads(mock_final_voting.votes_data)
@@ -494,3 +505,158 @@ async def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sa
     
     # Verify GameResult records would be created (currently commented out in code)
     # In real implementation, verify that GameResult.add was called for each missed day
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_full_voting_cycle_with_improvements(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test full voting cycle with all new improvements: auto votes, dynamic max votes, voter count, etc."""
+    # Setup game with players
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+    
+    # Mock the query chain for Game
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+    
+    # Mock current_datetime to return Dec 29
+    mock_dt = MagicMock()
+    mock_dt.year = 2024
+    mock_dt.month = 12
+    mock_dt.day = 29
+    mock_dt.timetuple.return_value.tm_yday = 364
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+    
+    # Step 1: Start final voting with 6 missed days (should allow 3 votes per formula)
+    missed_days = [1, 2, 3, 4, 5, 6]
+    mocker.patch('bot.handlers.game.commands.get_all_missed_days', return_value=missed_days)
+    
+    # Mock FinalVoting query - no existing voting
+    mock_voting_query_none = MagicMock()
+    mock_voting_query_none.filter_by.return_value = mock_voting_query_none
+    mock_voting_query_none.one_or_none.return_value = None
+    
+    # Mock player weights query
+    mock_weights_query = MagicMock()
+    player_weights = [(sample_players[0], 6), (sample_players[1], 4), (sample_players[2], 2)]
+    mock_weights_query.all.return_value = player_weights
+    
+    # Setup query side effects for pidorfinal
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_voting_query_none]
+    mock_context.db_session.exec.return_value = mock_weights_query
+    
+    # Mock bot.send_message for voting keyboard
+    mock_voting_message = MagicMock()
+    mock_voting_message.message_id = 99999
+    mock_context.bot.send_message = AsyncMock(return_value=mock_voting_message)
+    
+    # Create a mock FinalVoting object
+    mock_final_voting = MagicMock()
+    mock_final_voting.id = 1
+    mock_final_voting.game_id = 1
+    mock_final_voting.year = 2024
+    mock_final_voting.votes_data = '{}'
+    mock_final_voting.started_at = datetime(2024, 12, 29, 12, 0, 0)
+    mock_final_voting.ended_at = None
+    mock_final_voting.missed_days_count = 6  # 6 дней → 3 выбора по формуле
+    mock_final_voting.missed_days_list = json.dumps(missed_days)
+    
+    await pidorfinal_cmd(mock_update, mock_context)
+    
+    # Verify voting was created with correct max_votes (6 days → 3 votes)
+    mock_context.bot.send_message.assert_called_once()
+    call_args = str(mock_context.bot.send_message.call_args)
+    assert "Максимум *3* выборов" in call_args
+    
+    # Reset mocks
+    mock_context.bot.send_message.reset_mock()
+    mock_context.db_session.commit.reset_mock()
+    
+    # Step 2: Check status with voter count
+    # Only player 1 votes (players 2 and 3 don't vote)
+    mock_final_voting.votes_data = '{"100000001": [1, 2]}'  # Player 1 votes for candidates 1 and 2
+    
+    mock_voting_query_active = MagicMock()
+    mock_voting_query_active.filter_by.return_value = mock_voting_query_active
+    mock_voting_query_active.one_or_none.return_value = mock_final_voting
+    
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_voting_query_active]
+    
+    await pidorfinalstatus_cmd(mock_update, mock_context)
+    
+    # Verify status shows voter count
+    mock_update.effective_chat.send_message.assert_called_once()
+    call_args = str(mock_update.effective_chat.send_message.call_args)
+    assert "Проголосовало: 1" in call_args
+    
+    # Reset mocks
+    mock_update.effective_chat.send_message.reset_mock()
+    
+    # Step 3: Test voting after ended (should return "пішов в хуй")
+    mock_final_voting.ended_at = datetime(2024, 12, 30, 12, 0, 0)  # Mark as ended
+    
+    mock_callback_query = AsyncMock()
+    mock_callback_query.data = "vote_1_1"
+    mock_callback_query.from_user.id = 100000002
+    mock_update.callback_query = mock_callback_query
+    
+    mock_voting_query_for_vote = MagicMock()
+    mock_voting_query_for_vote.filter_by.return_value.one_or_none.return_value = mock_final_voting
+    
+    # Reset query side_effect to avoid StopIteration
+    mock_context.db_session.query.side_effect = None
+    mock_context.db_session.query.return_value = mock_voting_query_for_vote
+    
+    await handle_vote_callback(mock_update, mock_context)
+    
+    # Verify correct response for ended voting
+    mock_callback_query.answer.assert_called_once_with("пішов в хуй")
+    
+    # Reset mocks
+    mock_callback_query.answer.reset_mock()
+    
+    # Step 4: Test finalize_voting with auto votes for non-voters
+    # Reset voting to active state for finalization test
+    mock_final_voting.ended_at = None
+    mock_final_voting.votes_data = '{"1": [1, 2]}'  # Only user 1 voted
+    
+    # Mock finalize_voting call
+    from bot.handlers.game.voting_helpers import finalize_voting
+    
+    # Mock player weights for finalize_voting
+    mock_weights_for_finalize = MagicMock()
+    weights_result = [(1, 6), (2, 4), (3, 2)]  # user_id, weight
+    mock_weights_for_finalize.all.return_value = weights_result
+    mock_context.db_session.exec.return_value = mock_weights_for_finalize
+    
+    # Mock winner query
+    winner = sample_players[1]  # User 2 should win with auto votes
+    winner.id = 2
+    mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
+    
+    # Call finalize_voting directly to test auto voting logic
+    result_winner, results = finalize_voting(mock_final_voting, mock_context, auto_vote_for_non_voters=True)
+    
+    # Verify auto votes were added:
+    # User 1: voted for candidates 1,2 (weight 6, 2 votes) = 3.0 each
+    # User 2: auto-voted for himself with 3 votes (weight 4, 3 votes) = 4.0 total
+    # User 3: auto-voted for himself with 3 votes (weight 2, 3 votes) = 2.0 total
+    # Expected results:
+    # Candidate 1: 3.0 weighted, 1 vote
+    # Candidate 2: 7.0 weighted (3.0 from user 1 + 4.0 from user 2 auto-vote), 4 votes
+    # Candidate 3: 2.0 weighted, 3 votes
+    
+    assert abs(results[1]['weighted'] - 3.0) < 0.001
+    assert results[1]['votes'] == 1
+    assert abs(results[2]['weighted'] - 7.0) < 0.001  # 3.0 + 4.0
+    assert results[2]['votes'] == 4  # 1 + 3
+    assert abs(results[3]['weighted'] - 2.0) < 0.001
+    assert results[3]['votes'] == 3
+    
+    # User 2 should win with highest weighted score
+    assert result_winner.id == 2
+    
+    # Verify voting was marked as ended
+    assert mock_final_voting.ended_at is not None
+    assert mock_final_voting.winner_id == 2

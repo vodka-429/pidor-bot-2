@@ -454,6 +454,7 @@ async def test_handle_vote_callback_add_vote(mock_update, mock_context, mocker):
     mock_voting.id = 1
     mock_voting.ended_at = None
     mock_voting.votes_data = '{}'  # Empty votes
+    mock_voting.missed_days_count = 2  # Allows 1 vote (2/2 = 1)
     
     mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_voting
     
@@ -490,6 +491,7 @@ async def test_handle_vote_callback_remove_vote(mock_update, mock_context, mocke
     mock_voting.id = 1
     mock_voting.ended_at = None
     mock_voting.votes_data = '{"456": [123]}'  # User 456 already voted for candidate 123
+    mock_voting.missed_days_count = 2  # Allows 1 vote (2/2 = 1)
     
     mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_voting
     
@@ -527,6 +529,7 @@ async def test_handle_vote_callback_multiple_votes(mock_update, mock_context, mo
     mock_voting.id = 1
     mock_voting.ended_at = None
     mock_voting.votes_data = '{}'
+    mock_voting.missed_days_count = 4  # Allows 2 votes (4/2 = 2)
     
     mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_voting
     
@@ -563,7 +566,7 @@ async def test_handle_vote_callback_voting_ended(mock_update, mock_context, mock
     from datetime import datetime
     
     # Setup callback query
-    mock_query = MagicMock()
+    mock_query = AsyncMock()
     mock_query.data = "vote_1_123"
     mock_query.from_user.id = 456
     mock_update.callback_query = mock_query
@@ -573,6 +576,7 @@ async def test_handle_vote_callback_voting_ended(mock_update, mock_context, mock
     mock_voting.id = 1
     mock_voting.ended_at = datetime(2024, 12, 30, 12, 0, 0)  # Already ended
     mock_voting.votes_data = '{}'
+    mock_voting.missed_days_count = 2  # Allows 1 vote (2/2 = 1)
     
     mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_voting
     
@@ -585,7 +589,7 @@ async def test_handle_vote_callback_voting_ended(mock_update, mock_context, mock
     assert '456' not in votes
     
     # Verify error message
-    mock_query.answer.assert_called_once_with("❌ Голосование уже завершено")
+    mock_query.answer.assert_called_once_with("пішов в хуй")
     
     # Verify commit was NOT called
     mock_context.db_session.commit.assert_not_called()
@@ -883,3 +887,80 @@ async def test_handle_vote_callback_invalid_callback_data(mock_update, mock_cont
     
     # Verify commit was NOT called
     mock_context.db_session.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_handle_vote_callback_voting_ended_response(mock_update, mock_context, mocker):
+    """Test handle_vote_callback returns correct response when voting ended."""
+    from bot.handlers.game.commands import handle_vote_callback
+    from datetime import datetime
+    
+    # Setup callback query
+    mock_query = AsyncMock()
+    mock_query.data = "vote_1_123"
+    mock_query.from_user.id = 456
+    mock_update.callback_query = mock_query
+    
+    # Setup FinalVoting that has ended
+    mock_voting = MagicMock()
+    mock_voting.id = 1
+    mock_voting.ended_at = datetime(2024, 12, 30, 12, 0, 0)  # Already ended
+    mock_voting.votes_data = '{}'
+    mock_voting.missed_days_count = 2
+    
+    mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_voting
+    
+    # Execute
+    await handle_vote_callback(mock_update, mock_context)
+    
+    # Verify specific response "пішов в хуй"
+    mock_query.answer.assert_called_once_with("пішов в хуй")
+    
+    # Verify vote was NOT added
+    import json
+    votes = json.loads(mock_voting.votes_data)
+    assert '456' not in votes
+    
+    # Verify commit was NOT called
+    mock_context.db_session.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_pidorfinalstatus_cmd_active_with_voters(mock_update, mock_context, mock_game, mocker):
+    """Test pidorfinalstatus command shows voter count when voting is active."""
+    # Setup
+    mock_context.game = mock_game
+    
+    # Mock the query chain for Game
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+    
+    # Mock FinalVoting - active voting with some votes
+    mock_voting = MagicMock()
+    mock_voting.started_at = datetime(2024, 12, 29, 12, 0, 0)
+    mock_voting.ended_at = None
+    mock_voting.missed_days_count = 5
+    mock_voting.votes_data = '{"123": [1, 2], "456": [3], "789": [1]}'  # 3 voters
+    
+    mock_voting_query = MagicMock()
+    mock_voting_query.filter_by.return_value = mock_voting_query
+    mock_voting_query.one_or_none.return_value = mock_voting
+    
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_voting_query]
+    
+    # Mock current_datetime
+    mock_dt = MagicMock()
+    mock_dt.year = 2024
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+    
+    # Execute
+    await pidorfinalstatus_cmd(mock_update, mock_context)
+    
+    # Verify "active with voters" message was sent
+    mock_update.effective_chat.send_message.assert_called_once()
+    call_args = str(mock_update.effective_chat.send_message.call_args)
+    assert "активно" in call_args or "active" in call_args.lower()
+    assert "Проголосовало: 3" in call_args or "3 игроков" in call_args
