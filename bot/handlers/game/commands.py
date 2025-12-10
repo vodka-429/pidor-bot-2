@@ -21,7 +21,7 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
     ERROR_ALREADY_REGISTERED, ERROR_ZERO_PLAYERS, ERROR_NOT_ENOUGH_PLAYERS, \
     CURRENT_DAY_GAME_RESULT, \
     YEAR_RESULTS_MSG, YEAR_RESULTS_ANNOUNCEMENT, REGISTRATION_MANY_SUCCESS, \
-    ERROR_ALREADY_REGISTERED_MANY
+    ERROR_ALREADY_REGISTERED_MANY, VOTING_ENDED_RESPONSE
 from bot.utils import escape_markdown2, ECallbackContext
 
 # Получаем логгер для этого модуля
@@ -469,14 +469,18 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
     context.db_session.add(final_voting)
     context.db_session.flush()  # Получаем ID для использования в callback_data
 
-    # Создаём клавиатуру с кнопками кандидатов, передавая voting_id
-    keyboard = create_voting_keyboard(candidates, voting_id=final_voting.id, votes_per_row=2)
+    # Создаём клавиатуру с кнопками кандидатов, передавая voting_id и chat_id для дублирования в тестовом чате
+    keyboard = create_voting_keyboard(candidates, voting_id=final_voting.id, votes_per_row=2, chat_id=update.effective_chat.id)
 
     logger.info(f"Created keyboard with {len(keyboard.inline_keyboard)} rows")
     logger.info(f"FinalVoting ID: {final_voting.id}")
 
+    # Рассчитываем максимальное количество выборов
+    from bot.handlers.game.voting_helpers import calculate_max_votes
+    max_votes = calculate_max_votes(missed_count)
+
     # Формируем и отправляем объединённое сообщение с информацией и кнопками голосования
-    message_text = format_weights_message(player_weights, missed_count)
+    message_text = format_weights_message(player_weights, missed_count, max_votes)
     voting_message = await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text=message_text,
@@ -526,7 +530,7 @@ async def handle_vote_callback(update: Update, context: ECallbackContext):
     # Проверяем, что голосование ещё активно
     if final_voting.ended_at is not None:
         logger.info(f"Voting {voting_id} already ended")
-        query.answer("❌ Голосование уже завершено")
+        await query.answer(VOTING_ENDED_RESPONSE)
         return
 
     # Загружаем текущие голоса из votes_data
@@ -536,6 +540,10 @@ async def handle_vote_callback(update: Update, context: ECallbackContext):
     # Получаем список голосов пользователя (или создаём пустой)
     user_votes = votes_data.get(user_id, [])
 
+    # Рассчитываем максимальное количество выборов для данного голосования
+    from bot.handlers.game.voting_helpers import calculate_max_votes
+    max_votes = calculate_max_votes(final_voting.missed_days_count)
+
     # Toggle логика: добавляем или удаляем candidate_id
     if candidate_id in user_votes:
         # Удаляем голос
@@ -543,6 +551,13 @@ async def handle_vote_callback(update: Update, context: ECallbackContext):
         answer_text = "✅ Голос отменён"
         logger.info(f"User {user_id} removed vote for candidate {candidate_id}")
     else:
+        # Проверяем лимит выборов перед добавлением
+        if len(user_votes) >= max_votes:
+            answer_text = f"❌ Превышен лимит выборов ({max_votes})"
+            logger.info(f"User {user_id} exceeded vote limit {max_votes}")
+            await query.answer(answer_text)
+            return
+        
         # Добавляем голос
         user_votes.append(candidate_id)
         answer_text = "✅ Голос учтён"
@@ -575,7 +590,7 @@ async def handle_vote_callback(update: Update, context: ECallbackContext):
                 candidates.append(row)
 
     # Создаём обновлённую клавиатуру с отметками выбранных кандидатов
-    updated_keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2, user_votes=user_votes)
+    updated_keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2, user_votes=user_votes, chat_id=update.effective_chat.id)
 
     # Обновляем сообщение с новой клавиатурой
     await query.edit_message_reply_markup(reply_markup=updated_keyboard)
@@ -592,8 +607,10 @@ async def pidorfinalstatus_cmd(update: Update, context: GECallbackContext):
     from bot.handlers.game.text_static import (
         FINAL_VOTING_STATUS_NOT_STARTED,
         FINAL_VOTING_STATUS_ACTIVE,
+        FINAL_VOTING_STATUS_ACTIVE_WITH_VOTERS,
         FINAL_VOTING_STATUS_COMPLETED
     )
+    from bot.handlers.game.voting_helpers import count_voters
 
     logger.info(f"pidorfinalstatus_cmd started for chat {update.effective_chat.id}")
 
@@ -620,13 +637,17 @@ async def pidorfinalstatus_cmd(update: Update, context: GECallbackContext):
     if final_voting.ended_at is None:
         # Форматируем дату для вывода
         started_str = final_voting.started_at.strftime("%d\\.%m\\.%Y %H:%M МСК")
+        
+        # Подсчитываем количество проголосовавших
+        voters_count = count_voters(final_voting.votes_data)
 
-        message = FINAL_VOTING_STATUS_ACTIVE.format(
+        message = FINAL_VOTING_STATUS_ACTIVE_WITH_VOTERS.format(
             started_at=started_str,
-            missed_days=final_voting.missed_days_count
+            missed_days=final_voting.missed_days_count,
+            voters_count=voters_count
         )
         await update.effective_chat.send_message(message, parse_mode="MarkdownV2")
-        logger.info(f"Final voting active for game {context.game.id}, year {cur_year}")
+        logger.info(f"Final voting active for game {context.game.id}, year {cur_year}, voters: {voters_count}")
         return
 
     # Если ended_at is not None - показываем статус "завершено"
@@ -739,16 +760,20 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
         else:
             votes_word = "голосов"
 
-        # Формируем правильное склонение для "очко"
-        if weighted_points % 10 == 1 and weighted_points % 100 != 11:
+        # Форматируем взвешенные очки с одним знаком после запятой
+        weighted_points_str = f"{weighted_points:.1f}"
+
+        # Формируем правильное склонение для "очко" на основе целой части
+        weighted_points_int = int(weighted_points)
+        if weighted_points_int % 10 == 1 and weighted_points_int % 100 != 11:
             points_word = "очко"
-        elif weighted_points % 10 in [2, 3, 4] and weighted_points % 100 not in [12, 13, 14]:
+        elif weighted_points_int % 10 in [2, 3, 4] and weighted_points_int % 100 not in [12, 13, 14]:
             points_word = "очка"
         else:
             points_word = "очков"
 
         voting_results_list.append(
-            f"• {escape_markdown2(candidate.full_username())}: *{votes_count}* {votes_word}, *{weighted_points}* взвешенных {points_word}"
+            f"• {escape_markdown2(candidate.full_username())}: *{votes_count}* {votes_word}, *{weighted_points_str}* взвешенных {points_word}"
         )
 
     # Получаем итоговую статистику года
