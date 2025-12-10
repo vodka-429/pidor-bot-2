@@ -452,6 +452,9 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
 
     # Создаём список кандидатов (все игроки с весами)
     candidates = [player for player, _ in player_weights]
+    
+    # Создаём словарь с количеством побед для каждого игрока
+    player_wins = {player.id: wins for player, wins in player_weights}
 
     # Сначала создаём запись FinalVoting без voting_message_id
     final_voting = FinalVoting(
@@ -469,8 +472,8 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
     context.db_session.add(final_voting)
     context.db_session.flush()  # Получаем ID для использования в callback_data
 
-    # Создаём клавиатуру с кнопками кандидатов, передавая voting_id и chat_id для дублирования в тестовом чате
-    keyboard = create_voting_keyboard(candidates, voting_id=final_voting.id, votes_per_row=2, chat_id=update.effective_chat.id)
+    # Создаём клавиатуру с кнопками кандидатов, передавая voting_id, chat_id и информацию о победах
+    keyboard = create_voting_keyboard(candidates, voting_id=final_voting.id, votes_per_row=2, chat_id=update.effective_chat.id, player_wins=player_wins)
 
     logger.info(f"Created keyboard with {len(keyboard.inline_keyboard)} rows")
     logger.info(f"FinalVoting ID: {final_voting.id}")
@@ -557,7 +560,7 @@ async def handle_vote_callback(update: Update, context: ECallbackContext):
             logger.info(f"User {user_id} exceeded vote limit {max_votes}")
             await query.answer(answer_text)
             return
-        
+
         # Добавляем голос
         user_votes.append(candidate_id)
         answer_text = "✅ Голос учтён"
@@ -570,29 +573,32 @@ async def handle_vote_callback(update: Update, context: ECallbackContext):
     final_voting.votes_data = json.dumps(votes_data)
     context.db_session.commit()
 
-    # Получаем список кандидатов для обновления клавиатуры
+    # Получаем список кандидатов для обновления клавиатуры с информацией о победах
     from bot.handlers.game.voting_helpers import create_voting_keyboard
-    stmt = select(TGUser).join(GameResult, GameResult.winner_id == TGUser.id).filter(
+    stmt = select(TGUser, func.count(GameResult.winner_id).label('count')).join(GameResult, GameResult.winner_id == TGUser.id).filter(
         GameResult.game_id == final_voting.game_id,
         GameResult.year == final_voting.year
     ).group_by(TGUser).order_by(func.count(GameResult.winner_id).desc())
     candidates_result = context.db_session.exec(stmt).all()
-    
-    # Извлекаем только объекты TGUser из кортежей
+
+    # Извлекаем объекты TGUser и создаем словарь с победами
     candidates = []
+    player_wins = {}
     if candidates_result:
         for row in candidates_result:
-            if isinstance(row, tuple):
-                # Если это кортеж, берем первый элемент (TGUser)
-                candidates.append(row[0])
+            if isinstance(row, tuple) and len(row) == 2:
+                # Если это кортеж (TGUser, count), извлекаем оба значения
+                user, wins = row
+                candidates.append(user)
+                player_wins[user.id] = wins
             else:
-                # Если это одиночный объект
+                # Если это одиночный объект (для обратной совместимости)
                 candidates.append(row)
 
-    # Создаём обновлённую клавиатуру с отметками выбранных кандидатов
-    updated_keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2, user_votes=user_votes, chat_id=update.effective_chat.id)
+    # Создаём обновлённую клавиатуру с отметками выбранных кандидатов ТЕКУЩЕГО пользователя
+    updated_keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2, user_votes=user_votes, chat_id=update.effective_chat.id, player_wins=player_wins)
 
-    # Обновляем сообщение с новой клавиатурой
+    # Обновляем сообщение с новой клавиатурой (только для текущего пользователя)
     await query.edit_message_reply_markup(reply_markup=updated_keyboard)
 
     # Отвечаем на callback
@@ -637,7 +643,7 @@ async def pidorfinalstatus_cmd(update: Update, context: GECallbackContext):
     if final_voting.ended_at is None:
         # Форматируем дату для вывода
         started_str = final_voting.started_at.strftime("%d\\.%m\\.%Y %H:%M МСК")
-        
+
         # Подсчитываем количество проголосовавших
         voters_count = count_voters(final_voting.votes_data)
 
@@ -773,7 +779,7 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
             points_word = "очков"
 
         voting_results_list.append(
-            f"• {escape_markdown2(candidate.full_username())}: *{votes_count}* {votes_word}, *{weighted_points_str}* взвешенных {points_word}"
+            f"• {escape_markdown2(candidate.full_username())}: *{votes_count}* {votes_word}, *{escape_markdown2(weighted_points_str)}* взвешенных {points_word}"
         )
 
     # Получаем итоговую статистику года

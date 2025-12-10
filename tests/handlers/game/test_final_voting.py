@@ -964,3 +964,91 @@ async def test_pidorfinalstatus_cmd_active_with_voters(mock_update, mock_context
     call_args = str(mock_update.effective_chat.send_message.call_args)
     assert "активно" in call_args or "active" in call_args.lower()
     assert "Проголосовало: 3" in call_args or "3 игроков" in call_args
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_final_voting_results_escaping(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test that weighted points with decimal places are properly escaped in results."""
+    # Setup
+    mock_context.game = mock_game
+    mock_update.effective_user.id = 999
+    
+    # Mock current_datetime - 25 hours after voting started (more than 24 hours)
+    mock_dt = datetime(2024, 12, 30, 13, 0, 0)
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+    
+    # Setup active FinalVoting - started 25 hours ago
+    mock_voting = MagicMock()
+    mock_voting.id = 1
+    mock_voting.game_id = mock_game.id
+    mock_voting.year = 2024
+    mock_voting.started_at = datetime(2024, 12, 29, 12, 0, 0)  # Started 25 hours ago
+    mock_voting.ended_at = None  # Active voting
+    mock_voting.missed_days_count = 5
+    mock_voting.missed_days_list = json.dumps([1, 2, 3, 4, 5])
+    mock_voting.votes_data = '{"1": [1, 2], "2": [1]}'
+    
+    # Mock admin check
+    mock_chat_member = MagicMock()
+    mock_chat_member.status = 'administrator'
+    mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)
+    
+    # Mock finalize_voting to return results with decimal points
+    winner = sample_players[0]
+    winner.id = 1
+    # Results with decimal points that need escaping
+    results = {
+        1: {'weighted': 12.5, 'votes': 2},  # 12.5 contains a dot that needs escaping
+        2: {'weighted': 8.3, 'votes': 1}   # 8.3 contains a dot that needs escaping
+    }
+    from bot.handlers.game.voting_helpers import finalize_voting
+    mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winner, results))
+    
+    # Mock player weights query
+    mock_weights_result = MagicMock()
+    mock_weights_result.all.return_value = [(sample_players[0], 5), (sample_players[1], 3)]
+    
+    # Mock TGUser query for candidates
+    def query_side_effect(model):
+        if model == FinalVoting:
+            mock_q = MagicMock()
+            mock_q.filter_by.return_value.one_or_none.return_value = mock_voting
+            return mock_q
+        elif model == TGUser:
+            mock_q = MagicMock()
+            # Return different players based on filter_by call
+            def filter_by_side_effect(id=None):
+                mock_filter_q = MagicMock()
+                if id == 1:
+                    mock_filter_q.one.return_value = sample_players[0]
+                elif id == 2:
+                    mock_filter_q.one.return_value = sample_players[1]
+                else:
+                    mock_filter_q.one.return_value = sample_players[0]
+                return mock_filter_q
+            mock_q.filter_by.side_effect = filter_by_side_effect
+            return mock_q
+        return MagicMock()
+    
+    mock_context.db_session.query.side_effect = query_side_effect
+    mock_context.db_session.exec.return_value = mock_weights_result
+    
+    # Execute
+    await pidorfinalclose_cmd(mock_update, mock_context)
+    
+    # Verify success message was sent
+    assert mock_update.effective_chat.send_message.call_count == 2  # Success + Results
+    
+    # Get the results message (second call)
+    results_call = mock_update.effective_chat.send_message.call_args_list[1]
+    results_message = results_call[0][0]  # First positional argument
+    
+    # Verify that decimal points are properly escaped in the results message
+    # The weighted_points_str should be escaped with escape_markdown2()
+    # So "12.5" should become "12\.5" and "8.3" should become "8\.3"
+    assert "12\\.5" in results_message, f"Expected escaped '12\\.5' in results message: {results_message}"
+    assert "8\\.3" in results_message, f"Expected escaped '8\\.3' in results message: {results_message}"
+    
+    # Verify that parse_mode is MarkdownV2
+    assert results_call[1]['parse_mode'] == 'MarkdownV2'
