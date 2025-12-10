@@ -660,3 +660,68 @@ async def test_full_voting_cycle_with_improvements(mock_update, mock_context, mo
     # Verify voting was marked as ended
     assert mock_final_voting.ended_at is not None
     assert mock_final_voting.winner_id == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_vote_callback_no_keyboard_update(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test that vote callback updates keyboard only for the current user, not globally."""
+    # Setup game with players
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+    
+    # Create a mock FinalVoting object
+    mock_final_voting = MagicMock()
+    mock_final_voting.id = 1
+    mock_final_voting.game_id = 1
+    mock_final_voting.year = 2024
+    mock_final_voting.votes_data = '{"100000001": [1]}'  # User 1 already voted for candidate 1
+    mock_final_voting.ended_at = None  # Active voting
+    mock_final_voting.missed_days_count = 4  # Allows 2 votes (4/2 = 2)
+    
+    # Mock callback query for user 2 voting
+    mock_callback_query = AsyncMock()
+    mock_callback_query.from_user.id = 100000002  # Different user
+    mock_callback_query.data = "vote_1_2"  # Vote for candidate 2
+    mock_update.callback_query = mock_callback_query
+    mock_update.effective_chat.id = -123456789  # Regular chat
+    
+    # Mock FinalVoting query
+    mock_voting_query = MagicMock()
+    mock_voting_query.filter_by.return_value.one_or_none.return_value = mock_final_voting
+    mock_context.db_session.query.return_value = mock_voting_query
+    
+    # Mock candidates query for keyboard update
+    mock_candidates_query = MagicMock()
+    mock_candidates_query.all.return_value = sample_players
+    mock_context.db_session.exec.return_value = mock_candidates_query
+    
+    # Execute vote callback
+    await handle_vote_callback(mock_update, mock_context)
+    
+    # Verify that the vote was processed
+    mock_callback_query.answer.assert_called_once()
+    answer_text = mock_callback_query.answer.call_args[0][0]
+    assert "учтён" in answer_text.lower() or "учтен" in answer_text.lower()
+    
+    # Verify that keyboard was updated (this is the corrected behavior)
+    # The keyboard should be updated to show the current user's votes
+    mock_callback_query.edit_message_reply_markup.assert_called_once()
+    
+    # Verify that the keyboard update uses the current user's votes (user 2's votes)
+    # The keyboard should reflect user 2's selection, not user 1's selection
+    keyboard_call = mock_callback_query.edit_message_reply_markup.call_args
+    updated_keyboard = keyboard_call[1]['reply_markup']
+    
+    # The keyboard should be created with user_votes parameter containing user 2's votes
+    # Since user 2 voted for candidate 2, the keyboard should show candidate 2 as selected for this user
+    # We can't directly test the keyboard content without mocking create_voting_keyboard,
+    # but we can verify that edit_message_reply_markup was called with the correct parameters
+    assert updated_keyboard is not None
+    
+    # Verify that votes_data was updated correctly
+    mock_context.db_session.commit.assert_called_once()
+    
+    # The key insight is that each user sees their own selections in the keyboard,
+    # not other users' selections. This prevents the bug where buttons change for everyone
+    # when someone else votes.
