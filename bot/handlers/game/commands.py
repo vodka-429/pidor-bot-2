@@ -591,9 +591,26 @@ async def handle_vote_callback(update: Update, context: ECallbackContext):
                 user, wins = row
                 candidates.append(user)
                 player_wins[user.id] = wins
+            elif hasattr(row, '_mapping') and 'TGUser' in row._mapping:
+                # Если это объект Row с маппингом, извлекаем TGUser из маппинга
+                user = row._mapping['TGUser']
+                wins = row._mapping['count']
+                candidates.append(user)
+                player_wins[user.id] = wins
+            elif hasattr(row, '__getitem__'):
+                # Если это объект с доступом по индексу, пробуем извлечь по индексу
+                try:
+                    user = row[0]
+                    wins = row[1]
+                    if hasattr(user, 'id') and isinstance(wins, int):
+                        candidates.append(user)
+                        player_wins[user.id] = wins
+                    else:
+                        logger.warning(f"Unexpected row format: {row}")
+                except (IndexError, TypeError):
+                    logger.warning(f"Failed to extract from row: {row}")
             else:
-                # Если это одиночный объект (для обратной совместимости)
-                candidates.append(row)
+                logger.warning(f"Unexpected result format: {type(row)} - {row}")
 
     # Создаём обновлённую клавиатуру с отметками выбранных кандидатов ТЕКУЩЕГО пользователя
     updated_keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2, user_votes=user_votes, chat_id=update.effective_chat.id, player_wins=player_wins)
