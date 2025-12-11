@@ -452,7 +452,7 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
 
     # Создаём список кандидатов (все игроки с весами)
     candidates = [player for player, _ in player_weights]
-    
+
     # Создаём словарь с количеством побед для каждого игрока
     player_wins = {player.id: wins for player, wins in player_weights}
 
@@ -572,7 +572,6 @@ async def handle_vote_callback(update: Update, context: ECallbackContext):
     # Сохраняем обновлённые голоса обратно в votes_data
     final_voting.votes_data = json.dumps(votes_data)
     context.db_session.commit()
-
 
     # Отвечаем на callback
     await query.answer(answer_text)
@@ -755,8 +754,8 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
         # Формируем строку результата с пометкой об автоголосовании
         result_line = f"• {escape_markdown2(candidate.full_username())}: *{unique_voters}* {escape_word(votes_word)}, *{weighted_points_str}* взвешенных {escape_word(points_word)}"
         if auto_voted:
-            result_line += " _(автоголосование)_"
-        
+            result_line += " _\\(автоголосование\\)_"
+
         voting_results_list.append(result_line)
 
     # Получаем итоговую статистику года
@@ -777,6 +776,7 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
         missed_days=final_voting.missed_days_count,
         year_stats=year_stats_list
     )
+    logger.info(f"pidorfinalclose_cmd send message {results_message}")
 
     # Отправляем сообщение с результатами
     await update.effective_chat.send_message(
