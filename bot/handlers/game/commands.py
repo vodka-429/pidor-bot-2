@@ -573,50 +573,6 @@ async def handle_vote_callback(update: Update, context: ECallbackContext):
     final_voting.votes_data = json.dumps(votes_data)
     context.db_session.commit()
 
-    # Получаем список кандидатов для обновления клавиатуры с информацией о победах
-    from bot.handlers.game.voting_helpers import create_voting_keyboard
-    stmt = select(TGUser, func.count(GameResult.winner_id).label('count')).join(GameResult, GameResult.winner_id == TGUser.id).filter(
-        GameResult.game_id == final_voting.game_id,
-        GameResult.year == final_voting.year
-    ).group_by(TGUser).order_by(func.count(GameResult.winner_id).desc())
-    candidates_result = context.db_session.exec(stmt).all()
-
-    # Извлекаем объекты TGUser и создаем словарь с победами
-    candidates = []
-    player_wins = {}
-    if candidates_result:
-        for row in candidates_result:
-            if isinstance(row, tuple) and len(row) == 2:
-                # Если это кортеж (TGUser, count), извлекаем оба значения
-                user, wins = row
-                candidates.append(user)
-                player_wins[user.id] = wins
-            elif hasattr(row, '_mapping') and 'TGUser' in row._mapping:
-                # Если это объект Row с маппингом, извлекаем TGUser из маппинга
-                user = row._mapping['TGUser']
-                wins = row._mapping['count']
-                candidates.append(user)
-                player_wins[user.id] = wins
-            elif hasattr(row, '__getitem__'):
-                # Если это объект с доступом по индексу, пробуем извлечь по индексу
-                try:
-                    user = row[0]
-                    wins = row[1]
-                    if hasattr(user, 'id') and isinstance(wins, int):
-                        candidates.append(user)
-                        player_wins[user.id] = wins
-                    else:
-                        logger.warning(f"Unexpected row format: {row}")
-                except (IndexError, TypeError):
-                    logger.warning(f"Failed to extract from row: {row}")
-            else:
-                logger.warning(f"Unexpected result format: {type(row)} - {row}")
-
-    # Создаём обновлённую клавиатуру с отметками выбранных кандидатов ТЕКУЩЕГО пользователя
-    updated_keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2, user_votes=user_votes, chat_id=update.effective_chat.id, player_wins=player_wins)
-
-    # Обновляем сообщение с новой клавиатурой (только для текущего пользователя)
-    await query.edit_message_reply_markup(reply_markup=updated_keyboard)
 
     # Отвечаем на callback
     await query.answer(answer_text)
@@ -772,13 +728,14 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     for candidate_id, result_data in sorted(results.items(), key=lambda x: x[1]['weighted'], reverse=True):
         # Находим кандидата по ID
         candidate = context.db_session.query(TGUser).filter_by(id=candidate_id).one()
-        votes_count = result_data['votes']
+        unique_voters = result_data['unique_voters']
         weighted_points = result_data['weighted']
+        auto_voted = result_data['auto_voted']
 
         # Формируем правильное склонение для "голос"
-        if votes_count % 10 == 1 and votes_count % 100 != 11:
+        if unique_voters % 10 == 1 and unique_voters % 100 != 11:
             votes_word = "голос"
-        elif votes_count % 10 in [2, 3, 4] and votes_count % 100 not in [12, 13, 14]:
+        elif unique_voters % 10 in [2, 3, 4] and unique_voters % 100 not in [12, 13, 14]:
             votes_word = "голоса"
         else:
             votes_word = "голосов"
@@ -795,9 +752,12 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
         else:
             points_word = "очков"
 
-        voting_results_list.append(
-            f"• {escape_markdown2(candidate.full_username())}: *{votes_count}* {votes_word}, *{escape_markdown2(weighted_points_str)}* взвешенных {points_word}"
-        )
+        # Формируем строку результата с пометкой об автоголосовании
+        result_line = f"• {escape_markdown2(candidate.full_username())}: *{unique_voters}* {votes_word}, *{escape_markdown2(weighted_points_str)}* взвешенных {points_word}"
+        if auto_voted:
+            result_line += " _(автоголосование)_"
+        
+        voting_results_list.append(result_line)
 
     # Получаем итоговую статистику года
     stmt_final = select(TGUser, func.count(GameResult.winner_id).label('count')) \

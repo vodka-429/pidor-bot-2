@@ -467,43 +467,6 @@ def test_format_weights_message(sample_players):
     assert "Голосуйте мудро" in result
 
 
-@pytest.mark.unit
-def test_create_voting_keyboard_with_user_votes():
-    """Test create_voting_keyboard shows checkmarks for voted candidates."""
-    # Create mock candidates
-    candidate1 = Mock(spec=TGUser)
-    candidate1.id = 1
-    candidate1.first_name = "Alice"
-    candidate1.last_name = "Smith"
-    
-    candidate2 = Mock(spec=TGUser)
-    candidate2.id = 2
-    candidate2.first_name = "Bob"
-    candidate2.last_name = None
-    
-    candidate3 = Mock(spec=TGUser)
-    candidate3.id = 3
-    candidate3.first_name = "Charlie"
-    candidate3.last_name = "Brown"
-    
-    candidates = [candidate1, candidate2, candidate3]
-    
-    # User has voted for candidates 1 and 3
-    user_votes = [1, 3]
-    
-    # Create keyboard
-    voting_id = 123
-    keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2, user_votes=user_votes)
-    
-    # Verify checkmarks are added to voted candidates
-    assert keyboard.inline_keyboard[0][0].text == "✅ Alice Smith"  # Candidate 1 - voted
-    assert keyboard.inline_keyboard[0][1].text == "Bob"  # Candidate 2 - not voted
-    assert keyboard.inline_keyboard[1][0].text == "✅ Charlie Brown"  # Candidate 3 - voted
-    
-    # Verify callback_data is still correct
-    assert keyboard.inline_keyboard[0][0].callback_data == "vote_123_1"
-    assert keyboard.inline_keyboard[0][1].callback_data == "vote_123_2"
-    assert keyboard.inline_keyboard[1][0].callback_data == "vote_123_3"
 
 
 @pytest.mark.unit
@@ -815,3 +778,51 @@ def test_duplicate_candidates_vote_counting():
     assert result[0].first_name == "Alice"
     assert result[1].first_name == "Alice (копия 2)"
     assert result[2].first_name == "Alice (копия 3)"
+
+
+@pytest.mark.unit
+def test_count_voters_with_empty_votes():
+    """Test count_voters correctly handles users with empty vote arrays."""
+    # Test with mix of users with votes and empty arrays
+    votes_data = '{"123": [1, 2], "456": [], "789": [3], "999": []}'
+    assert count_voters(votes_data) == 2  # Only users 123 and 789 have votes
+    
+    # Test with all users having empty arrays
+    votes_data = '{"123": [], "456": [], "789": []}'
+    assert count_voters(votes_data) == 0
+    
+    # Test with single user having empty array
+    votes_data = '{"123": []}'
+    assert count_voters(votes_data) == 0
+
+
+@pytest.mark.unit
+def test_create_voting_keyboard_no_checkmarks():
+    """Test create_voting_keyboard doesn't add checkmarks to buttons."""
+    # Create mock candidates
+    candidate1 = Mock(spec=TGUser)
+    candidate1.id = 1
+    candidate1.first_name = "Alice"
+    candidate1.last_name = "Smith"
+    
+    candidate2 = Mock(spec=TGUser)
+    candidate2.id = 2
+    candidate2.first_name = "Bob"
+    candidate2.last_name = None
+    
+    candidates = [candidate1, candidate2]
+    
+    # Create keyboard
+    voting_id = 123
+    keyboard = create_voting_keyboard(candidates, voting_id=voting_id)
+    
+    # Verify no checkmarks in button texts
+    for row in keyboard.inline_keyboard:
+        for button in row:
+            assert "✅" not in button.text
+            assert "☑️" not in button.text
+            assert "✓" not in button.text
+    
+    # Verify button texts are clean names only
+    assert keyboard.inline_keyboard[0][0].text == "Alice Smith"
+    assert keyboard.inline_keyboard[0][1].text == "Bob"

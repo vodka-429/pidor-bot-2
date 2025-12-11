@@ -121,7 +121,8 @@ def count_voters(votes_data: str) -> int:
 
     try:
         votes = json.loads(votes_data)
-        return len(votes)
+        # Считаем только пользователей с непустыми массивами голосов
+        return len([user_id for user_id, candidate_ids in votes.items() if len(candidate_ids) > 0])
     except (json.JSONDecodeError, TypeError):
         return 0
 
@@ -254,7 +255,7 @@ def duplicate_candidates_for_test(candidates: List[TGUser], chat_id: int, target
     return result_candidates
 
 
-def create_voting_keyboard(candidates: List[TGUser], voting_id: int, votes_per_row: int = 2, user_votes: List[int] = None, chat_id: int = None, player_wins: dict = None) -> InlineKeyboardMarkup:
+def create_voting_keyboard(candidates: List[TGUser], voting_id: int, votes_per_row: int = 2, chat_id: int = None, player_wins: dict = None) -> InlineKeyboardMarkup:
     """
     Создаёт клавиатуру с кнопками для голосования за кандидатов.
 
@@ -262,7 +263,6 @@ def create_voting_keyboard(candidates: List[TGUser], voting_id: int, votes_per_r
         candidates: Список кандидатов (TGUser объекты)
         voting_id: ID голосования для формирования callback_data
         votes_per_row: Количество кнопок в одном ряду (по умолчанию 2)
-        user_votes: Список ID кандидатов, за которых уже проголосовал пользователь (опционально)
         chat_id: ID чата для дублирования кандидатов в тестовом чате (опционально)
         player_wins: Словарь {player_id: количество_побед} для отображения в кнопках (опционально)
 
@@ -276,10 +276,6 @@ def create_voting_keyboard(candidates: List[TGUser], voting_id: int, votes_per_r
     keyboard = []
     row = []
 
-    # Если user_votes не передан, используем пустой список
-    if user_votes is None:
-        user_votes = []
-
     for candidate in candidates:
         # Формируем текст кнопки из имени пользователя
         button_text = candidate.first_name
@@ -290,10 +286,6 @@ def create_voting_keyboard(candidates: List[TGUser], voting_id: int, votes_per_r
         if player_wins and candidate.id in player_wins:
             wins_count = player_wins[candidate.id]
             button_text += f" ({wins_count})"
-
-        # Добавляем ✅ если пользователь уже проголосовал за этого кандидата
-        if candidate.id in user_votes:
-            button_text = f"✅ {button_text}"
 
         # Создаём кнопку с callback_data, используя реальный voting_id
         button = InlineKeyboardButton(
@@ -325,8 +317,8 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
         auto_vote_for_non_voters: Добавлять ли автоматические голоса за не проголосовавших
 
     Returns:
-        Кортеж (winner: TGUser, results: Dict[int, Dict[str, int]])
-        где results - словарь {candidate_id: {'weighted': int, 'votes': int}}
+        Кортеж (winner: TGUser, results: Dict[int, Dict[str, Union[float, int, bool]]])
+        где results - словарь {candidate_id: {'weighted': float, 'votes': int, 'unique_voters': int, 'auto_voted': bool}}
     """
     import json
     from datetime import datetime
@@ -360,7 +352,11 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
             weight = row[1]
         weights_dict[user_id] = weight
 
+    # Отслеживаем ручные голоса перед автоголосованием
+    manual_voters = set(int(user_id) for user_id in votes_data.keys() if len(json.loads(final_voting.votes_data).get(user_id, [])) > 0)
+
     # Добавляем автоматические голоса для не проголосовавших игроков
+    auto_voted_players = set()
     if auto_vote_for_non_voters:
         # Получаем список всех игроков с весами
         all_player_ids = set(weights_dict.keys())
@@ -379,8 +375,9 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
             user_id_str = str(player_id)
             # Не проголосовавший игрок отдает ВСЕ свои голоса только за себя
             votes_data[user_id_str] = [player_id] * max_votes
+            auto_voted_players.add(player_id)
 
-    # Подсчитываем взвешенные голоса и реальные голоса для каждого кандидата
+    # Подсчитываем взвешенные голоса, реальные голоса и уникальных голосующих для каждого кандидата
     results = {}
 
     for user_id_str, candidate_ids in votes_data.items():
@@ -398,9 +395,19 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
         # Добавляем взвешенный голос и реальный голос каждому кандидату
         for candidate_id in candidate_ids:
             if candidate_id not in results:
-                results[candidate_id] = {'weighted': 0.0, 'votes': 0}
+                results[candidate_id] = {
+                    'weighted': 0.0,
+                    'votes': 0,
+                    'unique_voters': set(),
+                    'auto_voted': candidate_id in auto_voted_players
+                }
             results[candidate_id]['weighted'] += vote_weight
             results[candidate_id]['votes'] += 1
+            results[candidate_id]['unique_voters'].add(user_id)
+
+    # Преобразуем множества уникальных голосующих в количество
+    for candidate_id in results:
+        results[candidate_id]['unique_voters'] = len(results[candidate_id]['unique_voters'])
 
     # Определяем победителя с максимальным взвешенным результатом
     if not results:
@@ -415,7 +422,7 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
         winner_id = random.choice(all_candidates) if all_candidates else None
         if winner_id is None:
             raise ValueError("No candidates found for voting")
-        results[winner_id] = {'weighted': 0.0, 'votes': 0}
+        results[winner_id] = {'weighted': 0.0, 'votes': 0, 'unique_voters': 0, 'auto_voted': True}
     else:
         winner_id = max(results, key=lambda x: results[x]['weighted'])
 
