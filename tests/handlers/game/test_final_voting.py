@@ -626,7 +626,7 @@ async def test_pidorfinalclose_cmd_success(mock_update, mock_context, mock_game,
     # Mock finalize_voting
     winner = sample_players[0]
     winner.id = 1
-    results = {1: {'weighted': 8, 'votes': 2}, 2: {'weighted': 5, 'votes': 1}}
+    results = {1: {'weighted': 8, 'votes': 2, 'unique_voters': 2, 'auto_voted': False}, 2: {'weighted': 5, 'votes': 1, 'unique_voters': 1, 'auto_voted': False}}
     from bot.handlers.game.voting_helpers import finalize_voting
     mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winner, results))
     
@@ -810,7 +810,7 @@ async def test_pidorfinalclose_cmd_test_chat_bypass_time_check(mock_update, mock
     # Mock finalize_voting
     winner = sample_players[0]
     winner.id = 1
-    results = {1: {'weighted': 8, 'votes': 2}, 2: {'weighted': 5, 'votes': 1}}
+    results = {1: {'weighted': 8, 'votes': 2, 'unique_voters': 2, 'auto_voted': False}, 2: {'weighted': 5, 'votes': 1, 'unique_voters': 1, 'auto_voted': False}}
     from bot.handlers.game.voting_helpers import finalize_voting
     mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winner, results))
     
@@ -999,8 +999,8 @@ async def test_final_voting_results_escaping(mock_update, mock_context, mock_gam
     winner.id = 1
     # Results with decimal points that need escaping
     results = {
-        1: {'weighted': 12.5, 'votes': 2},  # 12.5 contains a dot that needs escaping
-        2: {'weighted': 8.3, 'votes': 1}   # 8.3 contains a dot that needs escaping
+        1: {'weighted': 12.5, 'votes': 2, 'unique_voters': 2, 'auto_voted': False},  # 12.5 contains a dot that needs escaping
+        2: {'weighted': 8.3, 'votes': 1, 'unique_voters': 1, 'auto_voted': False}   # 8.3 contains a dot that needs escaping
     }
     from bot.handlers.game.voting_helpers import finalize_voting
     mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winner, results))
@@ -1052,3 +1052,98 @@ async def test_final_voting_results_escaping(mock_update, mock_context, mock_gam
     
     # Verify that parse_mode is MarkdownV2
     assert results_call[1]['parse_mode'] == 'MarkdownV2'
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_finalize_voting_unique_voters():
+    """Test finalize_voting correctly counts unique voters instead of total votes."""
+    from bot.handlers.game.voting_helpers import finalize_voting
+    
+    # Setup mock context and voting
+    mock_context = MagicMock()
+    mock_voting = MagicMock()
+    mock_voting.game_id = 1
+    mock_voting.year = 2024
+    mock_voting.missed_days_list = json.dumps([1, 2, 3, 4])
+    mock_voting.missed_days_count = 4
+    
+    # Setup votes: user 1 votes for candidates 1,2; user 2 votes for candidate 1
+    # This creates 3 total votes but only 2 unique voters
+    votes_data = {
+        "1": [1, 2],  # User 1 votes for 2 candidates
+        "2": [1]      # User 2 votes for 1 candidate
+    }
+    mock_voting.votes_data = json.dumps(votes_data)
+    
+    # Setup player weights
+    mock_weights_result = MagicMock()
+    mock_weights_result.all.return_value = [(1, 5), (2, 3)]
+    
+    # Setup winner query
+    mock_winner = MagicMock()
+    mock_winner.id = 1
+    
+    mock_context.db_session.exec.return_value = mock_weights_result
+    mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = mock_winner
+    
+    # Execute
+    result_winner, results = finalize_voting(mock_voting, mock_context)
+    
+    # Verify unique_voters count is correct
+    # Candidate 1: voted by users 1 and 2 = 2 unique voters
+    # Candidate 2: voted by user 1 only = 1 unique voter
+    assert results[1]['unique_voters'] == 2
+    assert results[2]['unique_voters'] == 1
+    
+    # Verify votes count is still correct (total votes per candidate)
+    assert results[1]['votes'] == 2  # 2 votes for candidate 1
+    assert results[2]['votes'] == 1  # 1 vote for candidate 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_finalize_voting_auto_voted_flag():
+    """Test finalize_voting correctly sets auto_voted flag for non-voters."""
+    from bot.handlers.game.voting_helpers import finalize_voting
+    
+    # Setup mock context and voting
+    mock_context = MagicMock()
+    mock_voting = MagicMock()
+    mock_voting.game_id = 1
+    mock_voting.year = 2024
+    mock_voting.missed_days_list = json.dumps([1, 2, 3])
+    mock_voting.missed_days_count = 3  # 3 days → 1 vote per formula
+    
+    # Setup votes: only user 1 votes manually, user 2 doesn't vote
+    votes_data = {
+        "1": [2]  # User 1 votes for candidate 2
+        # User 2 doesn't vote - should get auto vote
+    }
+    mock_voting.votes_data = json.dumps(votes_data)
+    
+    # Setup player weights
+    mock_weights_result = MagicMock()
+    mock_weights_result.all.return_value = [(1, 3), (2, 4)]
+    
+    # Setup winner query
+    mock_winner = MagicMock()
+    mock_winner.id = 2
+    
+    mock_context.db_session.exec.return_value = mock_weights_result
+    mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = mock_winner
+    
+    # Execute with auto_vote enabled
+    result_winner, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
+    
+    # Verify auto_voted flags
+    # Candidate 2: user 1 voted manually = False, user 2 auto-voted for himself = True
+    assert results[2]['auto_voted'] == True   # User 2 got auto vote (user 2 didn't vote manually)
+    
+    # Verify that user 2 appears in results (got auto vote for himself)
+    assert 2 in results
+    
+    # Verify votes count includes both manual and auto votes
+    # Candidate 2: 1 manual vote from user 1 + 1 auto vote from user 2 = 2 total votes
+    assert results[2]['votes'] == 2
+    assert results[2]['unique_voters'] == 2  # Both users voted for candidate 2

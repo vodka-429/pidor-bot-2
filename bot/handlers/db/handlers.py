@@ -1,6 +1,9 @@
 import logging
+import time
 from datetime import datetime
+from functools import wraps
 
+from sqlalchemy.exc import DisconnectionError, OperationalError
 from sqlmodel import Session
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -12,6 +15,36 @@ from bot.utils import ECallbackContext
 logger = logging.getLogger(__name__)
 
 
+def retry_on_db_error(max_retries=3, delay=1, backoff=2):
+    """
+    Декоратор для автоматического повтора при ошибках БД с exponential backoff
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return await func(*args, **kwargs)
+                except (DisconnectionError, OperationalError) as e:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        wait_time = delay * (backoff ** attempt)
+                        logger.warning(f"DB connection error on attempt {attempt + 1}/{max_retries}: {e}. Retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                    else:
+                        logger.error(f"DB connection failed after {max_retries} attempts: {e}")
+                        raise
+                except Exception as e:
+                    # Для других ошибок не делаем retry
+                    logger.error(f"Non-DB error in {func.__name__}: {e}")
+                    raise
+            raise last_exception
+        return wrapper
+    return decorator
+
+
+@retry_on_db_error(max_retries=3, delay=1, backoff=2)
 async def tg_user_middleware_handler(update: Update, context: ECallbackContext):
     # Логируем тип обновления для отладки
     update_type = "unknown"

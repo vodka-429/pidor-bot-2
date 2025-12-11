@@ -665,7 +665,7 @@ async def test_full_voting_cycle_with_improvements(mock_update, mock_context, mo
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_vote_callback_no_keyboard_update(mock_update, mock_context, mock_game, sample_players, mocker):
-    """Test that vote callback updates keyboard only for the current user, not globally."""
+    """Test that vote callback does NOT update keyboard after voting (according to plan fixes)."""
     # Setup game with players
     mock_game.players = sample_players
     mock_context.game = mock_game
@@ -704,24 +704,12 @@ async def test_vote_callback_no_keyboard_update(mock_update, mock_context, mock_
     answer_text = mock_callback_query.answer.call_args[0][0]
     assert "учтён" in answer_text.lower() or "учтен" in answer_text.lower()
     
-    # Verify that keyboard was updated (this is the corrected behavior)
-    # The keyboard should be updated to show the current user's votes
-    mock_callback_query.edit_message_reply_markup.assert_called_once()
-    
-    # Verify that the keyboard update uses the current user's votes (user 2's votes)
-    # The keyboard should reflect user 2's selection, not user 1's selection
-    keyboard_call = mock_callback_query.edit_message_reply_markup.call_args
-    updated_keyboard = keyboard_call[1]['reply_markup']
-    
-    # The keyboard should be created with user_votes parameter containing user 2's votes
-    # Since user 2 voted for candidate 2, the keyboard should show candidate 2 as selected for this user
-    # We can't directly test the keyboard content without mocking create_voting_keyboard,
-    # but we can verify that edit_message_reply_markup was called with the correct parameters
-    assert updated_keyboard is not None
+    # Verify that keyboard was NOT updated (according to plan fixes - stage 2)
+    # The keyboard should not be updated after voting to prevent showing checkmarks to all users
+    mock_callback_query.edit_message_reply_markup.assert_not_called()
     
     # Verify that votes_data was updated correctly
     mock_context.db_session.commit.assert_called_once()
     
-    # The key insight is that each user sees their own selections in the keyboard,
-    # not other users' selections. This prevents the bug where buttons change for everyone
-    # when someone else votes.
+    # The key insight is that we removed keyboard updates to prevent the bug where
+    # buttons change for everyone when someone else votes. Now users only get text notifications.
