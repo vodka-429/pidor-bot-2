@@ -22,7 +22,7 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
     CURRENT_DAY_GAME_RESULT, \
     YEAR_RESULTS_MSG, YEAR_RESULTS_ANNOUNCEMENT, REGISTRATION_MANY_SUCCESS, \
     ERROR_ALREADY_REGISTERED_MANY, VOTING_ENDED_RESPONSE
-from bot.utils import escape_markdown2, ECallbackContext
+from bot.utils import escape_markdown2, escape_word, format_number, ECallbackContext
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
@@ -264,7 +264,7 @@ def build_player_table(player_list: list[tuple[TGUser, int]]) -> str:
     for number, (tg_user, amount) in enumerate(player_list, 1):
         result.append(STATS_LIST_ITEM.format(number=number,
                                              username=escape_markdown2(tg_user.full_username()),
-                                             amount=amount))
+                                             amount=format_number(amount)))
     return ''.join(result)
 
 
@@ -705,7 +705,7 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
 
             await update.effective_chat.send_message(
                 f"❌ *Ошибка\\!* Голосование можно завершить только через 24 часа после старта\\.\n\n"
-                f"Осталось: *{hours_remaining}* ч\\. *{minutes_remaining}* мин\\.",
+                f"Осталось: *{format_number(hours_remaining)}* ч\\. *{format_number(minutes_remaining)}* мин\\.",
                 parse_mode="MarkdownV2"
             )
             logger.warning(f"Attempt to close voting too early. Time since start: {time_since_start}")
@@ -741,7 +741,7 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
             votes_word = "голосов"
 
         # Форматируем взвешенные очки с одним знаком после запятой
-        weighted_points_str = f"{weighted_points:.1f}"
+        weighted_points_str = format_number(f"{weighted_points:.1f}")
 
         # Формируем правильное склонение для "очко" на основе целой части
         weighted_points_int = int(weighted_points)
@@ -753,7 +753,7 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
             points_word = "очков"
 
         # Формируем строку результата с пометкой об автоголосовании
-        result_line = f"• {escape_markdown2(candidate.full_username())}: *{unique_voters}* {votes_word}, *{escape_markdown2(weighted_points_str)}* взвешенных {points_word}"
+        result_line = f"• {escape_markdown2(candidate.full_username())}: *{unique_voters}* {escape_word(votes_word)}, *{weighted_points_str}* взвешенных {escape_word(points_word)}"
         if auto_voted:
             result_line += " _(автоголосование)_"
         

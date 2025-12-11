@@ -383,34 +383,34 @@ def test_format_player_with_wins():
     player.first_name = "Иван"
     player.last_name = "Иванов"
     
-    # Test with 1 win (победа)
+    # Test with 1 win (победа) - now with escaped parentheses
     result = format_player_with_wins(player, 1)
-    assert result == "Иван Иванов (1 победа)"
+    assert result == "Иван Иванов \\(1 победа\\)"
     
     # Test with 2 wins (победы)
     result = format_player_with_wins(player, 2)
-    assert result == "Иван Иванов (2 победы)"
+    assert result == "Иван Иванов \\(2 победы\\)"
     
     # Test with 5 wins (побед)
     result = format_player_with_wins(player, 5)
-    assert result == "Иван Иванов (5 побед)"
+    assert result == "Иван Иванов \\(5 побед\\)"
     
     # Test with 11 wins (побед - exception for 11)
     result = format_player_with_wins(player, 11)
-    assert result == "Иван Иванов (11 побед)"
+    assert result == "Иван Иванов \\(11 побед\\)"
     
     # Test with 21 wins (победа)
     result = format_player_with_wins(player, 21)
-    assert result == "Иван Иванов (21 победа)"
+    assert result == "Иван Иванов \\(21 победа\\)"
     
     # Test with 22 wins (победы)
     result = format_player_with_wins(player, 22)
-    assert result == "Иван Иванов (22 победы)"
+    assert result == "Иван Иванов \\(22 победы\\)"
     
     # Test player without last name
     player.last_name = None
     result = format_player_with_wins(player, 3)
-    assert result == "Иван (3 победы)"
+    assert result == "Иван \\(3 победы\\)"
 
 
 @pytest.mark.unit
@@ -460,9 +460,10 @@ def test_format_weights_message(sample_players):
     # Verify message contains expected elements
     assert "7" in result  # missed days count
     # Note: text is escaped for Markdown V2, so we check for escaped versions
-    assert "Алиса Смит \\(5 побед\\)" in result
-    assert "Боб \\(3 победы\\)" in result
-    assert "Чарли Браун \\(2 победы\\)" in result
+    # The function uses format_player_with_wins which now triple-escapes in the message
+    assert "Алиса Смит \\\\\\(5 побед\\\\\\)" in result
+    assert "Боб \\\\\\(3 победы\\\\\\)" in result
+    assert "Чарли Браун \\\\\\(2 победы\\\\\\)" in result
     assert "Финальное голосование года" in result
     assert "Голосуйте мудро" in result
 

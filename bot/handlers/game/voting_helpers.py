@@ -136,12 +136,17 @@ def format_player_with_wins(player: TGUser, wins: int) -> str:
         wins: Количество побед
 
     Returns:
-        Строка в формате "Имя Фамилия (N побед)"
+        Строка в формате "Имя Фамилия (N побед)" с экранированием для MarkdownV2
     """
+    from bot.utils import escape_markdown2, escape_word, format_number
+    
     # Формируем имя игрока
     player_name = player.first_name
     if player.last_name:
         player_name += f" {player.last_name}"
+
+    # Экранируем имя игрока
+    player_name_escaped = escape_markdown2(player_name)
 
     # Формируем правильное склонение для "победа"
     if wins % 10 == 1 and wins % 100 != 11:
@@ -151,7 +156,11 @@ def format_player_with_wins(player: TGUser, wins: int) -> str:
     else:
         wins_word = "побед"
 
-    return f"{player_name} ({wins} {wins_word})"
+    # Экранируем склонение и число
+    wins_word_escaped = escape_word(wins_word)
+    wins_escaped = format_number(wins)
+
+    return f"{player_name_escaped} \\({wins_escaped} {wins_word_escaped}\\)"
 
 
 def get_player_weights(db_session, game_id: int, year: int) -> List[Tuple[TGUser, int]]:

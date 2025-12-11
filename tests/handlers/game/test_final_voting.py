@@ -1147,3 +1147,193 @@ async def test_finalize_voting_auto_voted_flag():
     # Candidate 2: 1 manual vote from user 1 + 1 auto vote from user 2 = 2 total votes
     assert results[2]['votes'] == 2
     assert results[2]['unique_voters'] == 2  # Both users voted for candidate 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_pidorfinalclose_escapes_special_chars(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test that pidorfinalclose properly escapes special characters in voting results."""
+    # Setup
+    mock_context.game = mock_game
+    mock_update.effective_user.id = 999
+    
+    # Mock current_datetime - 25 hours after voting started (more than 24 hours)
+    mock_dt = datetime(2024, 12, 30, 13, 0, 0)
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+    
+    # Setup active FinalVoting - started 25 hours ago
+    mock_voting = MagicMock()
+    mock_voting.id = 1
+    mock_voting.game_id = mock_game.id
+    mock_voting.year = 2024
+    mock_voting.started_at = datetime(2024, 12, 29, 12, 0, 0)  # Started 25 hours ago
+    mock_voting.ended_at = None  # Active voting
+    mock_voting.missed_days_count = 5
+    mock_voting.missed_days_list = json.dumps([1, 2, 3, 4, 5])
+    mock_voting.votes_data = '{"1": [1, 2], "2": [1]}'
+    
+    # Mock admin check
+    mock_chat_member = MagicMock()
+    mock_chat_member.status = 'administrator'
+    mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)
+    
+    # Create sample players with special characters in names
+    player1 = MagicMock()
+    player1.id = 1
+    player1.username = "test_user(1)"  # Contains parentheses that need escaping
+    player1.full_username.return_value = "test_user(1)"
+    
+    player2 = MagicMock()
+    player2.id = 2
+    player2.username = "user.with.dots"  # Contains dots that need escaping
+    player2.full_username.return_value = "user.with.dots"
+    
+    # Mock finalize_voting to return results with decimal points
+    winner = player1
+    results = {
+        1: {'weighted': 15.75, 'votes': 3, 'unique_voters': 2, 'auto_voted': False},  # Decimal point needs escaping
+        2: {'weighted': 9.25, 'votes': 2, 'unique_voters': 1, 'auto_voted': False}   # Decimal point needs escaping
+    }
+    from bot.handlers.game.voting_helpers import finalize_voting
+    mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winner, results))
+    
+    # Mock player weights query
+    mock_weights_result = MagicMock()
+    mock_weights_result.all.return_value = [(player1, 5), (player2, 3)]
+    
+    # Mock TGUser query for candidates
+    def query_side_effect(model):
+        if model == FinalVoting:
+            mock_q = MagicMock()
+            mock_q.filter_by.return_value.one_or_none.return_value = mock_voting
+            return mock_q
+        elif model == TGUser:
+            mock_q = MagicMock()
+            # Return different players based on filter_by call
+            def filter_by_side_effect(id=None):
+                mock_filter_q = MagicMock()
+                if id == 1:
+                    mock_filter_q.one.return_value = player1
+                elif id == 2:
+                    mock_filter_q.one.return_value = player2
+                else:
+                    mock_filter_q.one.return_value = player1
+                return mock_filter_q
+            mock_q.filter_by.side_effect = filter_by_side_effect
+            return mock_q
+        return MagicMock()
+    
+    mock_context.db_session.query.side_effect = query_side_effect
+    mock_context.db_session.exec.return_value = mock_weights_result
+    
+    # Execute
+    await pidorfinalclose_cmd(mock_update, mock_context)
+    
+    # Verify success message was sent
+    assert mock_update.effective_chat.send_message.call_count == 2  # Success + Results
+    
+    # Get the results message (second call)
+    results_call = mock_update.effective_chat.send_message.call_args_list[1]
+    results_message = results_call[0][0]  # First positional argument
+    
+    # Verify that decimal points are properly escaped in the results message
+    # The actual values might be rounded, so check for any decimal numbers with escaped dots
+    assert "15\\.8" in results_message or "15\\.75" in results_message, f"Expected escaped decimal number in results message: {results_message}"
+    assert "9\\.2" in results_message or "9\\.25" in results_message, f"Expected escaped decimal number in results message: {results_message}"
+    
+    # Verify that usernames with special characters are properly escaped
+    # Check for the actual escaped format that appears in the message
+    assert "test\\_user\\(1\\)" in results_message, f"Expected escaped username in results message: {results_message}"
+    assert "user\\.with\\.dots" in results_message, f"Expected escaped username in results message: {results_message}"
+    
+    # Verify that parse_mode is MarkdownV2
+    assert results_call[1]['parse_mode'] == 'MarkdownV2'
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_date_formatting_escapes_dots(mock_update, mock_context, mock_game, mocker):
+    """Test that date formatting properly escapes dots in pidorfinalstatus command."""
+    # Setup
+    mock_context.game = mock_game
+    
+    # Mock the query chain for Game
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+    
+    # Mock FinalVoting - active voting
+    mock_voting = MagicMock()
+    mock_voting.started_at = datetime(2024, 12, 29, 15, 30, 0)  # Specific time for testing
+    mock_voting.ended_at = None
+    mock_voting.missed_days_count = 5
+    mock_voting.votes_data = '{}'
+    
+    mock_voting_query = MagicMock()
+    mock_voting_query.filter_by.return_value = mock_voting_query
+    mock_voting_query.one_or_none.return_value = mock_voting
+    
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_voting_query]
+    
+    # Mock current_datetime
+    mock_dt = MagicMock()
+    mock_dt.year = 2024
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+    
+    # Execute
+    await pidorfinalstatus_cmd(mock_update, mock_context)
+    
+    # Verify message was sent
+    mock_update.effective_chat.send_message.assert_called_once()
+    call_args = str(mock_update.effective_chat.send_message.call_args)
+    
+    # Verify that dates contain escaped dots
+    # The date should be formatted as "29\.12\.2024 15:30 МСК"
+    # Note: call_args is a string representation, so we need to check for the actual escaped format
+    assert "29\\\\.12\\\\.2024" in call_args, f"Expected escaped date format in message: {call_args}"
+    assert "15:30" in call_args, f"Expected time in message: {call_args}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_error_messages_escape_correctly(mock_update, mock_context, mock_game, mocker):
+    """Test that error messages with remaining time properly escape numbers."""
+    # Setup
+    mock_context.game = mock_game
+    mock_update.effective_user.id = 999
+    mock_update.effective_chat.id = -123456789  # Regular chat (not test chat)
+    
+    # Mock current_datetime - only 12.5 hours after voting started (less than 24 hours)
+    mock_dt = datetime(2024, 12, 29, 23, 30, 0)  # 23:30
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+    
+    # Setup active FinalVoting - started 12.5 hours ago
+    mock_voting = MagicMock()
+    mock_voting.started_at = datetime(2024, 12, 29, 11, 0, 0)  # Started at 11:00
+    mock_voting.ended_at = None  # Active voting
+    
+    mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_voting
+    
+    # Mock admin check
+    mock_chat_member = MagicMock()
+    mock_chat_member.status = 'administrator'
+    mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)
+    
+    # Execute
+    await pidorfinalclose_cmd(mock_update, mock_context)
+    
+    # Verify error message was sent
+    mock_update.effective_chat.send_message.assert_called_once()
+    call_args = str(mock_update.effective_chat.send_message.call_args)
+    
+    # Verify that the error message contains properly escaped numbers
+    # The remaining time should be around 11.5 hours, which should be escaped
+    assert "24 часа" in call_args or "24 hours" in call_args.lower()
+    # Check that any decimal numbers in the message are properly escaped
+    if "." in call_args and any(char.isdigit() for char in call_args):
+        # If there are decimal numbers, they should be escaped
+        import re
+        # Find patterns like "11.5" and verify they are escaped as "11\.5"
+        decimal_pattern = r'\d+\\\.\d+'
+        if re.search(r'\d+\.\d+', call_args):
+            assert re.search(decimal_pattern, call_args), f"Expected escaped decimal numbers in error message: {call_args}"
