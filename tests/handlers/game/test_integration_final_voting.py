@@ -636,7 +636,12 @@ async def test_full_voting_cycle_with_improvements(mock_update, mock_context, mo
     mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
     
     # Call finalize_voting directly to test auto voting logic
-    result_winner, results = finalize_voting(mock_final_voting, mock_context, auto_vote_for_non_voters=True)
+    winners, results = finalize_voting(mock_final_voting, mock_context, auto_vote_for_non_voters=True)
+    
+    # Verify winners is a list of tuples
+    assert isinstance(winners, list)
+    assert len(winners) >= 1
+    winner_id, winner_obj = winners[0]
     
     # Verify auto votes were added:
     # User 1: voted for candidates 1,2 (weight 6, 2 votes) = 3.0 each
@@ -655,7 +660,8 @@ async def test_full_voting_cycle_with_improvements(mock_update, mock_context, mo
     assert results[3]['votes'] == 3
     
     # User 2 should win with highest weighted score
-    assert result_winner.id == 2
+    assert winner_id == 2
+    assert winner_obj.id == 2
     
     # Verify voting was marked as ended
     assert mock_final_voting.ended_at is not None

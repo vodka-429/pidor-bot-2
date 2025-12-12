@@ -717,11 +717,47 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     )
 
     # Вызываем функцию подсчёта результатов
-    winner, results = finalize_voting(final_voting, context)
+    winners, results = finalize_voting(final_voting, context)
 
     # Формируем сообщение с результатами
     from bot.handlers.game.text_static import FINAL_VOTING_RESULTS
     from bot.utils import escape_markdown2
+
+    # Формируем строку с именами победителей
+    winner_names = []
+    for winner_id, winner in winners:
+        winner_names.append(escape_markdown2(winner.full_username()))
+    
+    winners_text = ', '.join(winner_names) if winner_names else "Нет победителей"
+
+    # Рассчитываем распределение дней между победителями
+    missed_days = json.loads(final_voting.missed_days_list)
+    days_distribution_list = []
+    
+    if winners and missed_days and len(winners) > 0:
+        days_per_winner = len(missed_days) // len(winners)
+        remainder = len(missed_days) % len(winners)
+        
+        for winner_index, (winner_id, winner) in enumerate(winners):
+            # Определяем количество дней для текущего победителя
+            if winner_index < remainder:
+                days_count = days_per_winner + 1
+            else:
+                days_count = days_per_winner
+            
+            # Формируем правильное склонение для "день"
+            if days_count % 10 == 1 and days_count % 100 != 11:
+                days_word = "день"
+            elif days_count % 10 in [2, 3, 4] and days_count % 100 not in [12, 13, 14]:
+                days_word = "дня"
+            else:
+                days_word = "дней"
+            
+            days_distribution_list.append(
+                f"• {escape_markdown2(winner.full_username())} получает *{days_count}* {escape_word(days_word)} в свою копилку\\!"
+            )
+    
+    days_distribution_text = '\n'.join(days_distribution_list) if days_distribution_list else ""
 
     voting_results_list = []
     for candidate_id, result_data in sorted(results.items(), key=lambda x: x[1]['weighted'], reverse=True):
@@ -771,9 +807,9 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
 
     voting_results_text = '\n'.join(voting_results_list)
     results_message = FINAL_VOTING_RESULTS.format(
-        winner=escape_markdown2(winner.full_username()),
+        winners=winners_text,
         voting_results=voting_results_text,
-        missed_days=final_voting.missed_days_count,
+        days_distribution=days_distribution_text,
         year_stats=year_stats_list
     )
     logger.info(f"pidorfinalclose_cmd send message {results_message}")
@@ -784,4 +820,6 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
         parse_mode="MarkdownV2"
     )
 
-    logger.info(f"Final voting manually closed for game {context.game.id}, year {cur_year}, winner: {winner.full_username()}")
+    # Формируем строку с именами победителей для логирования
+    winners_log = ', '.join([winner.full_username() for _, winner in winners])
+    logger.info(f"Final voting manually closed for game {context.game.id}, year {cur_year}, winners: {winners_log}")
