@@ -255,7 +255,12 @@ def test_finalize_voting_calculation(mock_context, sample_players):
     mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
     
     # Execute
-    result_winner, results = finalize_voting(mock_voting, mock_context)
+    winners, results = finalize_voting(mock_voting, mock_context)
+    
+    # Verify winners is a list of tuples
+    assert isinstance(winners, list)
+    assert len(winners) >= 1
+    winner_id, winner_obj = winners[0]
     
     # Verify weighted votes and real votes calculation with new division logic
     # Candidate 1: voted by user 1 (weight 5, 2 votes) and user 2 (weight 3, 1 vote) = 5/2 + 3/1 = 2.5 + 3.0 = 5.5 weighted, 2 votes
@@ -269,7 +274,8 @@ def test_finalize_voting_calculation(mock_context, sample_players):
     assert results[3]['votes'] == 1
     
     # Verify winner is candidate 1 (highest weighted votes)
-    assert result_winner.id == 1
+    assert winner_id == 1
+    assert winner_obj.id == 1
     
     # Note: GameResult creation is currently commented out in finalize_voting
     # So we don't verify db_session.add calls
@@ -301,12 +307,11 @@ def test_finalize_voting_no_votes(mock_context, sample_players, mocker):
     mock_candidates_result = MagicMock()
     mock_candidates_result.all.return_value = [1, 2, 3]
     
-    # Mock random.choice to return deterministic result
-    # Since random is imported inside finalize_voting, we need to patch it there
+    # Mock random.sample to return deterministic result
     import random
-    mocker.patch.object(random, 'choice', return_value=2)
+    mocker.patch.object(random, 'sample', return_value=[2])
     
-    # Setup winner query - winner will be candidate 2 (from mocked random.choice)
+    # Setup winner query - winner will be candidate 2 (from mocked random.sample)
     winner = sample_players[1]
     winner.id = 2
     
@@ -314,10 +319,14 @@ def test_finalize_voting_no_votes(mock_context, sample_players, mocker):
     mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
     
     # Execute with auto_vote_for_non_voters disabled to test old behavior
-    result_winner, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=False)
+    winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=False)
     
-    # Verify the mocked random winner was selected
-    assert result_winner.id == 2
+    # Verify winners is a list with one winner
+    assert isinstance(winners, list)
+    assert len(winners) == 1
+    winner_id, winner_obj = winners[0]
+    assert winner_id == 2
+    assert winner_obj.id == 2
     
     # Verify results contains the winner with 0 votes
     assert 2 in results
@@ -354,22 +363,43 @@ def test_finalize_voting_equal_weighted_votes(mock_context, sample_players):
     mock_weights_result = MagicMock()
     mock_weights_result.all.return_value = [(1, 4), (2, 4)]
     
-    # Setup winner query - max() will pick one deterministically
-    winner = sample_players[0]
-    winner.id = 1
+    # Setup winner queries - need to mock for both potential winners
+    winner1 = sample_players[0]
+    winner1.id = 1
+    winner2 = sample_players[1]
+    winner2.id = 2
     
     mock_context.db_session.exec.return_value = mock_weights_result
-    mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
+    
+    # Mock query to return different winners based on filter_by call
+    def query_side_effect(*args, **kwargs):
+        mock_q = MagicMock()
+        def filter_by_side_effect(id=None):
+            mock_filter_q = MagicMock()
+            if id == 1:
+                mock_filter_q.one.return_value = winner1
+            elif id == 2:
+                mock_filter_q.one.return_value = winner2
+            else:
+                mock_filter_q.one.return_value = winner1
+            return mock_filter_q
+        mock_q.filter_by.side_effect = filter_by_side_effect
+        return mock_q
+    
+    mock_context.db_session.query.side_effect = query_side_effect
     
     # Execute
-    result_winner, results = finalize_voting(mock_voting, mock_context)
+    winners, results = finalize_voting(mock_voting, mock_context)
     
     # Verify both candidates have equal weighted votes (each user votes for 1 candidate, so no division)
     assert results[1]['weighted'] == 4.0
     assert results[2]['weighted'] == 4.0
     
-    # Verify a winner was selected (max() picks one deterministically)
-    assert result_winner.id in [1, 2]
+    # Verify winners is a list
+    assert isinstance(winners, list)
+    assert len(winners) == 1  # Only 1 winner for 2 missed days
+    winner_id, winner_obj = winners[0]
+    assert winner_id in [1, 2]
     
     # Verify commit was called
     mock_context.db_session.commit.assert_called_once()
@@ -550,7 +580,12 @@ def test_finalize_voting_with_auto_votes(mock_context, sample_players):
     mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
     
     # Execute
-    result_winner, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
+    winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
+    
+    # Verify winners is a list
+    assert isinstance(winners, list)
+    assert len(winners) >= 1
+    winner_id, winner_obj = winners[0]
     
     # Verify auto votes were added:
     # User 1: voted for candidate 1 (weight 5, 1 vote) = 5.0 weighted
@@ -564,7 +599,8 @@ def test_finalize_voting_with_auto_votes(mock_context, sample_players):
     assert results[3]['votes'] == 2
     
     # User 1 should win with highest weighted score (5.0 > 3.0 > 2.0)
-    assert result_winner.id == 1
+    assert winner_id == 1
+    assert winner_obj.id == 1
 
 
 @pytest.mark.unit
@@ -597,7 +633,12 @@ def test_finalize_voting_partial_voters(mock_context, sample_players):
     mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
     
     # Execute
-    result_winner, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
+    winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
+    
+    # Verify winners is a list
+    assert isinstance(winners, list)
+    assert len(winners) >= 1
+    winner_id, winner_obj = winners[0]
     
     # Verify results:
     # Candidate 1: voted by user 2 (weight 4, 1 vote) = 4.0 weighted
@@ -611,7 +652,8 @@ def test_finalize_voting_partial_voters(mock_context, sample_players):
     assert results[3]['votes'] == 1
     
     # User 3 should win with highest weighted score (6.0 > 4.0 > 3.0)
-    assert result_winner.id == 3
+    assert winner_id == 3
+    assert winner_obj.id == 3
 
 
 @pytest.mark.unit
@@ -632,15 +674,37 @@ def test_finalize_voting_auto_votes_respect_max_votes(mock_context, sample_playe
     mock_weights_result = MagicMock()
     mock_weights_result.all.return_value = [(1, 2), (2, 4)]
     
-    # Setup winner query
-    winner = sample_players[1]  # User 2 should win
-    winner.id = 2
+    # Setup winner queries - need to mock for both potential winners
+    winner1 = sample_players[0]
+    winner1.id = 1
+    winner2 = sample_players[1]
+    winner2.id = 2
     
     mock_context.db_session.exec.return_value = mock_weights_result
-    mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
+    
+    # Mock query to return different winners based on filter_by call
+    def query_side_effect(*args, **kwargs):
+        mock_q = MagicMock()
+        def filter_by_side_effect(id=None):
+            mock_filter_q = MagicMock()
+            if id == 1:
+                mock_filter_q.one.return_value = winner1
+            elif id == 2:
+                mock_filter_q.one.return_value = winner2
+            else:
+                mock_filter_q.one.return_value = winner2
+            return mock_filter_q
+        mock_q.filter_by.side_effect = filter_by_side_effect
+        return mock_q
+    
+    mock_context.db_session.query.side_effect = query_side_effect
     
     # Execute
-    result_winner, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
+    winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
+    
+    # Verify winners is a list
+    assert isinstance(winners, list)
+    assert len(winners) >= 1
     
     # Verify auto votes:
     # User 1: auto-voted for himself with 3 votes (weight 2, 3 votes) = 2.0 weighted
@@ -651,7 +715,9 @@ def test_finalize_voting_auto_votes_respect_max_votes(mock_context, sample_playe
     assert results[2]['votes'] == 3
     
     # User 2 should win with higher weight
-    assert result_winner.id == 2
+    winner_id, winner_obj = winners[0]
+    assert winner_id == 2
+    assert winner_obj.id == 2
 
 
 @pytest.mark.unit

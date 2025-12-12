@@ -623,12 +623,13 @@ async def test_pidorfinalclose_cmd_success(mock_update, mock_context, mock_game,
     mock_chat_member.status = 'administrator'
     mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)
     
-    # Mock finalize_voting
+    # Mock finalize_voting - now returns list of winners
     winner = sample_players[0]
     winner.id = 1
+    winners = [(1, winner)]  # List of tuples
     results = {1: {'weighted': 8, 'votes': 2, 'unique_voters': 2, 'auto_voted': False}, 2: {'weighted': 5, 'votes': 1, 'unique_voters': 1, 'auto_voted': False}}
     from bot.handlers.game.voting_helpers import finalize_voting
-    mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winner, results))
+    mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winners, results))
     
     # Mock player weights query
     mock_weights_result = MagicMock()
@@ -807,12 +808,13 @@ async def test_pidorfinalclose_cmd_test_chat_bypass_time_check(mock_update, mock
     mock_chat_member.status = 'administrator'
     mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)
     
-    # Mock finalize_voting
+    # Mock finalize_voting - now returns list of winners
     winner = sample_players[0]
     winner.id = 1
+    winners = [(1, winner)]  # List of tuples
     results = {1: {'weighted': 8, 'votes': 2, 'unique_voters': 2, 'auto_voted': False}, 2: {'weighted': 5, 'votes': 1, 'unique_voters': 1, 'auto_voted': False}}
     from bot.handlers.game.voting_helpers import finalize_voting
-    mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winner, results))
+    mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winners, results))
     
     # Mock player weights query
     mock_weights_result = MagicMock()
@@ -994,16 +996,17 @@ async def test_final_voting_results_escaping(mock_update, mock_context, mock_gam
     mock_chat_member.status = 'administrator'
     mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)
     
-    # Mock finalize_voting to return results with decimal points
+    # Mock finalize_voting to return results with decimal points - now returns list of winners
     winner = sample_players[0]
     winner.id = 1
+    winners = [(1, winner)]  # List of tuples
     # Results with decimal points that need escaping
     results = {
         1: {'weighted': 12.5, 'votes': 2, 'unique_voters': 2, 'auto_voted': False},  # 12.5 contains a dot that needs escaping
         2: {'weighted': 8.3, 'votes': 1, 'unique_voters': 1, 'auto_voted': False}   # 8.3 contains a dot that needs escaping
     }
     from bot.handlers.game.voting_helpers import finalize_voting
-    mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winner, results))
+    mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winners, results))
     
     # Mock player weights query
     mock_weights_result = MagicMock()
@@ -1088,7 +1091,16 @@ async def test_finalize_voting_unique_voters():
     mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = mock_winner
     
     # Execute
-    result_winner, results = finalize_voting(mock_voting, mock_context)
+    winners, results = finalize_voting(mock_voting, mock_context)
+    
+    # Verify winners is a list of tuples
+    assert isinstance(winners, list)
+    assert len(winners) >= 1
+    assert isinstance(winners[0], tuple)
+    assert len(winners[0]) == 2
+    winner_id, winner_obj = winners[0]
+    assert winner_id == 1
+    assert winner_obj.id == 1
     
     # Verify unique_voters count is correct
     # Candidate 1: voted by users 1 and 2 = 2 unique voters
@@ -1126,15 +1138,37 @@ async def test_finalize_voting_auto_voted_flag():
     mock_weights_result = MagicMock()
     mock_weights_result.all.return_value = [(1, 3), (2, 4)]
     
-    # Setup winner query
-    mock_winner = MagicMock()
-    mock_winner.id = 2
+    # Setup winner query - need to mock multiple queries for multiple winners
+    mock_winner1 = MagicMock()
+    mock_winner1.id = 2
+    mock_winner2 = MagicMock()
+    mock_winner2.id = 1
     
     mock_context.db_session.exec.return_value = mock_weights_result
-    mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = mock_winner
+    
+    # Mock query to return different winners based on filter_by call
+    def query_side_effect(*args, **kwargs):
+        mock_q = MagicMock()
+        def filter_by_side_effect(id=None):
+            mock_filter_q = MagicMock()
+            if id == 2:
+                mock_filter_q.one.return_value = mock_winner1
+            elif id == 1:
+                mock_filter_q.one.return_value = mock_winner2
+            else:
+                mock_filter_q.one.return_value = mock_winner1
+            return mock_filter_q
+        mock_q.filter_by.side_effect = filter_by_side_effect
+        return mock_q
+    
+    mock_context.db_session.query.side_effect = query_side_effect
     
     # Execute with auto_vote enabled
-    result_winner, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
+    winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
+    
+    # Verify winners is a list of tuples
+    assert isinstance(winners, list)
+    assert len(winners) >= 1
     
     # Verify auto_voted flags
     # Candidate 2: user 1 voted manually = False, user 2 auto-voted for himself = True
@@ -1188,14 +1222,15 @@ async def test_pidorfinalclose_escapes_special_chars(mock_update, mock_context, 
     player2.username = "user.with.dots"  # Contains dots that need escaping
     player2.full_username.return_value = "user.with.dots"
     
-    # Mock finalize_voting to return results with decimal points
+    # Mock finalize_voting to return results with decimal points - now returns list of winners
     winner = player1
+    winners = [(1, winner)]  # List of tuples
     results = {
         1: {'weighted': 15.75, 'votes': 3, 'unique_voters': 2, 'auto_voted': False},  # Decimal point needs escaping
         2: {'weighted': 9.25, 'votes': 2, 'unique_voters': 1, 'auto_voted': False}   # Decimal point needs escaping
     }
     from bot.handlers.game.voting_helpers import finalize_voting
-    mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winner, results))
+    mocker.patch('bot.handlers.game.voting_helpers.finalize_voting', return_value=(winners, results))
     
     # Mock player weights query
     mock_weights_result = MagicMock()
