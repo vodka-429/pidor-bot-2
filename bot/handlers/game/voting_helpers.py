@@ -366,8 +366,9 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
             weight = row[1]
         weights_dict[user_id] = weight
 
-    # Отслеживаем ручные голоса перед автоголосованием
-    manual_voters = set(int(user_id) for user_id in votes_data.keys() if len(json.loads(final_voting.votes_data).get(user_id, [])) > 0)
+    # Определяем игроков, которые проголосовали вручную (до автоголосования)
+    original_votes_data = json.loads(final_voting.votes_data)
+    manual_voters = set(int(user_id) for user_id in original_votes_data.keys() if len(original_votes_data.get(user_id, [])) > 0)
 
     # Добавляем автоматические голоса для не проголосовавших игроков
     auto_voted_players = set()
@@ -413,7 +414,7 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
                     'weighted': 0.0,
                     'votes': 0,
                     'unique_voters': set(),
-                    'auto_voted': candidate_id not in manual_voters
+                    'auto_voted': candidate_id in auto_voted_players
                 }
             results[candidate_id]['weighted'] += vote_weight
             results[candidate_id]['votes'] += 1
