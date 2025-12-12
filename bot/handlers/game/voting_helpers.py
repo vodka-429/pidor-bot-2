@@ -1,10 +1,14 @@
 """Helper functions for custom voting functionality."""
 import json
+import logging
 from typing import List, Tuple
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, User as TGUser
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.app.models import TGUser, GameResult
 from bot.handlers.game.commands import is_test_chat
+
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
 
 
 # Константа для идентификации callback голосования
@@ -345,27 +349,33 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
     # ШАГ 1: Загружаем исходные голоса (до автоголосования)
     original_votes = json.loads(final_voting.votes_data)
 
-    # ШАГ 2: Получаем веса игроков (количество побед в году)
-    stmt = select(TGUser.id, func.count(GameResult.winner_id).label('weight')) \
+    # ШАГ 2: Получаем веса игроков (количество побед в году) вместе с их Telegram ID
+    stmt = select(TGUser.id, TGUser.tg_id, func.count(GameResult.winner_id).label('weight')) \
         .join(TGUser, GameResult.winner_id == TGUser.id) \
         .filter(GameResult.game_id == final_voting.game_id, GameResult.year == final_voting.year) \
-        .group_by(TGUser.id)
+        .group_by(TGUser.id, TGUser.tg_id)
 
     player_weights_result = context.db_session.exec(stmt).all()
 
-    # Создаём словарь: user_id -> вес
+    # Создаём словари: user_id -> вес и tg_id -> user_id
     weights_dict = {}
+    tg_id_to_db_id = {}
     for row in player_weights_result:
         user_id = row[0]
-        weight = row[1]
+        tg_id = row[1]
+        weight = row[2]
         weights_dict[user_id] = weight
+        tg_id_to_db_id[tg_id] = user_id
 
-    # ШАГ 3: Определяем, кто проголосовал вручную
-    # Игрок считается проголосовавшим вручную, если у него есть непустой список голосов
+    # ШАГ 3: Определяем, кто проголосовал вручную (с преобразованием Telegram ID в DB ID)
     manual_voters = set()
     for user_id_str, candidate_ids in original_votes.items():
         if len(candidate_ids) > 0:
-            manual_voters.add(int(user_id_str))
+            tg_id = int(user_id_str)  # Это Telegram ID
+            # Преобразуем Telegram ID во внутренний ID
+            if tg_id in tg_id_to_db_id:
+                db_id = tg_id_to_db_id[tg_id]
+                manual_voters.add(db_id)
 
     # ШАГ 4: Создаем финальный словарь голосов (с автоголосами, если нужно)
     final_votes = dict(original_votes)  # Копируем исходные голоса
@@ -389,7 +399,11 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
 
     for user_id_str, candidate_ids in final_votes.items():
         user_id = int(user_id_str)
-        voter_weight = weights_dict.get(user_id, 1)
+        if user_id in tg_id_to_db_id:
+            db_id = tg_id_to_db_id[user_id]
+            voter_weight = weights_dict.get(db_id, 1)
+        else:
+            voter_weight = weights_dict.get(user_id, 1)
 
         # Вес одного голоса = вес голосующего / количество его выборов
         votes_count = len(candidate_ids)
@@ -464,6 +478,8 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
     final_voting.winner_id = winners[0][0] if winners else None
     context.db_session.commit()
 
+    logger.info(f"winners: {winners}")
+    logger.info(f"results: {results}")
     return winners, results
 
 

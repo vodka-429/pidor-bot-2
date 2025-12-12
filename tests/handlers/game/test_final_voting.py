@@ -1073,15 +1073,16 @@ async def test_finalize_voting_unique_voters():
     
     # Setup votes: user 1 votes for candidates 1,2; user 2 votes for candidate 1
     # This creates 3 total votes but only 2 unique voters
+    # Using Telegram IDs as in handle_vote_callback
     votes_data = {
-        "1": [1, 2],  # User 1 votes for 2 candidates
-        "2": [1]      # User 2 votes for 1 candidate
+        "1001": [1, 2],  # User with tg_id=1001 votes for 2 candidates
+        "1002": [1]      # User with tg_id=1002 votes for 1 candidate
     }
     mock_voting.votes_data = json.dumps(votes_data)
     
     # Setup player weights
     mock_weights_result = MagicMock()
-    mock_weights_result.all.return_value = [(1, 5), (2, 3)]
+    mock_weights_result.all.return_value = [(1, 1001, 5), (2, 1002, 3)]
     
     # Setup winner query
     mock_winner = MagicMock()
@@ -1128,15 +1129,16 @@ async def test_finalize_voting_auto_voted_flag():
     mock_voting.missed_days_count = 3  # 3 days → 1 vote per formula
     
     # Setup votes: only user 1 votes manually, user 2 doesn't vote
+    # Using Telegram IDs as in handle_vote_callback
     votes_data = {
-        "1": [2]  # User 1 votes for candidate 2
-        # User 2 doesn't vote - should get auto vote
+        "1001": [2]  # User with tg_id=1001 votes for candidate 2
+        # User with tg_id=1002 doesn't vote - should get auto vote
     }
     mock_voting.votes_data = json.dumps(votes_data)
     
     # Setup player weights
     mock_weights_result = MagicMock()
-    mock_weights_result.all.return_value = [(1, 3), (2, 4)]
+    mock_weights_result.all.return_value = [(1, 1001, 3), (2, 1002, 4)]
     
     # Setup winner query - need to mock multiple queries for multiple winners
     mock_winner1 = MagicMock()
