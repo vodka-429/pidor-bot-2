@@ -4,6 +4,7 @@ from typing import List, Tuple
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, User as TGUser
 from bot.app.models import TGUser
+from bot.handlers.game.commands import is_test_chat
 
 
 # Константа для идентификации callback голосования
@@ -76,6 +77,10 @@ def calculate_max_votes(missed_days: int) -> int:
         missed_days = int(missed_days)
     except (TypeError, ValueError):
         return 1
+
+    # For TEST_CHAT_ID
+    if missed_days > 10:
+        missed_days = 4
 
     if missed_days <= 0:
         return 1
@@ -205,7 +210,7 @@ def format_weights_message(player_weights: List[Tuple[TGUser, int]], missed_coun
     # Формируем список весов
     weights_list = []
     for player, weight in player_weights:
-        weights_list.append(f"• {escape_markdown2(format_player_with_wins(player, weight))}")
+        weights_list.append(f"• {format_player_with_wins(player, weight)}")
     weights_text = '\n'.join(weights_list)
 
     # Формируем полное сообщение
@@ -234,7 +239,6 @@ def duplicate_candidates_for_test(candidates: List[TGUser], chat_id: int, target
     Returns:
         Список кандидатов (оригинальные + дубликаты для тестового чата)
     """
-    from bot.handlers.game.commands import is_test_chat
 
     # Если это не тестовый чат или кандидатов уже достаточно, возвращаем как есть
     if not is_test_chat(chat_id) or len(candidates) >= target_count:
@@ -409,7 +413,7 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
                     'weighted': 0.0,
                     'votes': 0,
                     'unique_voters': set(),
-                    'auto_voted': candidate_id in auto_voted_players
+                    'auto_voted': candidate_id not in manual_voters
                 }
             results[candidate_id]['weighted'] += vote_weight
             results[candidate_id]['votes'] += 1
