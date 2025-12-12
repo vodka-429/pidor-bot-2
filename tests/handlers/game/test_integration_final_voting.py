@@ -463,7 +463,7 @@ async def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sa
     
     # Mock weights query for finalize_voting
     mock_weights_for_finalize = MagicMock()
-    weights_result = [(1, 5), (2, 3), (3, 2)]  # user_id, weight
+    weights_result = [(1, 100000001, 5), (2, 100000002, 3), (3, 100000003, 2)]  # user_id, tg_id, weight
     mock_weights_for_finalize.all.return_value = weights_result
     
     # Mock TGUser query for getting candidates
@@ -619,14 +619,14 @@ async def test_full_voting_cycle_with_improvements(mock_update, mock_context, mo
     # Step 4: Test finalize_voting with auto votes for non-voters
     # Reset voting to active state for finalization test
     mock_final_voting.ended_at = None
-    mock_final_voting.votes_data = '{"1": [1, 2]}'  # Only user 1 voted
+    mock_final_voting.votes_data = '{"100000001": [1, 2]}'  # Only user 1 voted (using tg_id)
     
     # Mock finalize_voting call
     from bot.handlers.game.voting_helpers import finalize_voting
     
     # Mock player weights for finalize_voting
     mock_weights_for_finalize = MagicMock()
-    weights_result = [(1, 6), (2, 4), (3, 2)]  # user_id, weight
+    weights_result = [(1, 100000001, 6), (2, 100000002, 4), (3, 100000003, 2)]  # user_id, tg_id, weight
     mock_weights_for_finalize.all.return_value = weights_result
     mock_context.db_session.exec.return_value = mock_weights_for_finalize
     
@@ -648,18 +648,18 @@ async def test_full_voting_cycle_with_improvements(mock_update, mock_context, mo
     # User 2: auto-voted for himself with 3 votes (weight 4, 3 votes) = 4.0 total
     # User 3: auto-voted for himself with 3 votes (weight 2, 3 votes) = 2.0 total
     # Expected results:
-    # Candidate 1: 3.0 weighted, 1 vote
+    # Candidate 1: 3.0 weighted (3.0 from user 1), 1 vote
     # Candidate 2: 7.0 weighted (3.0 from user 1 + 4.0 from user 2 auto-vote), 4 votes
     # Candidate 3: 2.0 weighted, 3 votes
     
-    assert abs(results[1]['weighted'] - 3.0) < 0.001
-    assert results[1]['votes'] == 1
-    assert abs(results[2]['weighted'] - 7.0) < 0.001  # 3.0 + 4.0
-    assert results[2]['votes'] == 4  # 1 + 3
+    assert abs(results[1]['weighted'] - 3.0) < 0.001  # 3.0 from user 1
+    assert results[1]['votes'] == 1  # 1 vote from user 1
+    assert abs(results[2]['weighted'] - 7.0) < 0.001  # 3.0 from user 1 + 4.0 from user 2 auto-vote
+    assert results[2]['votes'] == 4  # 1 from user 1 + 3 from user 2 auto-vote
     assert abs(results[3]['weighted'] - 2.0) < 0.001
     assert results[3]['votes'] == 3
     
-    # User 2 should win with highest weighted score
+    # User 2 should win with highest weighted score (7.0)
     assert winner_id == 2
     assert winner_obj.id == 2
     

@@ -235,17 +235,18 @@ def test_finalize_voting_calculation(mock_context, sample_players):
     mock_voting.missed_days_count = 5  # Add missed_days_count for auto voting calculation
     
     # Setup votes_data: user 1 votes for candidates 1,2; user 2 votes for candidate 1; user 3 votes for candidate 3
+    # Используем Telegram ID как в handle_vote_callback
     votes_data = {
-        "1": [1, 2],  # User 1 votes for candidates 1 and 2
-        "2": [1],     # User 2 votes for candidate 1
-        "3": [3]      # User 3 votes for candidate 3
+        "1001": [1, 2],  # User 1 (tg_id=1001) votes for candidates 1 and 2
+        "1002": [1],     # User 2 (tg_id=1002) votes for candidate 1
+        "1003": [3]      # User 3 (tg_id=1003) votes for candidate 3
     }
     mock_voting.votes_data = json.dumps(votes_data)
     
     # Setup player weights (wins in the year)
     # User 1 has 5 wins, User 2 has 3 wins, User 3 has 2 wins
     mock_weights_result = MagicMock()
-    mock_weights_result.all.return_value = [(1, 5), (2, 3), (3, 2)]
+    mock_weights_result.all.return_value = [(1, 1001, 5), (2, 1002, 3), (3, 1003, 2)]
     
     # Setup winner query
     winner = sample_players[0]  # Candidate 1 should win
@@ -263,10 +264,10 @@ def test_finalize_voting_calculation(mock_context, sample_players):
     winner_id, winner_obj = winners[0]
     
     # Verify weighted votes and real votes calculation with new division logic
-    # Candidate 1: voted by user 1 (weight 5, 2 votes) and user 2 (weight 3, 1 vote) = 5/2 + 3/1 = 2.5 + 3.0 = 5.5 weighted, 2 votes
+    # Candidate 1: voted by user 2 (weight 3, 1 vote) + auto-voted by user 3 (weight 2, 1 vote) = 5.0 weighted, 2 votes
     # Candidate 2: voted by user 1 (weight 5, 2 votes) = 5/2 = 2.5 weighted, 1 vote
-    # Candidate 3: voted by user 3 (weight 2, 1 vote) = 2/1 = 2.0 weighted, 1 vote
-    assert results[1]['weighted'] == 5.5
+    # Candidate 3: auto-voted by user 3 (weight 2, 1 vote) = 2.0 weighted, 1 vote
+    assert results[1]['weighted'] == 5.5  # Исправлено: 3.0 + 2.5 = 5.5
     assert results[1]['votes'] == 2
     assert results[2]['weighted'] == 2.5
     assert results[2]['votes'] == 1
@@ -301,7 +302,7 @@ def test_finalize_voting_no_votes(mock_context, sample_players, mocker):
     
     # Setup player weights
     mock_weights_result = MagicMock()
-    mock_weights_result.all.return_value = [(1, 5), (2, 3), (3, 2)]
+    mock_weights_result.all.return_value = [(1, 1001, 5), (2, 1002, 3), (3, 1003, 2)]
     
     # Setup candidates query (all players who had wins)
     mock_candidates_result = MagicMock()
@@ -361,7 +362,7 @@ def test_finalize_voting_equal_weighted_votes(mock_context, sample_players):
     
     # Setup player weights
     mock_weights_result = MagicMock()
-    mock_weights_result.all.return_value = [(1, 4), (2, 4)]
+    mock_weights_result.all.return_value = [(1, 1001, 4), (2, 1002, 4)]
     
     # Setup winner queries - need to mock for both potential winners
     winner1 = sample_players[0]
@@ -564,13 +565,13 @@ def test_finalize_voting_with_auto_votes(mock_context, sample_players):
     
     # Setup votes_data: only user 1 votes
     votes_data = {
-        "1": [1]  # User 1 votes for candidate 1
+        "1001": [1]  # User 1 (tg_id=1001) votes for candidate 1
     }
     mock_voting.votes_data = json.dumps(votes_data)
     
     # Setup player weights: users 1, 2, 3 all have weights
     mock_weights_result = MagicMock()
-    mock_weights_result.all.return_value = [(1, 5), (2, 3), (3, 2)]
+    mock_weights_result.all.return_value = [(1, 1001, 5), (2, 1002, 3), (3, 1003, 2)]
     
     # Setup winner query
     winner = sample_players[0]  # User 1 should win with highest weighted score
@@ -615,15 +616,15 @@ def test_finalize_voting_partial_voters(mock_context, sample_players):
     
     # Setup votes_data: users 1 and 2 vote, user 3 doesn't
     votes_data = {
-        "1": [2],  # User 1 votes for candidate 2
-        "2": [1]   # User 2 votes for candidate 1
+        "1001": [2],  # User 1 (tg_id=1001) votes for candidate 2
+        "1002": [1]   # User 2 (tg_id=1002) votes for candidate 1
         # User 3 doesn't vote - should get auto vote for himself
     }
     mock_voting.votes_data = json.dumps(votes_data)
     
     # Setup player weights
     mock_weights_result = MagicMock()
-    mock_weights_result.all.return_value = [(1, 3), (2, 4), (3, 6)]
+    mock_weights_result.all.return_value = [(1, 1001, 3), (2, 1002, 4), (3, 1003, 6)]
     
     # Setup winner query
     winner = sample_players[2]  # User 3 should win with auto vote
@@ -642,11 +643,11 @@ def test_finalize_voting_partial_voters(mock_context, sample_players):
     
     # Verify results:
     # Candidate 1: voted by user 2 (weight 4, 1 vote) = 4.0 weighted
-    # Candidate 2: voted by user 1 (weight 3, 1 vote) = 3.0 weighted
-    # Candidate 3: auto-voted by user 3 (weight 6, 1 vote) = 6.0 weighted
+    # Candidate 2: voted by user 1 (weight 3, 1 vote) = 3.0 weighted, 1 vote
+    # Candidate 3: auto-voted by user 3 (weight 6, 1 vote) = 6.0 weighted, 1 vote
     assert results[1]['weighted'] == 4.0
     assert results[1]['votes'] == 1
-    assert results[2]['weighted'] == 3.0
+    assert results[2]['weighted'] == 3.0  # Исправлено: только пользователь 1 проголосовал
     assert results[2]['votes'] == 1
     assert results[3]['weighted'] == 6.0
     assert results[3]['votes'] == 1
@@ -672,7 +673,7 @@ def test_finalize_voting_auto_votes_respect_max_votes(mock_context, sample_playe
     
     # Setup player weights
     mock_weights_result = MagicMock()
-    mock_weights_result.all.return_value = [(1, 2), (2, 4)]
+    mock_weights_result.all.return_value = [(1, 1001, 2), (2, 1002, 4)]
     
     # Setup winner queries - need to mock for both potential winners
     winner1 = sample_players[0]
@@ -909,15 +910,15 @@ def test_finalize_voting_auto_voted_flag_mixed_voting(mock_context, sample_playe
     # User 2 votes manually for candidate 1
     # User 3 doesn't vote - should get auto vote for himself
     votes_data = {
-        "1": [2, 3],  # User 1 votes for candidates 2 and 3
-        "2": [1]      # User 2 votes for candidate 1
+        "1001": [2, 3],  # User 1 (tg_id=1001) votes for candidates 2 and 3
+        "1002": [1]      # User 2 (tg_id=1002) votes for candidate 1
         # User 3 doesn't vote - should get auto vote for himself with 2 votes
     }
     mock_voting.votes_data = json.dumps(votes_data)
     
     # Setup player weights
     mock_weights_result = MagicMock()
-    mock_weights_result.all.return_value = [(1, 6), (2, 4), (3, 8)]
+    mock_weights_result.all.return_value = [(1, 1001, 6), (2, 1002, 4), (3, 1003, 8)]
     
     # Setup winner queries - need to mock for multiple winners
     winner1 = sample_players[0]
@@ -972,7 +973,7 @@ def test_finalize_voting_auto_voted_flag_mixed_voting(mock_context, sample_playe
     # Candidate 3: voted by user 1 (weight 6, 2 votes) + auto-voted by user 3 (weight 8, 2 votes) = 6/2 + 8 = 3.0 + 8.0 = 11.0 weighted, 3 votes
     assert results[1]['weighted'] == 4.0
     assert results[1]['votes'] == 1
-    assert results[2]['weighted'] == 3.0
+    assert results[2]['weighted'] == 3.0  # Исправлено: пользователь 1 (weight 6) голосует за 2 кандидатов = 6/2 = 3.0
     assert results[2]['votes'] == 1
     assert results[3]['weighted'] == 11.0
     assert results[3]['votes'] == 3
@@ -986,3 +987,57 @@ def test_finalize_voting_auto_voted_flag_mixed_voting(mock_context, sample_playe
     winner_id, winner_obj = winners[0]
     assert winner_id == 3
     assert winner_obj.id == 3
+
+
+@pytest.mark.unit
+def test_finalize_voting_with_tg_id_mapping(mock_context, sample_players):
+    """Test finalize_voting correctly maps Telegram IDs to database IDs."""
+    # Setup mock FinalVoting
+    mock_voting = MagicMock()
+    mock_voting.game_id = 1
+    mock_voting.year = 2024
+    mock_voting.missed_days_list = json.dumps([1, 2, 3])
+    mock_voting.missed_days_count = 3  # 3 дня → 1 выбор по формуле
+    
+    # Setup votes_data с Telegram ID (как в handle_vote_callback)
+    # Пусть у sample_players[0] tg_id = 1001, sample_players[1] tg_id = 1002, sample_players[2] tg_id = 1003
+    sample_players[0].tg_id = 1001
+    sample_players[1].tg_id = 1002
+    sample_players[2].tg_id = 1003
+    
+    votes_data = {
+        "1001": [2],  # Пользователь с tg_id=1001 голосует за кандидата 2
+        # Пользователь с tg_id=1002 не голосует
+        "1003": [1]   # Пользователь с tg_id=1003 голосует за кандидата 1
+    }
+    mock_voting.votes_data = json.dumps(votes_data)
+    
+    # Setup player weights с включением tg_id
+    mock_weights_result = MagicMock()
+    mock_weights_result.all.return_value = [(1, 1001, 5), (2, 1002, 3), (3, 1003, 2)]
+    
+    # Setup winner query
+    winner = sample_players[0]  # Должен победить кандидат 1
+    winner.id = 1
+    
+    # Мокаем запросы к базе данных
+    mock_context.db_session.exec.return_value = mock_weights_result
+    mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
+    
+    # Execute
+    winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
+    
+    # Verify winners is a list
+    assert isinstance(winners, list)
+    assert len(winners) >= 1
+    winner_id, winner_obj = winners[0]
+    
+    # Verify results:
+    # Candidate 1: voted by user 3 (tg_id=1003, db_id=3)
+    # Candidate 2: voted by user 1 (tg_id=1001, db_id=1) + auto-voted by user 2 (tg_id=1002, db_id=2)
+    # Candidate 3: не получил голосов, так как пользователь 2 проголосовал за себя
+    
+    assert results[1]['votes'] == 1  # Только пользователь 3 проголосовал за кандидата 1
+    assert results[2]['votes'] == 2  # Пользователь 1 + автоголос от пользователя 2
+    # Проверяем, что кандидат 3 отсутствует в результатах (не получил голосов)
+    assert 3 not in results
