@@ -763,14 +763,14 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     for candidate_id, result_data in sorted(results.items(), key=lambda x: x[1]['weighted'], reverse=True):
         # Находим кандидата по ID
         candidate = context.db_session.query(TGUser).filter_by(id=candidate_id).one()
-        unique_voters = result_data['unique_voters']
+        votes_count = result_data['votes']
         weighted_points = result_data['weighted']
         auto_voted = result_data['auto_voted']
 
         # Формируем правильное склонение для "голос"
-        if unique_voters % 10 == 1 and unique_voters % 100 != 11:
+        if votes_count % 10 == 1 and votes_count % 100 != 11:
             votes_word = "голос"
-        elif unique_voters % 10 in [2, 3, 4] and unique_voters % 100 not in [12, 13, 14]:
+        elif votes_count % 10 in [2, 3, 4] and votes_count % 100 not in [12, 13, 14]:
             votes_word = "голоса"
         else:
             votes_word = "голосов"
@@ -788,7 +788,7 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
             points_word = "очков"
 
         # Формируем строку результата с пометкой об автоголосовании
-        result_line = f"• {escape_markdown2(candidate.full_username())}: *{unique_voters}* {escape_word(votes_word)}, *{weighted_points_str}* взвешенных {escape_word(points_word)}"
+        result_line = f"• {escape_markdown2(candidate.full_username())}: *{votes_count}* {escape_word(votes_word)}, *{weighted_points_str}* взвешенных {escape_word(points_word)}"
         if auto_voted:
             result_line += " _\\(автоголосование\\)_"
 
