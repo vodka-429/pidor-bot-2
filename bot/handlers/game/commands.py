@@ -727,24 +727,24 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     winner_names = []
     for winner_id, winner in winners:
         winner_names.append(escape_markdown2(winner.full_username()))
-    
+
     winners_text = ', '.join(winner_names) if winner_names else "Нет победителей"
 
     # Рассчитываем распределение дней между победителями
     missed_days = json.loads(final_voting.missed_days_list)
     days_distribution_list = []
-    
+
     if winners and missed_days and len(winners) > 0:
         days_per_winner = len(missed_days) // len(winners)
         remainder = len(missed_days) % len(winners)
-        
+
         for winner_index, (winner_id, winner) in enumerate(winners):
             # Определяем количество дней для текущего победителя
             if winner_index < remainder:
                 days_count = days_per_winner + 1
             else:
                 days_count = days_per_winner
-            
+
             # Формируем правильное склонение для "день"
             if days_count % 10 == 1 and days_count % 100 != 11:
                 days_word = "день"
@@ -752,11 +752,11 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
                 days_word = "дня"
             else:
                 days_word = "дней"
-            
+
             days_distribution_list.append(
                 f"• {escape_markdown2(winner.full_username())} получает *{days_count}* {escape_word(days_word)} в свою копилку\\!"
             )
-    
+
     days_distribution_text = '\n'.join(days_distribution_list) if days_distribution_list else ""
 
     voting_results_list = []

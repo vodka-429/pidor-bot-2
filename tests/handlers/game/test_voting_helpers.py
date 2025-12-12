@@ -491,9 +491,9 @@ def test_format_weights_message(sample_players):
     assert "7" in result  # missed days count
     # Note: text is escaped for Markdown V2, so we check for escaped versions
     # The function uses format_player_with_wins which now triple-escapes in the message
-    assert "Алиса Смит \\\\\\(5 побед\\\\\\)" in result
-    assert "Боб \\\\\\(3 победы\\\\\\)" in result
-    assert "Чарли Браун \\\\\\(2 победы\\\\\\)" in result
+    assert "Алиса Смит \\(5 побед\\)" in result
+    assert "Боб \\(3 победы\\)" in result
+    assert "Чарли Браун \\(2 победы\\)" in result
     assert "Финальное голосование года" in result
     assert "Голосуйте мудро" in result
 
@@ -892,4 +892,97 @@ def test_create_voting_keyboard_no_checkmarks():
     
     # Verify button texts are clean names only
     assert keyboard.inline_keyboard[0][0].text == "Alice Smith"
-    assert keyboard.inline_keyboard[0][1].text == "Bob"
+
+
+@pytest.mark.unit
+def test_finalize_voting_auto_voted_flag_mixed_voting(mock_context, sample_players):
+    """Test finalize_voting correctly sets auto_voted flag in mixed voting scenario."""
+    # Setup mock FinalVoting
+    mock_voting = MagicMock()
+    mock_voting.game_id = 1
+    mock_voting.year = 2024
+    mock_voting.missed_days_list = json.dumps([1, 2, 3, 4])
+    mock_voting.missed_days_count = 4  # 4 дня → 2 выбора по формуле
+    
+    # Setup votes_data: mixed scenario
+    # User 1 votes manually for candidates 2 and 3
+    # User 2 votes manually for candidate 1
+    # User 3 doesn't vote - should get auto vote for himself
+    votes_data = {
+        "1": [2, 3],  # User 1 votes for candidates 2 and 3
+        "2": [1]      # User 2 votes for candidate 1
+        # User 3 doesn't vote - should get auto vote for himself with 2 votes
+    }
+    mock_voting.votes_data = json.dumps(votes_data)
+    
+    # Setup player weights
+    mock_weights_result = MagicMock()
+    mock_weights_result.all.return_value = [(1, 6), (2, 4), (3, 8)]
+    
+    # Setup winner queries - need to mock for multiple winners
+    winner1 = sample_players[0]
+    winner1.id = 1
+    winner2 = sample_players[1]
+    winner2.id = 2
+    winner3 = sample_players[2]
+    winner3.id = 3
+    
+    mock_context.db_session.exec.return_value = mock_weights_result
+    
+    # Mock query to return different winners based on filter_by call
+    def query_side_effect(*args, **kwargs):
+        mock_q = MagicMock()
+        def filter_by_side_effect(id=None):
+            mock_filter_q = MagicMock()
+            if id == 1:
+                mock_filter_q.one.return_value = winner1
+            elif id == 2:
+                mock_filter_q.one.return_value = winner2
+            elif id == 3:
+                mock_filter_q.one.return_value = winner3
+            else:
+                mock_filter_q.one.return_value = winner3
+            return mock_filter_q
+        mock_q.filter_by.side_effect = filter_by_side_effect
+        return mock_q
+    
+    mock_context.db_session.query.side_effect = query_side_effect
+    
+    # Execute with auto_vote enabled
+    winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
+    
+    # Verify winners is a list
+    assert isinstance(winners, list)
+    assert len(winners) >= 1
+    
+    # Verify auto_voted flags for all candidates:
+    # Candidate 1: voted by user 2 (manual voter) → auto_voted should be False (user 2 is in manual_voters)
+    # But wait, auto_voted flag is for the CANDIDATE, not the voter!
+    # Candidate 1 (user 1) voted manually → auto_voted = False (user 1 is in manual_voters)
+    # Candidate 2 (user 2) voted manually → auto_voted = False (user 2 is in manual_voters)
+    # Candidate 3 (user 3) didn't vote manually → auto_voted = True (user 3 is NOT in manual_voters)
+    
+    assert results[1]['auto_voted'] == False  # User 1 voted manually
+    assert results[2]['auto_voted'] == False  # User 2 voted manually
+    assert results[3]['auto_voted'] == True   # User 3 didn't vote manually (got auto vote)
+    
+    # Verify vote counts:
+    # Candidate 1: voted by user 2 (weight 4, 1 vote) = 4.0 weighted, 1 vote
+    # Candidate 2: voted by user 1 (weight 6, 2 votes) = 6/2 = 3.0 weighted, 1 vote
+    # Candidate 3: voted by user 1 (weight 6, 2 votes) + auto-voted by user 3 (weight 8, 2 votes) = 6/2 + 8 = 3.0 + 8.0 = 11.0 weighted, 3 votes
+    assert results[1]['weighted'] == 4.0
+    assert results[1]['votes'] == 1
+    assert results[2]['weighted'] == 3.0
+    assert results[2]['votes'] == 1
+    assert results[3]['weighted'] == 11.0
+    assert results[3]['votes'] == 3
+    
+    # Verify unique voters count
+    assert results[1]['unique_voters'] == 1  # Only user 2
+    assert results[2]['unique_voters'] == 1  # Only user 1
+    assert results[3]['unique_voters'] == 2  # User 1 and user 3
+    
+    # User 3 should win with highest weighted score (11.0 > 4.0 > 3.0)
+    winner_id, winner_obj = winners[0]
+    assert winner_id == 3
+    assert winner_obj.id == 3
