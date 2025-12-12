@@ -3,7 +3,7 @@ import json
 from typing import List, Tuple
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, User as TGUser
-from bot.app.models import TGUser
+from bot.app.models import TGUser, GameResult
 from bot.handlers.game.commands import is_test_chat
 
 
@@ -322,31 +322,30 @@ def create_voting_keyboard(candidates: List[TGUser], voting_id: int, votes_per_r
 
 def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True) -> tuple:
     """
-    Подсчитывает результаты финального голосования и создаёт записи GameResult.
+    Подсчитывает результаты финального голосования.
 
-    Args:
-        final_voting: Объект FinalVoting с данными голосования
-        context: Контекст бота с доступом к БД
-        auto_vote_for_non_voters: Добавлять ли автоматические голоса за не проголосовавших
-
-    Returns:
-        Кортеж (winners: List[Tuple[int, TGUser]], results: Dict[int, Dict[str, Union[float, int, bool]]])
-        где winners - список кортежей [(winner_id, TGUser), ...] с победителями,
-        results - словарь {candidate_id: {'weighted': float, 'votes': int, 'unique_voters': int, 'auto_voted': bool}}
+    Алгоритм:
+    1. Загружаем исходные голоса из БД
+    2. Получаем веса игроков (количество побед)
+    3. Определяем, кто проголосовал вручную
+    4. Добавляем автоголоса для не проголосовавших (если включено)
+    5. Подсчитываем результаты для каждого кандидата
+    6. Определяем победителей
+    7. Сохраняем результаты в БД
     """
     import json
     from datetime import datetime
     from zoneinfo import ZoneInfo
-    from sqlalchemy import func, text
+    from sqlalchemy import func
     from sqlmodel import select
     from bot.app.models import TGUser, GameResult
 
     MOSCOW_TZ = ZoneInfo('Europe/Moscow')
 
-    # Загружаем голоса из votes_data
-    votes_data = json.loads(final_voting.votes_data)
+    # ШАГ 1: Загружаем исходные голоса (до автоголосования)
+    original_votes = json.loads(final_voting.votes_data)
 
-    # Получаем веса игроков (количество побед в году)
+    # ШАГ 2: Получаем веса игроков (количество побед в году)
     stmt = select(TGUser.id, func.count(GameResult.winner_id).label('weight')) \
         .join(TGUser, GameResult.winner_id == TGUser.id) \
         .filter(GameResult.game_id == final_voting.game_id, GameResult.year == final_voting.year) \
@@ -355,79 +354,71 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
     player_weights_result = context.db_session.exec(stmt).all()
 
     # Создаём словарь: user_id -> вес
-    # Обрабатываем как кортежи, так и объекты Row
     weights_dict = {}
     for row in player_weights_result:
-        if isinstance(row, tuple) and len(row) == 2:
-            user_id, weight = row
-        else:
-            # Если это объект Row, извлекаем значения по индексу
-            user_id = row[0]
-            weight = row[1]
+        user_id = row[0]
+        weight = row[1]
         weights_dict[user_id] = weight
 
-    # Определяем игроков, которые проголосовали вручную (до автоголосования)
-    original_votes_data = json.loads(final_voting.votes_data)
-    manual_voters = set(int(user_id) for user_id in original_votes_data.keys() if len(original_votes_data.get(user_id, [])) > 0)
+    # ШАГ 3: Определяем, кто проголосовал вручную
+    # Игрок считается проголосовавшим вручную, если у него есть непустой список голосов
+    manual_voters = set()
+    for user_id_str, candidate_ids in original_votes.items():
+        if len(candidate_ids) > 0:
+            manual_voters.add(int(user_id_str))
 
-    # Добавляем автоматические голоса для не проголосовавших игроков
-    auto_voted_players = set()
+    # ШАГ 4: Создаем финальный словарь голосов (с автоголосами, если нужно)
+    final_votes = dict(original_votes)  # Копируем исходные голоса
+
     if auto_vote_for_non_voters:
-        # Получаем список всех игроков с весами
+        # Находим игроков, которые не проголосовали
         all_player_ids = set(weights_dict.keys())
+        non_voters = all_player_ids - manual_voters
 
-        # Определяем, кто уже проголосовал
-        voted_player_ids = set(int(user_id) for user_id in votes_data.keys())
-
-        # Находим не проголосовавших игроков
-        non_voters = all_player_ids - voted_player_ids
-
-        # Рассчитываем максимальное количество голосов для данного голосования
+        # Рассчитываем максимальное количество голосов
         max_votes = calculate_max_votes(final_voting.missed_days_count)
 
-        # Для каждого не проголосовавшего игрока добавляем ВСЕ голоса за себя
+        # Добавляем автоголоса для не проголосовавших
         for player_id in non_voters:
             user_id_str = str(player_id)
             # Не проголосовавший игрок отдает ВСЕ свои голоса только за себя
-            votes_data[user_id_str] = [player_id] * max_votes
-            auto_voted_players.add(player_id)
+            final_votes[user_id_str] = [player_id] * max_votes
 
-    # Подсчитываем взвешенные голоса, реальные голоса и уникальных голосующих для каждого кандидата
+    # ШАГ 5: Подсчитываем результаты для каждого кандидата
     results = {}
 
-    for user_id_str, candidate_ids in votes_data.items():
+    for user_id_str, candidate_ids in final_votes.items():
         user_id = int(user_id_str)
-        # Получаем вес голосующего (если игрок не имел побед, вес = 1)
         voter_weight = weights_dict.get(user_id, 1)
 
-        # Рассчитываем вес одного голоса (вес голосующего делится на количество его выборов)
+        # Вес одного голоса = вес голосующего / количество его выборов
         votes_count = len(candidate_ids)
         if votes_count > 0:
             vote_weight = float(voter_weight) / votes_count
         else:
-            vote_weight = 0.0
+            continue  # Пропускаем пользователей без голосов
 
-        # Добавляем взвешенный голос и реальный голос каждому кандидату
+        # Добавляем голоса каждому кандидату
         for candidate_id in candidate_ids:
             if candidate_id not in results:
                 results[candidate_id] = {
                     'weighted': 0.0,
                     'votes': 0,
-                    'unique_voters': set(),
-                    'auto_voted': candidate_id in auto_voted_players
+                    'unique_voters': set()
                 }
+
             results[candidate_id]['weighted'] += vote_weight
             results[candidate_id]['votes'] += 1
             results[candidate_id]['unique_voters'].add(user_id)
 
-    # Преобразуем множества уникальных голосующих в количество
+    # ШАГ 6: Устанавливаем флаг auto_voted для каждого кандидата
+    # Кандидат помечается как "автоголосование", если он САМ не голосовал вручную
     for candidate_id in results:
+        results[candidate_id]['auto_voted'] = candidate_id not in manual_voters
+        # Преобразуем set в количество
         results[candidate_id]['unique_voters'] = len(results[candidate_id]['unique_voters'])
 
-    # Рассчитываем количество победителей на основе пропущенных дней
-    max_winners = calculate_max_votes(final_voting.missed_days_count)
-
-    # Определяем победителей с максимальными взвешенными результатами
+    # ШАГ 7: Определяем победителей
     if not results:
         # Если никто не проголосовал, выбираем случайных кандидатов
         import random
@@ -441,39 +432,115 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
         if not all_candidates:
             raise ValueError("No candidates found for voting")
 
-        # Выбираем случайных победителей (не больше, чем есть кандидатов)
+        max_winners = calculate_max_votes(final_voting.missed_days_count)
         num_winners = min(max_winners, len(all_candidates))
         winner_ids = random.sample(all_candidates, num_winners)
 
         # Добавляем результаты для случайных победителей
         for winner_id in winner_ids:
-            if winner_id not in results:
-                results[winner_id] = {'weighted': 0.0, 'votes': 0, 'unique_voters': 0, 'auto_voted': True}
+            results[winner_id] = {
+                'weighted': 0.0,
+                'votes': 0,
+                'unique_voters': 0,
+                'auto_voted': True
+            }
     else:
-        # Сортируем кандидатов по взвешенным очкам в порядке убывания
+        # Сортируем кандидатов по взвешенным очкам
         sorted_candidates = sorted(results.items(), key=lambda x: x[1]['weighted'], reverse=True)
 
-        # Берем строго первых N победителей (не больше, чем есть кандидатов)
+        # Берем первых N победителей
+        max_winners = calculate_max_votes(final_voting.missed_days_count)
         num_winners = min(max_winners, len(sorted_candidates))
         winner_ids = [candidate_id for candidate_id, _ in sorted_candidates[:num_winners]]
 
-    # Загружаем объекты победителей
+    # ШАГ 8: Загружаем объекты победителей
     winners = []
     for winner_id in winner_ids:
         winner = context.db_session.query(TGUser).filter_by(id=winner_id).one()
         winners.append((winner_id, winner))
 
-    # Получаем список пропущенных дней
-    missed_days = json.loads(final_voting.missed_days_list)
+    # ШАГ 9: Обновляем FinalVoting
+    final_voting.ended_at = datetime.now(tz=MOSCOW_TZ)
+    final_voting.winner_id = winners[0][0] if winners else None
+    context.db_session.commit()
 
-    # Распределяем дни между победителями
-    if winners and missed_days:
-        # Рассчитываем дни на победителя
-        days_per_winner = len(missed_days) // len(winners)
-        remainder = len(missed_days) % len(winners)
+    return winners, results
 
-        # Распределяем дни: первые remainder победителей получают days_per_winner + 1 день
-        day_index = 0
+
+def format_voting_results(
+    winners: List[Tuple[int, TGUser]],
+    results: dict,
+    missed_days_count: int,
+    db_session
+) -> Tuple[str, str, str]:
+    """
+    Форматирует результаты финального голосования для отображения.
+
+    Args:
+        winners: Список кортежей (winner_id, TGUser) с победителями
+        results: Словарь с результатами голосования
+        missed_days_count: Количество пропущенных дней
+        db_session: Сессия базы данных
+
+    Returns:
+        Кортеж из трех строк:
+        - winners_text: Имена победителей через запятую
+        - voting_results_text: Детальные результаты голосования
+        - days_distribution_text: Информация о распределении дней
+    """
+    from bot.utils import escape_markdown2, escape_word, format_number
+
+    # Формируем строку с именами победителей
+    winner_names = []
+    for winner_id, winner in winners:
+        winner_names.append(escape_markdown2(winner.full_username()))
+
+    winners_text = ', '.join(winner_names) if winner_names else "Нет победителей"
+
+    # Формируем детальные результаты голосования
+    voting_results_list = []
+    for candidate_id, result_data in sorted(results.items(), key=lambda x: x[1]['weighted'], reverse=True):
+        # Находим кандидата по ID
+        candidate = db_session.query(TGUser).filter_by(id=candidate_id).one()
+        votes_count = result_data['votes']
+        weighted_points = result_data['weighted']
+        auto_voted = result_data['auto_voted']
+
+        # Формируем правильное склонение для "голос"
+        if votes_count % 10 == 1 and votes_count % 100 != 11:
+            votes_word = "голос"
+        elif votes_count % 10 in [2, 3, 4] and votes_count % 100 not in [12, 13, 14]:
+            votes_word = "голоса"
+        else:
+            votes_word = "голосов"
+
+        # Форматируем взвешенные очки с одним знаком после запятой
+        weighted_points_str = format_number(f"{weighted_points:.1f}")
+
+        # Формируем правильное склонение для "очко"
+        weighted_points_int = int(weighted_points)
+        if weighted_points_int % 10 == 1 and weighted_points_int % 100 != 11:
+            points_word = "очко"
+        elif weighted_points_int % 10 in [2, 3, 4] and weighted_points_int % 100 not in [12, 13, 14]:
+            points_word = "очка"
+        else:
+            points_word = "очков"
+
+        # Формируем строку результата
+        result_line = f"• {escape_markdown2(candidate.full_username())}: *{votes_count}* {escape_word(votes_word)}, *{weighted_points_str}* взвешенных {escape_word(points_word)}"
+        if auto_voted:
+            result_line += " _\\(автоголосование\\)_"
+
+        voting_results_list.append(result_line)
+
+    voting_results_text = '\n'.join(voting_results_list)
+
+    # Формируем информацию о распределении дней
+    days_distribution_list = []
+    if winners and missed_days_count > 0:
+        days_per_winner = missed_days_count // len(winners)
+        remainder = missed_days_count % len(winners)
+
         for winner_index, (winner_id, winner) in enumerate(winners):
             # Определяем количество дней для текущего победителя
             if winner_index < remainder:
@@ -481,22 +548,70 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
             else:
                 days_count = days_per_winner
 
-            # Создаём записи GameResult для дней этого победителя
-            # for _ in range(days_count):
-            #     if day_index < len(missed_days):
-            #         day_num = missed_days[day_index]
-            #         game_result = GameResult(
-            #             game_id=final_voting.game_id,
-            #             year=final_voting.year,
-            #             day=day_num,
-            #             winner_id=winner_id
-            #         )
-            #         context.db_session.add(game_result)
-            #         day_index += 1
+            # Формируем правильное склонение для "день"
+            if days_count % 10 == 1 and days_count % 100 != 11:
+                days_word = "день"
+            elif days_count % 10 in [2, 3, 4] and days_count % 100 not in [12, 13, 14]:
+                days_word = "дня"
+            else:
+                days_word = "дней"
 
-    # Обновляем FinalVoting: устанавливаем ended_at и winner_id (первого победителя для обратной совместимости)
-    final_voting.ended_at = datetime.now(tz=MOSCOW_TZ)
-    final_voting.winner_id = winners[0][0] if winners else None
-    context.db_session.commit()
+            days_distribution_list.append(
+                f"• {escape_markdown2(winner.full_username())} получает *{days_count}* {escape_word(days_word)} в свою копилку\\!"
+            )
 
-    return winners, results
+    days_distribution_text = '\n'.join(days_distribution_list) if days_distribution_list else ""
+
+    return winners_text, voting_results_text, days_distribution_text
+
+
+def create_game_results_for_winners(
+    winners: List[Tuple[int, TGUser]],
+    missed_days_list: List[int],
+    game_id: int,
+    year: int,
+    db_session
+) -> None:
+    """
+    Создает записи GameResult для победителей финального голосования.
+
+    Распределяет пропущенные дни между победителями и создает записи в базе данных.
+
+    Args:
+        winners: Список кортежей (winner_id, TGUser) с победителями
+        missed_days_list: Список пропущенных дней года
+        game_id: ID игры
+        year: Год
+        db_session: Сессия базы данных
+    """
+    if not winners or not missed_days_list:
+        return
+
+    # Распределяем дни между победителями
+    days_per_winner = len(missed_days_list) // len(winners)
+    remainder = len(missed_days_list) % len(winners)
+
+    # Создаем записи GameResult для каждого победителя
+    day_index = 0
+    for winner_index, (winner_id, winner) in enumerate(winners):
+        # Определяем количество дней для текущего победителя
+        if winner_index < remainder:
+            days_count = days_per_winner + 1
+        else:
+            days_count = days_per_winner
+
+        # Создаем записи для каждого дня
+        for i in range(days_count):
+            if day_index < len(missed_days_list):
+                day = missed_days_list[day_index]
+                game_result = GameResult(
+                    game_id=game_id,
+                    winner_id=winner_id,
+                    year=year,
+                    day=day
+                )
+                db_session.add(game_result)
+                day_index += 1
+
+    # Сохраняем изменения
+    db_session.commit()

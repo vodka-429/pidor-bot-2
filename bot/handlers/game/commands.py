@@ -647,9 +647,10 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     from bot.handlers.game.text_static import (
         FINAL_VOTING_CLOSE_SUCCESS,
         FINAL_VOTING_CLOSE_ERROR_NOT_ADMIN,
-        FINAL_VOTING_CLOSE_ERROR_NOT_ACTIVE
+        FINAL_VOTING_CLOSE_ERROR_NOT_ACTIVE,
+        FINAL_VOTING_RESULTS
     )
-    from bot.handlers.game.voting_helpers import finalize_voting
+    from bot.handlers.game.voting_helpers import finalize_voting, format_voting_results
 
     logger.info(f"pidorfinalclose_cmd started for chat {update.effective_chat.id}")
 
@@ -719,80 +720,22 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     # Вызываем функцию подсчёта результатов
     winners, results = finalize_voting(final_voting, context)
 
-    # Формируем сообщение с результатами
-    from bot.handlers.game.text_static import FINAL_VOTING_RESULTS
-    from bot.utils import escape_markdown2
+    # Создаем записи GameResult для победителей
+    from bot.handlers.game.voting_helpers import create_game_results_for_winners
+    missed_days_list = json.loads(final_voting.missed_days_list)
+    # TODO: включить и не убирать при рефакторинге
+    # create_game_results_for_winners(
+    #     winners,
+    #     missed_days_list,
+    #     final_voting.game_id,
+    #     final_voting.year,
+    #     context.db_session
+    # )
 
-    # Формируем строку с именами победителей
-    winner_names = []
-    for winner_id, winner in winners:
-        winner_names.append(escape_markdown2(winner.full_username()))
-
-    winners_text = ', '.join(winner_names) if winner_names else "Нет победителей"
-
-    # Рассчитываем распределение дней между победителями
-    missed_days = json.loads(final_voting.missed_days_list)
-    days_distribution_list = []
-
-    if winners and missed_days and len(winners) > 0:
-        days_per_winner = len(missed_days) // len(winners)
-        remainder = len(missed_days) % len(winners)
-
-        for winner_index, (winner_id, winner) in enumerate(winners):
-            # Определяем количество дней для текущего победителя
-            if winner_index < remainder:
-                days_count = days_per_winner + 1
-            else:
-                days_count = days_per_winner
-
-            # Формируем правильное склонение для "день"
-            if days_count % 10 == 1 and days_count % 100 != 11:
-                days_word = "день"
-            elif days_count % 10 in [2, 3, 4] and days_count % 100 not in [12, 13, 14]:
-                days_word = "дня"
-            else:
-                days_word = "дней"
-
-            days_distribution_list.append(
-                f"• {escape_markdown2(winner.full_username())} получает *{days_count}* {escape_word(days_word)} в свою копилку\\!"
-            )
-
-    days_distribution_text = '\n'.join(days_distribution_list) if days_distribution_list else ""
-
-    voting_results_list = []
-    for candidate_id, result_data in sorted(results.items(), key=lambda x: x[1]['weighted'], reverse=True):
-        # Находим кандидата по ID
-        candidate = context.db_session.query(TGUser).filter_by(id=candidate_id).one()
-        votes_count = result_data['votes']
-        weighted_points = result_data['weighted']
-        auto_voted = result_data['auto_voted']
-
-        # Формируем правильное склонение для "голос"
-        if votes_count % 10 == 1 and votes_count % 100 != 11:
-            votes_word = "голос"
-        elif votes_count % 10 in [2, 3, 4] and votes_count % 100 not in [12, 13, 14]:
-            votes_word = "голоса"
-        else:
-            votes_word = "голосов"
-
-        # Форматируем взвешенные очки с одним знаком после запятой
-        weighted_points_str = format_number(f"{weighted_points:.1f}")
-
-        # Формируем правильное склонение для "очко" на основе целой части
-        weighted_points_int = int(weighted_points)
-        if weighted_points_int % 10 == 1 and weighted_points_int % 100 != 11:
-            points_word = "очко"
-        elif weighted_points_int % 10 in [2, 3, 4] and weighted_points_int % 100 not in [12, 13, 14]:
-            points_word = "очка"
-        else:
-            points_word = "очков"
-
-        # Формируем строку результата с пометкой об автоголосовании
-        result_line = f"• {escape_markdown2(candidate.full_username())}: *{votes_count}* {escape_word(votes_word)}, *{weighted_points_str}* взвешенных {escape_word(points_word)}"
-        if auto_voted:
-            result_line += " _\\(автоголосование\\)_"
-
-        voting_results_list.append(result_line)
+    # Форматируем результаты голосования
+    winners_text, voting_results_text, days_distribution_text = format_voting_results(
+        winners, results, final_voting.missed_days_count, context.db_session
+    )
 
     # Получаем итоговую статистику года
     stmt_final = select(TGUser, func.count(GameResult.winner_id).label('count')) \
@@ -805,7 +748,7 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
 
     year_stats_list = build_player_table(final_stats)
 
-    voting_results_text = '\n'.join(voting_results_list)
+    # Формируем итоговое сообщение
     results_message = FINAL_VOTING_RESULTS.format(
         winners=winners_text,
         voting_results=voting_results_text,
