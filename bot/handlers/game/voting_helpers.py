@@ -6,6 +6,7 @@ from typing import List, Tuple
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.app.models import TGUser, GameResult
 from bot.handlers.game.commands import is_test_chat
+from bot.utils import escape_markdown2
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
@@ -248,14 +249,8 @@ def format_weights_message(player_weights: List[Tuple[TGUser, int]], missed_coun
             leader_name = leader.first_name
             if leader.last_name:
                 leader_name += f" {leader.last_name}"
-            excluded_names.append(f"❌ {escape_markdown2(leader_name)} НЕ УЧАСТВУЕТ (лидер года)")
+            excluded_names.append(f"❌ {escape_markdown2(leader_name)} НЕ УЧАСТВУЕТ \\(лидер года\\)")
         excluded_leaders_info = '\n'.join(excluded_names)
-
-        # Добавляем информацию об исключенных лидерах к списку весов
-        if weights_text:
-            weights_text += '\n\n' + excluded_leaders_info
-        else:
-            weights_text = excluded_leaders_info
 
     # Формируем полное сообщение
     from bot.handlers.game.text_static import FINAL_VOTING_MESSAGE
@@ -269,18 +264,6 @@ def format_weights_message(player_weights: List[Tuple[TGUser, int]], missed_coun
         winner_text = "• Победитель получит *все пропущенные дни*\\!"
     else:
         winner_text = f"• Победители \\(максимум *{max_votes}*\\) разделят между собой *все пропущенные дни*\\!"
-
-    # Добавляем информацию об исключенных лидерах в текст правил
-    if excluded_leaders:
-        leaders_count = len(excluded_leaders)
-        if leaders_count == 1:
-            exclusion_text = "• Лидер года исключен из голосования\\!"
-        else:
-            exclusion_text = f"• {leaders_count} лидера года исключены из голосования\\!"
-
-        winner_text += f"\n{exclusion_text}"
-
-    # Информация об исключенных лидерах уже сформирована выше
 
     return FINAL_VOTING_MESSAGE.format(
         missed_days=missed_count,
@@ -332,6 +315,30 @@ def duplicate_candidates_for_test(candidates: List[TGUser], chat_id: int, target
     return result_candidates
 
 
+def format_button_text(candidate: TGUser, wins_count: int = None) -> str:
+    """
+    Форматирует текст кнопки для голосования.
+
+    Args:
+        candidate: Объект TGUser
+        wins_count: Количество побед (опционально)
+
+    Returns:
+        Текст кнопки без экранирования (кнопки Telegram не поддерживают MarkdownV2)
+    """
+    # Формируем текст кнопки из имени пользователя
+    button_text = candidate.first_name
+    if candidate.last_name:
+        button_text += f" {candidate.last_name}"
+
+    # Добавляем количество побед в скобках, если информация доступна
+    if wins_count is not None:
+        button_text += f" ({wins_count})"
+
+    # Возвращаем текст без экранирования, так как кнопки Telegram не поддерживают MarkdownV2
+    return button_text
+
+
 def create_voting_keyboard(candidates: List[TGUser], voting_id: int, votes_per_row: int = 2, chat_id: int = None, player_wins: dict = None, excluded_players: List[int] = None) -> InlineKeyboardMarkup:
     """
     Создаёт клавиатуру с кнопками для голосования за кандидатов.
@@ -361,15 +368,13 @@ def create_voting_keyboard(candidates: List[TGUser], voting_id: int, votes_per_r
     row = []
 
     for candidate in filtered_candidates:
-        # Формируем текст кнопки из имени пользователя
-        button_text = candidate.first_name
-        if candidate.last_name:
-            button_text += f" {candidate.last_name}"
-
-        # Добавляем количество побед в скобках, если информация доступна
+        # Получаем количество побед, если информация доступна
+        wins_count = None
         if player_wins and candidate.id in player_wins:
             wins_count = player_wins[candidate.id]
-            button_text += f" ({wins_count})"
+
+        # Формируем экранированный текст кнопки
+        button_text = format_button_text(candidate, wins_count)
 
         # Создаём кнопку с callback_data, используя реальный voting_id
         button = InlineKeyboardButton(
@@ -420,7 +425,6 @@ def _select_random_winners(context, game_id: int, year: int, excluded_player_ids
     if not all_candidates:
         raise ValueError("No candidates found for voting")
 
-    # Исключаем указанных игроков из списка кандидатов
     eligible_candidates = [c for c in all_candidates if c not in excluded_player_ids]
 
     if not eligible_candidates:
@@ -506,10 +510,15 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
     # ШАГ 4: Создаем финальный словарь голосов (с автоголосами, если нужно)
     final_votes = dict(original_votes)  # Копируем исходные голоса
 
+    if excluded_player_ids is None:
+        excluded_player_ids = []
+
     if auto_vote_for_non_voters:
         # Находим игроков, которые не проголосовали
         all_player_ids = set(weights_dict.keys())
         non_voters = all_player_ids - manual_voters
+        # Исключаем лидеров
+        non_voters = non_voters - set(excluded_player_ids)
 
         # Рассчитываем максимальное количество голосов
         max_votes = calculate_max_votes(final_voting.missed_days_count)
@@ -568,9 +577,6 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
         results[candidate_id]['unique_voters'] = len(results[candidate_id]['unique_voters'])
 
     # ШАГ 7: Определяем победителей (исключая указанных игроков)
-    if excluded_player_ids is None:
-        excluded_player_ids = []
-
     max_winners = calculate_max_votes(final_voting.missed_days_count)
 
     if not results:
@@ -585,7 +591,7 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
 
         # Фильтруем исключенных игроков из списка кандидатов
         eligible_candidates = [(candidate_id, data) for candidate_id, data in sorted_candidates
-                              if candidate_id not in excluded_player_ids]
+                               if candidate_id not in excluded_player_ids]
 
         if not eligible_candidates:
             # Если нет подходящих кандидатов с голосами, выбираем случайных
@@ -838,7 +844,7 @@ def format_voting_results(
                 days_word = "дней"
 
             days_distribution_list.append(
-                f"• {escape_markdown2(winner.full_username())} получает *{days_count}* {escape_word(days_word)} ({percentage_str} от общих очков) в свою копилку\\!"
+                f"• {escape_markdown2(winner.full_username())} получает *{days_count}* {escape_word(days_word)} \\({escape_markdown2(percentage_str)} от общих очков\\) в свою копилку\\!"
             )
 
     days_distribution_text = '\n'.join(days_distribution_list) if days_distribution_list else ""
