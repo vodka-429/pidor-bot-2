@@ -224,10 +224,17 @@ def format_weights_message(player_weights: List[Tuple[TGUser, int]], missed_coun
     if max_votes is None:
         max_votes = calculate_max_votes(missed_count)
 
+    # Формируем текст о победителях в зависимости от max_votes
+    if max_votes == 1:
+        winner_text = "• Победитель получит *все пропущенные дни*\\!"
+    else:
+        winner_text = f"• Победители \\(максимум *{max_votes}*\\) разделят между собой *все пропущенные дни*\\!"
+
     return FINAL_VOTING_MESSAGE.format(
         missed_days=missed_count,
         player_weights=weights_text,
-        max_votes=max_votes
+        max_votes=max_votes,
+        winner_text=winner_text
     )
 
 
@@ -402,8 +409,10 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
         if user_id in tg_id_to_db_id:
             db_id = tg_id_to_db_id[user_id]
             voter_weight = weights_dict.get(db_id, 1)
+            is_manual_vote = db_id in manual_voters
         else:
             voter_weight = weights_dict.get(user_id, 1)
+            is_manual_vote = user_id in manual_voters
 
         # Вес одного голоса = вес голосующего / количество его выборов
         votes_count = len(candidate_ids)
@@ -418,11 +427,18 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
                 results[candidate_id] = {
                     'weighted': 0.0,
                     'votes': 0,
+                    'auto_votes': 0,
                     'unique_voters': set()
                 }
 
             results[candidate_id]['weighted'] += vote_weight
-            results[candidate_id]['votes'] += 1
+
+            # Голоса учитываем только для ручного голосования
+            if is_manual_vote:
+                results[candidate_id]['votes'] += 1
+            else:
+                results[candidate_id]['auto_votes'] += 1
+
             results[candidate_id]['unique_voters'].add(user_id)
 
     # ШАГ 6: Устанавливаем флаг auto_voted для каждого кандидата
@@ -478,9 +494,52 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
     final_voting.winner_id = winners[0][0] if winners else None
     context.db_session.commit()
 
+    # ШАГ 8: Рассчитываем распределение дней между победителями и сохраняем в winners_data
+    winners_data_list = []
+    if winners and final_voting.missed_days_count > 0:
+        winners_data_list = calculate_days_distribution(winners, final_voting.missed_days_count)
+
+    # ШАГ 9: Обновляем FinalVoting
+    final_voting.winners_data = json.dumps(winners_data_list)
+    context.db_session.commit()
+
     logger.info(f"winners: {winners}")
+    logger.info(f"winners_data: {winners_data_list}")
     logger.info(f"results: {results}")
     return winners, results
+
+
+def calculate_days_distribution(winners: List[Tuple[int, TGUser]], missed_days_count: int) -> List[dict]:
+    """
+    Рассчитывает распределение дней между победителями.
+
+    Args:
+        winners: Список кортежей (winner_id, TGUser) с победителями
+        missed_days_count: Количество пропущенных дней для распределения
+
+    Returns:
+        Список словарей с информацией о распределении: [{"winner_id": 1, "days_count": 3}, ...]
+    """
+    if not winners or missed_days_count <= 0:
+        return []
+
+    days_per_winner = missed_days_count // len(winners)
+    remainder = missed_days_count % len(winners)
+
+    winners_data_list = []
+    for winner_index, (winner_id, winner) in enumerate(winners):
+        # Определяем количество дней для текущего победителя
+        if winner_index < remainder:
+            days_count = days_per_winner + 1
+        else:
+            days_count = days_per_winner
+
+        winners_data_list.append({
+            'winner_id': winner_id,
+            'days_count': days_count
+        })
+
+    return winners_data_list
 
 
 def format_voting_results(
@@ -519,6 +578,7 @@ def format_voting_results(
         # Находим кандидата по ID
         candidate = db_session.query(TGUser).filter_by(id=candidate_id).one()
         votes_count = result_data['votes']
+        auto_votes_count = result_data.get('auto_votes', 0)
         weighted_points = result_data['weighted']
         auto_voted = result_data['auto_voted']
 
@@ -544,8 +604,10 @@ def format_voting_results(
 
         # Формируем строку результата
         result_line = f"• {escape_markdown2(candidate.full_username())}: *{votes_count}* {escape_word(votes_word)}, *{weighted_points_str}* взвешенных {escape_word(points_word)}"
+
+        # Если кандидат получил автоголосование (сам не проголосовал)
         if auto_voted:
-            result_line += " _\\(автоголосование\\)_"
+            result_line += " _\\(не проголосовал, пидор\\)_"
 
         voting_results_list.append(result_line)
 
@@ -554,15 +616,17 @@ def format_voting_results(
     # Формируем информацию о распределении дней
     days_distribution_list = []
     if winners and missed_days_count > 0:
-        days_per_winner = missed_days_count // len(winners)
-        remainder = missed_days_count % len(winners)
+        # Используем функцию для расчета распределения
+        winners_distribution = calculate_days_distribution(winners, missed_days_count)
 
-        for winner_index, (winner_id, winner) in enumerate(winners):
-            # Определяем количество дней для текущего победителя
-            if winner_index < remainder:
-                days_count = days_per_winner + 1
-            else:
-                days_count = days_per_winner
+        for winner_info in winners_distribution:
+            winner_id = winner_info['winner_id']
+            days_count = winner_info['days_count']
+
+            # Находим объект победителя
+            winner = next((w for wid, w in winners if wid == winner_id), None)
+            if not winner:
+                continue
 
             # Формируем правильное склонение для "день"
             if days_count % 10 == 1 and days_count % 100 != 11:
@@ -603,18 +667,14 @@ def create_game_results_for_winners(
     if not winners or not missed_days_list:
         return
 
-    # Распределяем дни между победителями
-    days_per_winner = len(missed_days_list) // len(winners)
-    remainder = len(missed_days_list) % len(winners)
+    # Используем функцию для расчета распределения
+    winners_distribution = calculate_days_distribution(winners, len(missed_days_list))
 
     # Создаем записи GameResult для каждого победителя
     day_index = 0
-    for winner_index, (winner_id, winner) in enumerate(winners):
-        # Определяем количество дней для текущего победителя
-        if winner_index < remainder:
-            days_count = days_per_winner + 1
-        else:
-            days_count = days_per_winner
+    for winner_info in winners_distribution:
+        winner_id = winner_info['winner_id']
+        days_count = winner_info['days_count']
 
         # Создаем записи для каждого дня
         for i in range(days_count):

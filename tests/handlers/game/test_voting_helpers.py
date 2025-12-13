@@ -26,11 +26,11 @@ def test_format_vote_callback_data():
     # Test basic formatting
     result = format_vote_callback_data(123, 456)
     assert result == "vote_123_456"
-    
+
     # Test with different IDs
     result = format_vote_callback_data(1, 1)
     assert result == "vote_1_1"
-    
+
     result = format_vote_callback_data(999999, 888888)
     assert result == "vote_999999_888888"
 
@@ -42,12 +42,12 @@ def test_parse_vote_callback_data():
     voting_id, candidate_id = parse_vote_callback_data("vote_123_456")
     assert voting_id == 123
     assert candidate_id == 456
-    
+
     # Test with different IDs
     voting_id, candidate_id = parse_vote_callback_data("vote_1_1")
     assert voting_id == 1
     assert candidate_id == 1
-    
+
     # Test with large IDs
     voting_id, candidate_id = parse_vote_callback_data("vote_999999_888888")
     assert voting_id == 999999
@@ -60,18 +60,18 @@ def test_parse_vote_callback_data_invalid_format():
     # Test without prefix
     with pytest.raises(ValueError, match="Invalid callback_data format"):
         parse_vote_callback_data("invalid_123_456")
-    
+
     # Test with wrong number of parts
     with pytest.raises(ValueError, match="Invalid callback_data format"):
         parse_vote_callback_data("vote_123")
-    
+
     with pytest.raises(ValueError, match="Invalid callback_data format"):
         parse_vote_callback_data("vote_123_456_789")
-    
+
     # Test with non-numeric IDs
     with pytest.raises(ValueError, match="Invalid callback_data format"):
         parse_vote_callback_data("vote_abc_def")
-    
+
     # Test empty string
     with pytest.raises(ValueError, match="Invalid callback_data format"):
         parse_vote_callback_data("")
@@ -85,26 +85,26 @@ def test_create_voting_keyboard_two_candidates():
     candidate1.id = 1
     candidate1.first_name = "Alice"
     candidate1.last_name = "Smith"
-    
+
     candidate2 = Mock(spec=TGUser)
     candidate2.id = 2
     candidate2.first_name = "Bob"
     candidate2.last_name = None
-    
+
     candidates = [candidate1, candidate2]
-    
+
     # Create keyboard with voting_id
     voting_id = 123
     keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2)
-    
+
     # Verify structure
     assert len(keyboard.inline_keyboard) == 1  # 1 row
     assert len(keyboard.inline_keyboard[0]) == 2  # 2 buttons in row
-    
+
     # Verify button texts
     assert keyboard.inline_keyboard[0][0].text == "Alice Smith"
     assert keyboard.inline_keyboard[0][1].text == "Bob"
-    
+
     # Verify callback_data contains voting_id
     assert keyboard.inline_keyboard[0][0].callback_data == "vote_123_1"
     assert keyboard.inline_keyboard[0][1].callback_data == "vote_123_2"
@@ -121,22 +121,22 @@ def test_create_voting_keyboard_five_candidates():
         candidate.first_name = f"User{i}"
         candidate.last_name = None
         candidates.append(candidate)
-    
+
     # Create keyboard with 2 buttons per row
     voting_id = 456
     keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2)
-    
+
     # Verify structure: 5 candidates / 2 per row = 3 rows (2+2+1)
     assert len(keyboard.inline_keyboard) == 3
     assert len(keyboard.inline_keyboard[0]) == 2  # First row: 2 buttons
     assert len(keyboard.inline_keyboard[1]) == 2  # Second row: 2 buttons
     assert len(keyboard.inline_keyboard[2]) == 1  # Third row: 1 button
-    
+
     # Verify all candidates are present
     all_buttons = []
     for row in keyboard.inline_keyboard:
         all_buttons.extend(row)
-    
+
     assert len(all_buttons) == 5
     for i, button in enumerate(all_buttons, 1):
         assert button.text == f"User{i}"
@@ -153,16 +153,16 @@ def test_create_voting_keyboard_ten_candidates():
         candidate.first_name = f"Player{i}"
         candidate.last_name = f"Last{i}"
         candidates.append(candidate)
-    
+
     # Create keyboard with 2 buttons per row
     voting_id = 789
     keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=2)
-    
+
     # Verify structure: 10 candidates / 2 per row = 5 rows
     assert len(keyboard.inline_keyboard) == 5
     for row in keyboard.inline_keyboard:
         assert len(row) == 2
-    
+
     # Verify button texts include both first and last names
     assert keyboard.inline_keyboard[0][0].text == "Player1 Last1"
     assert keyboard.inline_keyboard[4][1].text == "Player10 Last10"
@@ -179,21 +179,21 @@ def test_create_voting_keyboard_fifteen_candidates():
         candidate.first_name = f"User{i}"
         candidate.last_name = None
         candidates.append(candidate)
-    
+
     # Create keyboard with 3 buttons per row
     voting_id = 999
     keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=3)
-    
+
     # Verify structure: 15 candidates / 3 per row = 5 rows
     assert len(keyboard.inline_keyboard) == 5
     for row in keyboard.inline_keyboard:
         assert len(row) == 3
-    
+
     # Verify all 15 candidates are present
     all_buttons = []
     for row in keyboard.inline_keyboard:
         all_buttons.extend(row)
-    
+
     assert len(all_buttons) == 15
 
 
@@ -208,15 +208,15 @@ def test_create_voting_keyboard_custom_votes_per_row():
         candidate.first_name = f"User{i}"
         candidate.last_name = None
         candidates.append(candidate)
-    
+
     voting_id = 111
-    
+
     # Test with 3 buttons per row
     keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=3)
     assert len(keyboard.inline_keyboard) == 2  # 6 / 3 = 2 rows
     assert len(keyboard.inline_keyboard[0]) == 3
     assert len(keyboard.inline_keyboard[1]) == 3
-    
+
     # Test with 1 button per row
     keyboard = create_voting_keyboard(candidates, voting_id=voting_id, votes_per_row=1)
     assert len(keyboard.inline_keyboard) == 6  # 6 / 1 = 6 rows
@@ -233,7 +233,7 @@ def test_finalize_voting_calculation(mock_context, sample_players):
     mock_voting.year = 2024
     mock_voting.missed_days_list = json.dumps([1, 2, 3, 4, 5])
     mock_voting.missed_days_count = 5  # Add missed_days_count for auto voting calculation
-    
+
     # Setup votes_data: user 1 votes for candidates 1,2; user 2 votes for candidate 1; user 3 votes for candidate 3
     # Используем Telegram ID как в handle_vote_callback
     votes_data = {
@@ -242,51 +242,55 @@ def test_finalize_voting_calculation(mock_context, sample_players):
         "1003": [3]      # User 3 (tg_id=1003) votes for candidate 3
     }
     mock_voting.votes_data = json.dumps(votes_data)
-    
+
     # Setup player weights (wins in the year)
     # User 1 has 5 wins, User 2 has 3 wins, User 3 has 2 wins
     mock_weights_result = MagicMock()
     mock_weights_result.all.return_value = [(1, 1001, 5), (2, 1002, 3), (3, 1003, 2)]
-    
+
     # Setup winner query
     winner = sample_players[0]  # Candidate 1 should win
     winner.id = 1
-    
+
     mock_context.db_session.exec.return_value = mock_weights_result
     mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
-    
+
     # Execute
     winners, results = finalize_voting(mock_voting, mock_context)
-    
+
     # Verify winners is a list of tuples
     assert isinstance(winners, list)
     assert len(winners) >= 1
     winner_id, winner_obj = winners[0]
-    
+
     # Verify weighted votes and real votes calculation with new division logic
-    # Candidate 1: voted by user 2 (weight 3, 1 vote) + auto-voted by user 3 (weight 2, 1 vote) = 5.0 weighted, 2 votes
-    # Candidate 2: voted by user 1 (weight 5, 2 votes) = 5/2 = 2.5 weighted, 1 vote
-    # Candidate 3: auto-voted by user 3 (weight 2, 1 vote) = 2.0 weighted, 1 vote
-    assert results[1]['weighted'] == 5.5  # Исправлено: 3.0 + 2.5 = 5.5
-    assert results[1]['votes'] == 2
+    # NEW LOGIC: auto votes are NOT counted in 'votes', only in 'auto_votes'
+    # Candidate 1: voted by user 1 (weight 5, 2 votes) + voted by user 2 (weight 3, 1 vote) = 5/2 + 3 = 2.5 + 3.0 = 5.5 weighted, 2 manual votes
+    # Candidate 2: voted by user 1 (weight 5, 2 votes) = 5/2 = 2.5 weighted, 1 manual vote
+    # Candidate 3: voted by user 3 (weight 2, 1 vote) = 2.0 weighted, 1 manual vote
+    assert results[1]['weighted'] == 5.5
+    assert results[1]['votes'] == 2  # Only manual votes
+    assert results[1]['auto_votes'] == 0  # No auto votes
     assert results[2]['weighted'] == 2.5
-    assert results[2]['votes'] == 1
+    assert results[2]['votes'] == 1  # Only manual votes
+    assert results[2]['auto_votes'] == 0  # No auto votes
     assert results[3]['weighted'] == 2.0
-    assert results[3]['votes'] == 1
-    
+    assert results[3]['votes'] == 1  # Only manual votes
+    assert results[3]['auto_votes'] == 0  # No auto votes
+
     # Verify winner is candidate 1 (highest weighted votes)
     assert winner_id == 1
     assert winner_obj.id == 1
-    
+
     # Note: GameResult creation is currently commented out in finalize_voting
     # So we don't verify db_session.add calls
-    
+
     # Verify FinalVoting was updated
     assert mock_voting.ended_at is not None
     assert mock_voting.winner_id == 1
-    
-    # Verify commit was called
-    mock_context.db_session.commit.assert_called_once()
+
+    # Verify commit was called (may be called multiple times for winners_data)
+    assert mock_context.db_session.commit.called
 
 
 @pytest.mark.unit
@@ -299,46 +303,46 @@ def test_finalize_voting_no_votes(mock_context, sample_players, mocker):
     mock_voting.missed_days_list = json.dumps([1, 2, 3])
     mock_voting.missed_days_count = 3  # Add missed_days_count for auto voting calculation
     mock_voting.votes_data = json.dumps({})  # No votes
-    
+
     # Setup player weights
     mock_weights_result = MagicMock()
     mock_weights_result.all.return_value = [(1, 1001, 5), (2, 1002, 3), (3, 1003, 2)]
-    
+
     # Setup candidates query (all players who had wins)
     mock_candidates_result = MagicMock()
     mock_candidates_result.all.return_value = [1, 2, 3]
-    
+
     # Mock random.sample to return deterministic result
     import random
     mocker.patch.object(random, 'sample', return_value=[2])
-    
+
     # Setup winner query - winner will be candidate 2 (from mocked random.sample)
     winner = sample_players[1]
     winner.id = 2
-    
+
     mock_context.db_session.exec.side_effect = [mock_weights_result, mock_candidates_result]
     mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
-    
+
     # Execute with auto_vote_for_non_voters disabled to test old behavior
     winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=False)
-    
+
     # Verify winners is a list with one winner
     assert isinstance(winners, list)
     assert len(winners) == 1
     winner_id, winner_obj = winners[0]
     assert winner_id == 2
     assert winner_obj.id == 2
-    
+
     # Verify results contains the winner with 0 votes
     assert 2 in results
     assert results[2]['weighted'] == 0.0
     assert results[2]['votes'] == 0
-    
+
     # Note: GameResult creation is currently commented out in finalize_voting
     # So we don't verify db_session.add calls
-    
-    # Verify commit was called
-    mock_context.db_session.commit.assert_called_once()
+
+    # Verify commit was called (may be called multiple times for winners_data)
+    assert mock_context.db_session.commit.called
 
 
 @pytest.mark.unit
@@ -350,28 +354,28 @@ def test_finalize_voting_equal_weighted_votes(mock_context, sample_players):
     mock_voting.year = 2024
     mock_voting.missed_days_list = json.dumps([1, 2])
     mock_voting.missed_days_count = 2  # Add missed_days_count for auto voting calculation
-    
+
     # Setup votes_data: create a tie
     # User 1 (weight 4) votes for candidate 1
     # User 2 (weight 4) votes for candidate 2
     votes_data = {
-        "1": [1],
-        "2": [2]
+        "1001": [1],
+        "1002": [2]
     }
     mock_voting.votes_data = json.dumps(votes_data)
-    
+
     # Setup player weights
     mock_weights_result = MagicMock()
     mock_weights_result.all.return_value = [(1, 1001, 4), (2, 1002, 4)]
-    
+
     # Setup winner queries - need to mock for both potential winners
     winner1 = sample_players[0]
     winner1.id = 1
     winner2 = sample_players[1]
     winner2.id = 2
-    
+
     mock_context.db_session.exec.return_value = mock_weights_result
-    
+
     # Mock query to return different winners based on filter_by call
     def query_side_effect(*args, **kwargs):
         mock_q = MagicMock()
@@ -386,24 +390,28 @@ def test_finalize_voting_equal_weighted_votes(mock_context, sample_players):
             return mock_filter_q
         mock_q.filter_by.side_effect = filter_by_side_effect
         return mock_q
-    
+
     mock_context.db_session.query.side_effect = query_side_effect
-    
+
     # Execute
     winners, results = finalize_voting(mock_voting, mock_context)
-    
+
     # Verify both candidates have equal weighted votes (each user votes for 1 candidate, so no division)
     assert results[1]['weighted'] == 4.0
+    assert results[1]['votes'] == 1  # Only manual votes
+    assert results[1]['auto_votes'] == 0  # No auto votes
     assert results[2]['weighted'] == 4.0
-    
+    assert results[2]['votes'] == 1  # Only manual votes
+    assert results[2]['auto_votes'] == 0  # No auto votes
+
     # Verify winners is a list
     assert isinstance(winners, list)
     assert len(winners) == 1  # Only 1 winner for 2 missed days
     winner_id, winner_obj = winners[0]
     assert winner_id in [1, 2]
-    
-    # Verify commit was called
-    mock_context.db_session.commit.assert_called_once()
+
+    # Verify commit was called (may be called multiple times for winners_data)
+    assert mock_context.db_session.commit.called
 
 
 @pytest.mark.unit
@@ -413,31 +421,31 @@ def test_format_player_with_wins():
     player = Mock(spec=TGUser)
     player.first_name = "Иван"
     player.last_name = "Иванов"
-    
+
     # Test with 1 win (победа) - now with escaped parentheses
     result = format_player_with_wins(player, 1)
     assert result == "Иван Иванов \\(1 победа\\)"
-    
+
     # Test with 2 wins (победы)
     result = format_player_with_wins(player, 2)
     assert result == "Иван Иванов \\(2 победы\\)"
-    
+
     # Test with 5 wins (побед)
     result = format_player_with_wins(player, 5)
     assert result == "Иван Иванов \\(5 побед\\)"
-    
+
     # Test with 11 wins (побед - exception for 11)
     result = format_player_with_wins(player, 11)
     assert result == "Иван Иванов \\(11 побед\\)"
-    
+
     # Test with 21 wins (победа)
     result = format_player_with_wins(player, 21)
     assert result == "Иван Иванов \\(21 победа\\)"
-    
+
     # Test with 22 wins (победы)
     result = format_player_with_wins(player, 22)
     assert result == "Иван Иванов \\(22 победы\\)"
-    
+
     # Test player without last name
     player.last_name = None
     result = format_player_with_wins(player, 3)
@@ -455,12 +463,12 @@ def test_get_player_weights(mock_context, sample_players):
         (sample_players[2], 2)
     ]
     mock_weights_result.all.return_value = player_weights
-    
+
     mock_context.db_session.exec.return_value = mock_weights_result
-    
+
     # Execute
     result = get_player_weights(mock_context.db_session, game_id=1, year=2024)
-    
+
     # Verify
     assert len(result) == 3
     assert result[0] == (sample_players[0], 5)
@@ -478,16 +486,16 @@ def test_format_weights_message(sample_players):
     sample_players[1].last_name = None
     sample_players[2].first_name = "Чарли"
     sample_players[2].last_name = "Браун"
-    
+
     player_weights = [
         (sample_players[0], 5),
         (sample_players[1], 3),
         (sample_players[2], 2)
     ]
-    
+
     # Execute
     result = format_weights_message(player_weights, missed_count=7)
-    
+
     # Verify message contains expected elements
     assert "7" in result  # missed days count
     # Note: text is escaped for Markdown V2, so we check for escaped versions
@@ -562,43 +570,46 @@ def test_finalize_voting_with_auto_votes(mock_context, sample_players):
     mock_voting.year = 2024
     mock_voting.missed_days_list = json.dumps([1, 2, 3, 4])
     mock_voting.missed_days_count = 4  # 4 дня → 2 выбора по формуле
-    
+
     # Setup votes_data: only user 1 votes
     votes_data = {
         "1001": [1]  # User 1 (tg_id=1001) votes for candidate 1
     }
     mock_voting.votes_data = json.dumps(votes_data)
-    
+
     # Setup player weights: users 1, 2, 3 all have weights
     mock_weights_result = MagicMock()
     mock_weights_result.all.return_value = [(1, 1001, 5), (2, 1002, 3), (3, 1003, 2)]
-    
+
     # Setup winner query
     winner = sample_players[0]  # User 1 should win with highest weighted score
     winner.id = 1
-    
+
     mock_context.db_session.exec.return_value = mock_weights_result
     mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
-    
+
     # Execute
     winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
-    
+
     # Verify winners is a list
     assert isinstance(winners, list)
     assert len(winners) >= 1
     winner_id, winner_obj = winners[0]
-    
+
     # Verify auto votes were added:
     # User 1: voted for candidate 1 (weight 5, 1 vote) = 5.0 weighted
     # User 2: auto-voted for himself with 2 votes (weight 3, 2 votes) = 3.0 weighted
     # User 3: auto-voted for himself with 2 votes (weight 2, 2 votes) = 2.0 weighted
     assert results[1]['weighted'] == 5.0
     assert results[1]['votes'] == 1
+    assert results[1]['auto_votes'] == 0
     assert results[2]['weighted'] == 3.0
-    assert results[2]['votes'] == 2
+    assert results[2]['votes'] == 0  # No manual votes
+    assert results[2]['auto_votes'] == 2  # Only auto votes
     assert results[3]['weighted'] == 2.0
-    assert results[3]['votes'] == 2
-    
+    assert results[3]['votes'] == 0  # No manual votes
+    assert results[3]['auto_votes'] == 2  # Only auto votes
+
     # User 1 should win with highest weighted score (5.0 > 3.0 > 2.0)
     assert winner_id == 1
     assert winner_obj.id == 1
@@ -613,7 +624,7 @@ def test_finalize_voting_partial_voters(mock_context, sample_players):
     mock_voting.year = 2024
     mock_voting.missed_days_list = json.dumps([1, 2, 3])
     mock_voting.missed_days_count = 3  # 3 дня → 1 выбор по формуле (простое число)
-    
+
     # Setup votes_data: users 1 and 2 vote, user 3 doesn't
     votes_data = {
         "1001": [2],  # User 1 (tg_id=1001) votes for candidate 2
@@ -621,37 +632,40 @@ def test_finalize_voting_partial_voters(mock_context, sample_players):
         # User 3 doesn't vote - should get auto vote for himself
     }
     mock_voting.votes_data = json.dumps(votes_data)
-    
+
     # Setup player weights
     mock_weights_result = MagicMock()
     mock_weights_result.all.return_value = [(1, 1001, 3), (2, 1002, 4), (3, 1003, 6)]
-    
+
     # Setup winner query
     winner = sample_players[2]  # User 3 should win with auto vote
     winner.id = 3
-    
+
     mock_context.db_session.exec.return_value = mock_weights_result
     mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
-    
+
     # Execute
     winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
-    
+
     # Verify winners is a list
     assert isinstance(winners, list)
     assert len(winners) >= 1
     winner_id, winner_obj = winners[0]
-    
-    # Verify results:
-    # Candidate 1: voted by user 2 (weight 4, 1 vote) = 4.0 weighted
-    # Candidate 2: voted by user 1 (weight 3, 1 vote) = 3.0 weighted, 1 vote
-    # Candidate 3: auto-voted by user 3 (weight 6, 1 vote) = 6.0 weighted, 1 vote
+
+    # Verify results with NEW LOGIC: auto votes NOT counted in 'votes'
+    # Candidate 1: voted by user 2 (weight 4, 1 vote) = 4.0 weighted, 1 manual vote
+    # Candidate 2: voted by user 1 (weight 3, 1 vote) = 3.0 weighted, 1 manual vote
+    # Candidate 3: auto-voted by user 3 (weight 6, 1 vote) = 6.0 weighted, 0 manual votes, 1 auto vote
     assert results[1]['weighted'] == 4.0
-    assert results[1]['votes'] == 1
-    assert results[2]['weighted'] == 3.0  # Исправлено: только пользователь 1 проголосовал
-    assert results[2]['votes'] == 1
+    assert results[1]['votes'] == 1  # Only manual votes
+    assert results[1]['auto_votes'] == 0  # No auto votes
+    assert results[2]['weighted'] == 3.0
+    assert results[2]['votes'] == 1  # Only manual votes
+    assert results[2]['auto_votes'] == 0  # No auto votes
     assert results[3]['weighted'] == 6.0
-    assert results[3]['votes'] == 1
-    
+    assert results[3]['votes'] == 0  # No manual votes
+    assert results[3]['auto_votes'] == 1  # Only auto votes
+
     # User 3 should win with highest weighted score (6.0 > 4.0 > 3.0)
     assert winner_id == 3
     assert winner_obj.id == 3
@@ -666,23 +680,23 @@ def test_finalize_voting_auto_votes_respect_max_votes(mock_context, sample_playe
     mock_voting.year = 2024
     mock_voting.missed_days_list = json.dumps([1, 2, 3, 4, 5, 6])
     mock_voting.missed_days_count = 6  # 6 дней → 3 выбора по формуле
-    
+
     # Setup votes_data: nobody votes
     votes_data = {}
     mock_voting.votes_data = json.dumps(votes_data)
-    
+
     # Setup player weights
     mock_weights_result = MagicMock()
     mock_weights_result.all.return_value = [(1, 1001, 2), (2, 1002, 4)]
-    
+
     # Setup winner queries - need to mock for both potential winners
     winner1 = sample_players[0]
     winner1.id = 1
     winner2 = sample_players[1]
     winner2.id = 2
-    
+
     mock_context.db_session.exec.return_value = mock_weights_result
-    
+
     # Mock query to return different winners based on filter_by call
     def query_side_effect(*args, **kwargs):
         mock_q = MagicMock()
@@ -697,24 +711,26 @@ def test_finalize_voting_auto_votes_respect_max_votes(mock_context, sample_playe
             return mock_filter_q
         mock_q.filter_by.side_effect = filter_by_side_effect
         return mock_q
-    
+
     mock_context.db_session.query.side_effect = query_side_effect
-    
+
     # Execute
     winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
-    
+
     # Verify winners is a list
     assert isinstance(winners, list)
     assert len(winners) >= 1
-    
+
     # Verify auto votes:
     # User 1: auto-voted for himself with 3 votes (weight 2, 3 votes) = 2.0 weighted
     # User 2: auto-voted for himself with 3 votes (weight 4, 3 votes) = 4.0 weighted
     assert results[1]['weighted'] == 2.0
-    assert results[1]['votes'] == 3
+    assert results[1]['votes'] == 0  # No manual votes
+    assert results[1]['auto_votes'] == 3  # Only auto votes
     assert results[2]['weighted'] == 4.0
-    assert results[2]['votes'] == 3
-    
+    assert results[2]['votes'] == 0  # No manual votes
+    assert results[2]['auto_votes'] == 3  # Only auto votes
+
     # User 2 should win with higher weight
     winner_id, winner_obj = winners[0]
     assert winner_id == 2
@@ -746,26 +762,26 @@ def test_duplicate_candidates_for_test_chat():
     candidate1.first_name = "Alice"
     candidate1.last_name = "Smith"
     candidate1.username = "alice"
-    
+
     candidate2 = Mock(spec=TGUser)
     candidate2.id = 2
     candidate2.first_name = "Bob"
     candidate2.last_name = None
     candidate2.username = "bob"
-    
+
     candidates = [candidate1, candidate2]
-    
+
     # Test with test chat ID
     TEST_CHAT_ID = -4608252738
     result = duplicate_candidates_for_test(candidates, TEST_CHAT_ID, target_count=5)
-    
+
     # Should have 5 candidates total
     assert len(result) == 5
-    
+
     # First 2 should be originals
     assert result[0].first_name == "Alice"
     assert result[1].first_name == "Bob"
-    
+
     # Next should be duplicates with modified names but same IDs
     assert result[2].first_name == "Alice (копия 2)"
     assert result[2].id == 1  # Same ID as original
@@ -784,13 +800,13 @@ def test_duplicate_candidates_regular_chat():
     candidate1.first_name = "Alice"
     candidate1.last_name = "Smith"
     candidate1.username = "alice"
-    
+
     candidates = [candidate1]
-    
+
     # Test with regular chat ID
     REGULAR_CHAT_ID = -123456789
     result = duplicate_candidates_for_test(candidates, REGULAR_CHAT_ID, target_count=30)
-    
+
     # Should return original candidates unchanged
     assert len(result) == 1
     assert result[0] is candidate1
@@ -808,11 +824,11 @@ def test_duplicate_candidates_exact_count():
         candidate.last_name = None
         candidate.username = f"user{i}"
         candidates.append(candidate)
-    
+
     # Test with test chat ID and target count of 3 (exact match)
     TEST_CHAT_ID = -4608252738
     result = duplicate_candidates_for_test(candidates, TEST_CHAT_ID, target_count=3)
-    
+
     # Should return original candidates unchanged (already at target count)
     assert len(result) == 3
     assert all(result[i] is candidates[i] for i in range(3))
@@ -824,24 +840,24 @@ def test_duplicate_candidates_vote_counting():
     # This is tested implicitly by checking that duplicate.id == original.id
     # The actual vote counting logic is in finalize_voting and handle_vote_callback
     # which use candidate.id for vote tracking
-    
+
     # Create mock candidate
     candidate1 = Mock(spec=TGUser)
     candidate1.id = 1
     candidate1.first_name = "Alice"
     candidate1.last_name = "Smith"
     candidate1.username = "alice"
-    
+
     candidates = [candidate1]
-    
+
     # Test duplication
     TEST_CHAT_ID = -4608252738
     result = duplicate_candidates_for_test(candidates, TEST_CHAT_ID, target_count=3)
-    
+
     # Verify all duplicates have same ID as original
     assert len(result) == 3
     assert all(candidate.id == 1 for candidate in result)
-    
+
     # Verify names are different for duplicates
     assert result[0].first_name == "Alice"
     assert result[1].first_name == "Alice (копия 2)"
@@ -854,11 +870,11 @@ def test_count_voters_with_empty_votes():
     # Test with mix of users with votes and empty arrays
     votes_data = '{"123": [1, 2], "456": [], "789": [3], "999": []}'
     assert count_voters(votes_data) == 2  # Only users 123 and 789 have votes
-    
+
     # Test with all users having empty arrays
     votes_data = '{"123": [], "456": [], "789": []}'
     assert count_voters(votes_data) == 0
-    
+
     # Test with single user having empty array
     votes_data = '{"123": []}'
     assert count_voters(votes_data) == 0
@@ -872,25 +888,25 @@ def test_create_voting_keyboard_no_checkmarks():
     candidate1.id = 1
     candidate1.first_name = "Alice"
     candidate1.last_name = "Smith"
-    
+
     candidate2 = Mock(spec=TGUser)
     candidate2.id = 2
     candidate2.first_name = "Bob"
     candidate2.last_name = None
-    
+
     candidates = [candidate1, candidate2]
-    
+
     # Create keyboard
     voting_id = 123
     keyboard = create_voting_keyboard(candidates, voting_id=voting_id)
-    
+
     # Verify no checkmarks in button texts
     for row in keyboard.inline_keyboard:
         for button in row:
             assert "✅" not in button.text
             assert "☑️" not in button.text
             assert "✓" not in button.text
-    
+
     # Verify button texts are clean names only
     assert keyboard.inline_keyboard[0][0].text == "Alice Smith"
 
@@ -904,7 +920,7 @@ def test_finalize_voting_auto_voted_flag_mixed_voting(mock_context, sample_playe
     mock_voting.year = 2024
     mock_voting.missed_days_list = json.dumps([1, 2, 3, 4])
     mock_voting.missed_days_count = 4  # 4 дня → 2 выбора по формуле
-    
+
     # Setup votes_data: mixed scenario
     # User 1 votes manually for candidates 2 and 3
     # User 2 votes manually for candidate 1
@@ -915,11 +931,11 @@ def test_finalize_voting_auto_voted_flag_mixed_voting(mock_context, sample_playe
         # User 3 doesn't vote - should get auto vote for himself with 2 votes
     }
     mock_voting.votes_data = json.dumps(votes_data)
-    
+
     # Setup player weights
     mock_weights_result = MagicMock()
     mock_weights_result.all.return_value = [(1, 1001, 6), (2, 1002, 4), (3, 1003, 8)]
-    
+
     # Setup winner queries - need to mock for multiple winners
     winner1 = sample_players[0]
     winner1.id = 1
@@ -927,9 +943,9 @@ def test_finalize_voting_auto_voted_flag_mixed_voting(mock_context, sample_playe
     winner2.id = 2
     winner3 = sample_players[2]
     winner3.id = 3
-    
+
     mock_context.db_session.exec.return_value = mock_weights_result
-    
+
     # Mock query to return different winners based on filter_by call
     def query_side_effect(*args, **kwargs):
         mock_q = MagicMock()
@@ -946,43 +962,46 @@ def test_finalize_voting_auto_voted_flag_mixed_voting(mock_context, sample_playe
             return mock_filter_q
         mock_q.filter_by.side_effect = filter_by_side_effect
         return mock_q
-    
+
     mock_context.db_session.query.side_effect = query_side_effect
-    
+
     # Execute with auto_vote enabled
     winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
-    
+
     # Verify winners is a list
     assert isinstance(winners, list)
     assert len(winners) >= 1
-    
+
     # Verify auto_voted flags for all candidates:
     # Candidate 1: voted by user 2 (manual voter) → auto_voted should be False (user 2 is in manual_voters)
     # But wait, auto_voted flag is for the CANDIDATE, not the voter!
     # Candidate 1 (user 1) voted manually → auto_voted = False (user 1 is in manual_voters)
     # Candidate 2 (user 2) voted manually → auto_voted = False (user 2 is in manual_voters)
     # Candidate 3 (user 3) didn't vote manually → auto_voted = True (user 3 is NOT in manual_voters)
-    
+
     assert results[1]['auto_voted'] == False  # User 1 voted manually
     assert results[2]['auto_voted'] == False  # User 2 voted manually
     assert results[3]['auto_voted'] == True   # User 3 didn't vote manually (got auto vote)
-    
+
     # Verify vote counts:
-    # Candidate 1: voted by user 2 (weight 4, 1 vote) = 4.0 weighted, 1 vote
-    # Candidate 2: voted by user 1 (weight 6, 2 votes) = 6/2 = 3.0 weighted, 1 vote
-    # Candidate 3: voted by user 1 (weight 6, 2 votes) + auto-voted by user 3 (weight 8, 2 votes) = 6/2 + 8 = 3.0 + 8.0 = 11.0 weighted, 3 votes
+    # Candidate 1: voted by user 2 (weight 4, 1 vote) = 4.0 weighted, 1 manual vote
+    # Candidate 2: voted by user 1 (weight 6, 2 votes) = 6/2 = 3.0 weighted, 1 manual vote
+    # Candidate 3: voted by user 1 (weight 6, 2 votes) + auto-voted by user 3 (weight 8, 2 votes) = 6/2 + 8 = 3.0 + 8.0 = 11.0 weighted, 1 manual + 2 auto
     assert results[1]['weighted'] == 4.0
     assert results[1]['votes'] == 1
+    assert results[1]['auto_votes'] == 0
     assert results[2]['weighted'] == 3.0  # Исправлено: пользователь 1 (weight 6) голосует за 2 кандидатов = 6/2 = 3.0
     assert results[2]['votes'] == 1
+    assert results[2]['auto_votes'] == 0
     assert results[3]['weighted'] == 11.0
-    assert results[3]['votes'] == 3
-    
+    assert results[3]['votes'] == 1  # Only manual votes
+    assert results[3]['auto_votes'] == 2  # Auto votes tracked separately
+
     # Verify unique voters count
     assert results[1]['unique_voters'] == 1  # Only user 2
     assert results[2]['unique_voters'] == 1  # Only user 1
     assert results[3]['unique_voters'] == 2  # User 1 and user 3
-    
+
     # User 3 should win with highest weighted score (11.0 > 4.0 > 3.0)
     winner_id, winner_obj = winners[0]
     assert winner_id == 3
@@ -998,46 +1017,52 @@ def test_finalize_voting_with_tg_id_mapping(mock_context, sample_players):
     mock_voting.year = 2024
     mock_voting.missed_days_list = json.dumps([1, 2, 3])
     mock_voting.missed_days_count = 3  # 3 дня → 1 выбор по формуле
-    
+
     # Setup votes_data с Telegram ID (как в handle_vote_callback)
     # Пусть у sample_players[0] tg_id = 1001, sample_players[1] tg_id = 1002, sample_players[2] tg_id = 1003
     sample_players[0].tg_id = 1001
     sample_players[1].tg_id = 1002
     sample_players[2].tg_id = 1003
-    
+
     votes_data = {
         "1001": [2],  # Пользователь с tg_id=1001 голосует за кандидата 2
         # Пользователь с tg_id=1002 не голосует
         "1003": [1]   # Пользователь с tg_id=1003 голосует за кандидата 1
     }
     mock_voting.votes_data = json.dumps(votes_data)
-    
+
     # Setup player weights с включением tg_id
     mock_weights_result = MagicMock()
     mock_weights_result.all.return_value = [(1, 1001, 5), (2, 1002, 3), (3, 1003, 2)]
-    
+
     # Setup winner query
-    winner = sample_players[0]  # Должен победить кандидат 1
-    winner.id = 1
-    
+    winner = sample_players[1]  # Должен победить кандидат 2
+    winner.id = 2
+
     # Мокаем запросы к базе данных
     mock_context.db_session.exec.return_value = mock_weights_result
     mock_context.db_session.query.return_value.filter_by.return_value.one.return_value = winner
-    
+
     # Execute
     winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True)
-    
+
     # Verify winners is a list
     assert isinstance(winners, list)
     assert len(winners) >= 1
     winner_id, winner_obj = winners[0]
-    
-    # Verify results:
-    # Candidate 1: voted by user 3 (tg_id=1003, db_id=3)
-    # Candidate 2: voted by user 1 (tg_id=1001, db_id=1) + auto-voted by user 2 (tg_id=1002, db_id=2)
-    # Candidate 3: не получил голосов, так как пользователь 2 проголосовал за себя
-    
-    assert results[1]['votes'] == 1  # Только пользователь 3 проголосовал за кандидата 1
-    assert results[2]['votes'] == 2  # Пользователь 1 + автоголос от пользователя 2
+
+    # Verify results with NEW LOGIC: auto votes NOT counted in 'votes'
+    # Candidate 1: voted by user 3 (tg_id=1003, db_id=3, weight 2) = 2.0 weighted, 1 manual vote
+    # Candidate 2: voted by user 1 (tg_id=1001, db_id=1, weight 5) + auto-voted by user 2 (tg_id=1002, db_id=2, weight 3) = 5.0 + 3.0 = 8.0 weighted, 1 manual + 1 auto
+    # Candidate 3: не получил голосов
+
+    assert results[1]['votes'] == 1  # Только пользователь 3 проголосовал за кандидата 1 (manual)
+    assert results[1]['auto_votes'] == 0  # No auto votes
+    assert results[2]['votes'] == 1  # Только пользователь 1 проголосовал за кандидата 2 (manual)
+    assert results[2]['auto_votes'] == 1  # Автоголос от пользователя 2
     # Проверяем, что кандидат 3 отсутствует в результатах (не получил голосов)
     assert 3 not in results
+
+    # Candidate 2 should win with highest weighted score (8.0 > 2.0)
+    assert winner_id == 2
+    assert winner_obj.id == 2
