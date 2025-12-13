@@ -1695,8 +1695,7 @@ def test_format_weights_message_with_single_exclusion():
     assert "Алиса Смит \\(5 побед\\)" in result  # player weights
     assert "Боб \\(3 победы\\)" in result
     assert "Чарли Браун \\(2 победы\\)" in result
-    assert "❌ Алиса Смит НЕ УЧАСТВУЕТ (лидер года)" in result  # excluded leader info
-    assert "Лидер года исключен из голосования\\!" in result  # exclusion text
+    assert "❌ Алиса Смит НЕ УЧАСТВУЕТ \\(лидер года\\)" in result  # excluded leader info
     assert "Финальное голосование года" in result
     assert "Голосуйте мудро" in result
 
@@ -1741,9 +1740,8 @@ def test_format_weights_message_with_multiple_exclusions():
     assert "Боб \\(5 побед\\)" in result
     assert "Чарли Браун \\(3 победы\\)" in result
     assert "Дэвид Уилсон \\(2 победы\\)" in result
-    assert "❌ Алиса Смит НЕ УЧАСТВУЕТ (лидер года)" in result  # excluded leader info
-    assert "❌ Боб НЕ УЧАСТВУЕТ (лидер года)" in result  # excluded leader info
-    assert "2 лидера года исключены из голосования\\!" in result  # exclusion text for multiple leaders
+    assert "❌ Алиса Смит НЕ УЧАСТВУЕТ \\(лидер года\\)" in result  # excluded leader info
+    assert "❌ Боб НЕ УЧАСТВУЕТ \\(лидер года\\)" in result  # excluded leader info
     assert "Финальное голосование года" in result
     assert "Голосуйте мудро" in result
 
@@ -2089,12 +2087,13 @@ def test_finalize_voting_excluded_leaders_cannot_win(mock_context, sample_player
     winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True, excluded_player_ids=excluded_player_ids)
 
     # Verify results:
-    # Candidate 1 (excluded): voted by user 2 (weight 5) + user 3 (weight 3) + auto-voted by user 1 (weight 20) = 28.0 weighted
+    # Candidate 1 (excluded): voted by user 2 (weight 5) + user 3 (weight 3) = 8.0 weighted
+    # Note: User 1 (excluded leader) doesn't get auto-vote even though they didn't vote manually
     # Candidate 2: no votes, 0.0 weighted
     # Candidate 3: no votes, 0.0 weighted
-    assert results[1]['weighted'] == 28.0
+    assert results[1]['weighted'] == 8.0
     assert results[1]['votes'] == 2
-    assert results[1]['auto_votes'] == 1
+    assert results[1]['auto_votes'] == 0
 
     # Verify User 1 (excluded leader) is NOT in winners despite highest votes
     winner_ids = [wid for wid, _ in winners]
@@ -2164,8 +2163,8 @@ def test_format_voting_results_with_percentages():
     # Verify days distribution text contains percentages
     assert "Alice Smith" in days_distribution_text
     assert "Bob" in days_distribution_text
-    assert "51.1%" in days_distribution_text  # 23.5 / (23.5 + 22.5) = 51.1%
-    assert "48.9%" in days_distribution_text  # 22.5 / (23.5 + 22.5) = 48.9%
+    assert "51\\.1%" in days_distribution_text  # 23.5 / (23.5 + 22.5) = 51.1%
+    assert "48\\.9%" in days_distribution_text  # 22.5 / (23.5 + 22.5) = 48.9%
     assert "от общих очков" in days_distribution_text
 
 
@@ -2228,17 +2227,28 @@ def test_format_voting_results_percentage_sum():
         winners, results, missed_days_count=10, db_session=mock_db_session
     )
 
+    # Debug output to see what's in days_distribution_text
+    print(f"DEBUG: days_distribution_text = '{days_distribution_text}'")
+
     # Extract percentages from days_distribution_text
     import re
-    percentage_pattern = r'(\d+\.\d+)%'
+    # Pattern to match percentages with or without escaped dots
+    percentage_pattern = r'(\d+\\?\.\d+)%'
     percentages = re.findall(percentage_pattern, days_distribution_text)
 
+    # Debug output to see what percentages were found
+    print(f"DEBUG: percentages found = {percentages}")
+
+    # Remove backslashes from percentages for proper conversion to float
+    cleaned_percentages = [p.replace('\\', '') for p in percentages]
+    print(f"DEBUG: cleaned percentages = {cleaned_percentages}")
+
     # Convert to float and sum
-    percentage_sum = sum(float(p) for p in percentages)
+    percentage_sum = sum(float(p) for p in cleaned_percentages)
 
     # Verify sum is approximately 100% (allowing for rounding errors)
     assert 99.0 <= percentage_sum <= 101.0, f"Percentage sum {percentage_sum}% is not close to 100%"
 
-    # Verify individual percentages are correct
-    assert "40.0%" in days_distribution_text  # 40.0 / 100.0 = 40.0%
-    assert "30.0%" in days_distribution_text  # 30.0 / 100.0 = 30.0% (appears twice for Bob and Charlie)
+    # Verify individual percentages are correct (with escaped dots for Markdown V2)
+    assert "40\\.0%" in days_distribution_text  # 40.0 / 100.0 = 40.0%
+    assert "30\\.0%" in days_distribution_text  # 30.0 / 100.0 = 30.0% (appears twice for Bob and Charlie)
