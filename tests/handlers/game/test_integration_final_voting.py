@@ -729,3 +729,283 @@ async def test_vote_callback_no_keyboard_update(mock_update, mock_context, mock_
 
     # The key insight is that we removed keyboard updates to prevent the bug where
     # buttons change for everyone when someone else votes. Now users only get text notifications.
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_final_voting_full_cycle_with_single_exclusion(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test full voting cycle with single excluded leader."""
+    # Setup game with players
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+
+    # Mock the query chain for Game
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+    mock_game_query.one.return_value = mock_game
+
+    # Mock current_datetime to return Dec 29
+    mock_dt = MagicMock()
+    mock_dt.year = 2024
+    mock_dt.month = 12
+    mock_dt.day = 29
+    mock_dt.timetuple.return_value.tm_yday = 364
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+
+    # Step 1: Start final voting with leader exclusion
+    missed_days = [1, 2, 3, 4, 5]
+    mocker.patch('bot.handlers.game.commands.get_all_missed_days', return_value=missed_days)
+
+    # Mock FinalVoting query - no existing voting
+    mock_voting_query_none = MagicMock()
+    mock_voting_query_none.filter_by.return_value = mock_voting_query_none
+    mock_voting_query_none.one_or_none.return_value = None
+
+    # Mock player weights query - player 1 is leader with 10 wins
+    mock_weights_query = MagicMock()
+    player_weights = [(sample_players[0], 10), (sample_players[1], 5), (sample_players[2], 3)]
+    mock_weights_query.all.return_value = player_weights
+
+    # Setup query side effects for pidorfinal
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_voting_query_none]
+    mock_context.db_session.exec.return_value = mock_weights_query
+
+    # Mock bot.send_message for voting keyboard
+    mock_voting_message = MagicMock()
+    mock_voting_message.message_id = 12345
+    mock_context.bot.send_message = AsyncMock(return_value=mock_voting_message)
+
+    await pidorfinal_cmd(mock_update, mock_context)
+
+    # Verify voting message was created
+    mock_context.bot.send_message.assert_called_once()
+
+    # Verify message contains exclusion info
+    call_args = str(mock_context.bot.send_message.call_args)
+    assert "НЕ УЧАСТВУЕТ" in call_args or "лидер года" in call_args
+
+    # Verify FinalVoting was saved with excluded_leaders_data
+    add_call = mock_context.db_session.add.call_args
+    assert add_call is not None
+
+    mock_context.db_session.commit.assert_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_final_voting_full_cycle_with_multiple_exclusions(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test full voting cycle with multiple excluded leaders."""
+    # Setup game with players (need at least 4 players)
+    player4 = MagicMock()
+    player4.id = 4
+    player4.tg_id = 100000004
+    player4.first_name = "David"
+    player4.last_name = "Wilson"
+    all_players = sample_players + [player4]
+
+    mock_game.players = all_players
+    mock_context.game = mock_game
+
+    # Mock the query chain for Game
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+    mock_game_query.one.return_value = mock_game
+
+    # Mock current_datetime to return Dec 29
+    mock_dt = MagicMock()
+    mock_dt.year = 2024
+    mock_dt.month = 12
+    mock_dt.day = 29
+    mock_dt.timetuple.return_value.tm_yday = 364
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+
+    # Step 1: Start final voting with multiple leaders (players 1 and 2 both have 10 wins)
+    missed_days = [1, 2, 3, 4, 5]
+    mocker.patch('bot.handlers.game.commands.get_all_missed_days', return_value=missed_days)
+
+    # Mock FinalVoting query - no existing voting
+    mock_voting_query_none = MagicMock()
+    mock_voting_query_none.filter_by.return_value = mock_voting_query_none
+    mock_voting_query_none.one_or_none.return_value = None
+
+    # Mock player weights query - players 1 and 2 are leaders with 10 wins each
+    mock_weights_query = MagicMock()
+    player_weights = [(sample_players[0], 10), (sample_players[1], 10), (sample_players[2], 5), (player4, 3)]
+    mock_weights_query.all.return_value = player_weights
+
+    # Setup query side effects for pidorfinal
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_voting_query_none]
+    mock_context.db_session.exec.return_value = mock_weights_query
+
+    # Mock bot.send_message for voting keyboard
+    mock_voting_message = MagicMock()
+    mock_voting_message.message_id = 12345
+    mock_context.bot.send_message = AsyncMock(return_value=mock_voting_message)
+
+    await pidorfinal_cmd(mock_update, mock_context)
+
+    # Verify voting message was created
+    mock_context.bot.send_message.assert_called_once()
+
+    # Verify message contains exclusion info for MULTIPLE leaders
+    call_args = str(mock_context.bot.send_message.call_args)
+    assert "НЕ УЧАСТВУЕТ" in call_args
+    assert "лидер" in call_args.lower()
+    # Should mention both excluded leaders
+    assert sample_players[0].first_name in call_args
+    assert sample_players[1].first_name in call_args
+
+    mock_context.db_session.commit.assert_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_final_voting_proportional_distribution_integration(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test proportional distribution in full voting cycle."""
+    # Setup game with players
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+
+    # Mock the query chain for Game
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+    mock_game_query.one.return_value = mock_game
+
+    # Mock current_datetime to return Dec 30 (after 24 hours)
+    mock_dt = datetime(2024, 12, 30, 12, 0, 0)
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+
+    # Create a mock FinalVoting object
+    mock_final_voting = MagicMock()
+    mock_final_voting.id = 1
+    mock_final_voting.game_id = 1
+    mock_final_voting.year = 2024
+    mock_final_voting.started_at = datetime(2024, 12, 29, 12, 0, 0)
+    mock_final_voting.ended_at = None
+    mock_final_voting.missed_days_count = 6
+    mock_final_voting.missed_days_list = json.dumps([1, 2, 3, 4, 5, 6])
+    mock_final_voting.excluded_leaders_data = '[]'
+
+    # Setup votes with different scores
+    votes_data = {
+        "100000001": [1],  # Player 1 votes for candidate 1
+        "100000002": [2],  # Player 2 votes for candidate 2
+        "100000003": [3]   # Player 3 votes for candidate 3
+    }
+    mock_final_voting.votes_data = json.dumps(votes_data)
+
+    # Mock admin check
+    mock_update.effective_user = MagicMock()
+    mock_update.effective_user.id = 100000001
+    mock_chat_member = MagicMock()
+    mock_chat_member.status = 'administrator'
+    mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)
+
+    # Mock FinalVoting query for close command
+    mock_voting_query_for_close = MagicMock()
+    mock_voting_query_for_close.filter_by.return_value = mock_voting_query_for_close
+    mock_voting_query_for_close.one_or_none.return_value = mock_final_voting
+
+    # Mock weights query for finalize_voting (different weights for proportional distribution)
+    mock_weights_for_finalize = MagicMock()
+    weights_result = [(1, 100000001, 10), (2, 100000002, 5), (3, 100000003, 3)]
+    mock_weights_for_finalize.all.return_value = weights_result
+
+    # Mock final stats query
+    mock_final_stats_query = MagicMock()
+    final_stats = [(sample_players[0], 15), (sample_players[1], 10), (sample_players[2], 8)]
+    mock_final_stats_query.all.return_value = final_stats
+
+    # Setup exec side effects
+    mock_context.db_session.exec.side_effect = [mock_weights_for_finalize, mock_final_stats_query]
+
+    # Setup query to return different results based on model type
+    def query_side_effect_for_close(model):
+        if hasattr(model, '__name__') and model.__name__ == 'FinalVoting':
+            return mock_voting_query_for_close
+        elif hasattr(model, '__name__') and model.__name__ == 'Game':
+            return mock_game_query
+        else:
+            # For TGUser queries
+            mock_user_query = MagicMock()
+            def filter_by_side_effect(**kwargs):
+                mock_filter_q = MagicMock()
+                if 'id' in kwargs:
+                    user_id = kwargs['id']
+                    if user_id == 1:
+                        mock_filter_q.one.return_value = sample_players[0]
+                    elif user_id == 2:
+                        mock_filter_q.one.return_value = sample_players[1]
+                    elif user_id == 3:
+                        mock_filter_q.one.return_value = sample_players[2]
+                    else:
+                        mock_filter_q.one.return_value = sample_players[0]
+                return mock_filter_q
+            mock_user_query.filter_by.side_effect = filter_by_side_effect
+            return mock_user_query
+
+    mock_context.db_session.query.side_effect = query_side_effect_for_close
+
+    await pidorfinalclose_cmd(mock_update, mock_context)
+
+    # Verify voting was closed
+    assert mock_final_voting.ended_at is not None
+    mock_context.db_session.commit.assert_called()
+
+    # Verify results message was sent with percentages
+    assert mock_update.effective_chat.send_message.call_count == 2
+    results_call = mock_update.effective_chat.send_message.call_args_list[1]
+    results_text = str(results_call)
+
+    # Verify percentages are displayed
+    assert "%" in results_text
+    assert "от общих очков" in results_text
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_final_voting_excluded_leaders_can_vote(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test that excluded leaders can vote in full cycle."""
+    # Setup game with players
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+
+    # Create a mock FinalVoting object with excluded leader
+    mock_final_voting = MagicMock()
+    mock_final_voting.id = 1
+    mock_final_voting.game_id = 1
+    mock_final_voting.year = 2024
+    mock_final_voting.ended_at = None
+    mock_final_voting.missed_days_count = 4
+    mock_final_voting.excluded_leaders_data = json.dumps([{"player_id": 1, "wins": 10}])
+    mock_final_voting.votes_data = '{}'
+
+    # Mock callback query for excluded leader voting
+    mock_callback_query = AsyncMock()
+    mock_callback_query.from_user.id = 100000001  # Player 1 (excluded leader)
+    mock_callback_query.data = "vote_1_2"  # Vote for candidate 2
+    mock_update.callback_query = mock_callback_query
+
+    # Mock FinalVoting query
+    mock_voting_query = MagicMock()
+    mock_voting_query.filter_by.return_value.one_or_none.return_value = mock_final_voting
+    mock_context.db_session.query.return_value = mock_voting_query
+
+    # Mock candidates query
+    mock_candidates_query = MagicMock()
+    mock_candidates_query.all.return_value = sample_players
+    mock_context.db_session.exec.return_value = mock_candidates_query
+
+    # Execute vote callback
+    await handle_vote_callback(mock_update, mock_context)
+
+    # Verify that the excluded leader's vote was accepted
+    mock_callback_query.answer.assert_called_once()
+    answer_text = mock_callback_query.answer.call_args[0][0]
+    assert "учтён" in answer_text.lower() or "учтен" in answer_text.lower()
+
+    # Verify votes_data was updated
+    mock_context.db_session.commit.assert_called_once()
