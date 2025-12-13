@@ -197,7 +197,29 @@ def get_player_weights(db_session, game_id: int, year: int) -> List[Tuple[TGUser
     return db_session.exec(stmt).all()
 
 
-def format_weights_message(player_weights: List[Tuple[TGUser, int]], missed_count: int, max_votes: int = None) -> str:
+def get_year_leaders(player_weights: List[Tuple[TGUser, int]]) -> List[Tuple[TGUser, int]]:
+    """
+    Определяет всех лидеров года (игроков с максимальным количеством побед).
+
+    Args:
+        player_weights: Список кортежей (TGUser, количество побед), отсортированный по убыванию побед
+
+    Returns:
+        Список кортежей (TGUser, количество побед) только для игроков с максимальным количеством побед
+    """
+    if not player_weights:
+        return []
+
+    # Получаем максимальное количество побед (первый элемент списка)
+    max_wins = player_weights[0][1]
+
+    # Фильтруем список, оставляя только игроков с максимальным количеством побед
+    leaders = [(player, wins) for player, wins in player_weights if wins == max_wins]
+
+    return leaders
+
+
+def format_weights_message(player_weights: List[Tuple[TGUser, int]], missed_count: int, max_votes: int = None, excluded_leaders: List[Tuple[TGUser, int]] = None) -> str:
     """
     Форматирует информационное сообщение с весами игроков для финального голосования.
 
@@ -205,6 +227,7 @@ def format_weights_message(player_weights: List[Tuple[TGUser, int]], missed_coun
         player_weights: Список кортежей (TGUser, количество побед)
         missed_count: Количество пропущенных дней
         max_votes: Максимальное количество выборов (опционально)
+        excluded_leaders: Список кортежей (TGUser, количество побед) исключенных лидеров (опционально)
 
     Returns:
         Отформатированное сообщение в формате Markdown V2
@@ -216,6 +239,23 @@ def format_weights_message(player_weights: List[Tuple[TGUser, int]], missed_coun
     for player, weight in player_weights:
         weights_list.append(f"• {format_player_with_wins(player, weight)}")
     weights_text = '\n'.join(weights_list)
+
+    # Формируем информацию об исключенных лидерах
+    excluded_leaders_info = ""
+    if excluded_leaders:
+        excluded_names = []
+        for leader, wins in excluded_leaders:
+            leader_name = leader.first_name
+            if leader.last_name:
+                leader_name += f" {leader.last_name}"
+            excluded_names.append(f"❌ {escape_markdown2(leader_name)} НЕ УЧАСТВУЕТ (лидер года)")
+        excluded_leaders_info = '\n'.join(excluded_names)
+
+        # Добавляем информацию об исключенных лидерах к списку весов
+        if weights_text:
+            weights_text += '\n\n' + excluded_leaders_info
+        else:
+            weights_text = excluded_leaders_info
 
     # Формируем полное сообщение
     from bot.handlers.game.text_static import FINAL_VOTING_MESSAGE
@@ -230,9 +270,22 @@ def format_weights_message(player_weights: List[Tuple[TGUser, int]], missed_coun
     else:
         winner_text = f"• Победители \\(максимум *{max_votes}*\\) разделят между собой *все пропущенные дни*\\!"
 
+    # Добавляем информацию об исключенных лидерах в текст правил
+    if excluded_leaders:
+        leaders_count = len(excluded_leaders)
+        if leaders_count == 1:
+            exclusion_text = "• Лидер года исключен из голосования\\!"
+        else:
+            exclusion_text = f"• {leaders_count} лидера года исключены из голосования\\!"
+
+        winner_text += f"\n{exclusion_text}"
+
+    # Информация об исключенных лидерах уже сформирована выше
+
     return FINAL_VOTING_MESSAGE.format(
         missed_days=missed_count,
         player_weights=weights_text,
+        excluded_leaders_info=excluded_leaders_info,
         max_votes=max_votes,
         winner_text=winner_text
     )
@@ -279,7 +332,7 @@ def duplicate_candidates_for_test(candidates: List[TGUser], chat_id: int, target
     return result_candidates
 
 
-def create_voting_keyboard(candidates: List[TGUser], voting_id: int, votes_per_row: int = 2, chat_id: int = None, player_wins: dict = None) -> InlineKeyboardMarkup:
+def create_voting_keyboard(candidates: List[TGUser], voting_id: int, votes_per_row: int = 2, chat_id: int = None, player_wins: dict = None, excluded_players: List[int] = None) -> InlineKeyboardMarkup:
     """
     Создаёт клавиатуру с кнопками для голосования за кандидатов.
 
@@ -289,6 +342,7 @@ def create_voting_keyboard(candidates: List[TGUser], voting_id: int, votes_per_r
         votes_per_row: Количество кнопок в одном ряду (по умолчанию 2)
         chat_id: ID чата для дублирования кандидатов в тестовом чате (опционально)
         player_wins: Словарь {player_id: количество_побед} для отображения в кнопках (опционально)
+        excluded_players: Список ID игроков, которые должны быть исключены из клавиатуры (опционально)
 
     Returns:
         InlineKeyboardMarkup с кнопками кандидатов
@@ -297,10 +351,16 @@ def create_voting_keyboard(candidates: List[TGUser], voting_id: int, votes_per_r
     # if chat_id is not None:
     #     candidates = duplicate_candidates_for_test(candidates, chat_id)
 
+    # Фильтруем кандидатов, исключая указанных игроков
+    if excluded_players:
+        filtered_candidates = [c for c in candidates if c.id not in excluded_players]
+    else:
+        filtered_candidates = candidates
+
     keyboard = []
     row = []
 
-    for candidate in candidates:
+    for candidate in filtered_candidates:
         # Формируем текст кнопки из имени пользователя
         button_text = candidate.first_name
         if candidate.last_name:
@@ -331,7 +391,58 @@ def create_voting_keyboard(candidates: List[TGUser], voting_id: int, votes_per_r
     return InlineKeyboardMarkup(keyboard)
 
 
-def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True) -> tuple:
+def _select_random_winners(context, game_id: int, year: int, excluded_player_ids: List[int], max_winners: int, results: dict) -> List[int]:
+    """
+    Выбирает случайных победителей из всех игроков года, исключая указанных.
+
+    Args:
+        context: Контекст приложения
+        game_id: ID игры
+        year: Год
+        excluded_player_ids: Список ID игроков для исключения
+        max_winners: Максимальное количество победителей
+        results: Словарь результатов для обновления
+
+    Returns:
+        Список ID победителей
+    """
+    import random
+    from sqlmodel import select
+    from bot.app.models import TGUser, GameResult
+
+    all_candidates = context.db_session.exec(
+        select(TGUser.id)
+        .join(GameResult, GameResult.winner_id == TGUser.id)
+        .filter(GameResult.game_id == game_id, GameResult.year == year)
+        .group_by(TGUser.id)
+    ).all()
+
+    if not all_candidates:
+        raise ValueError("No candidates found for voting")
+
+    # Исключаем указанных игроков из списка кандидатов
+    eligible_candidates = [c for c in all_candidates if c not in excluded_player_ids]
+
+    if not eligible_candidates:
+        raise ValueError("No eligible candidates found after exclusions")
+
+    num_winners = min(max_winners, len(eligible_candidates))
+    winner_ids = random.sample(eligible_candidates, num_winners)
+
+    # Добавляем результаты для случайных победителей, если их еще нет
+    for winner_id in winner_ids:
+        if winner_id not in results:
+            results[winner_id] = {
+                'weighted': 0.0,
+                'votes': 0,
+                'unique_voters': 0,
+                'auto_voted': True
+            }
+
+    return winner_ids
+
+
+def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True, excluded_player_ids: List[int] = None) -> tuple:
     """
     Подсчитывает результаты финального голосования.
 
@@ -341,8 +452,16 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
     3. Определяем, кто проголосовал вручную
     4. Добавляем автоголоса для не проголосовавших (если включено)
     5. Подсчитываем результаты для каждого кандидата
-    6. Определяем победителей
+    6. Определяем победителей (исключая указанных игроков)
     7. Сохраняем результаты в БД
+
+    Args:
+        final_voting: Объект финального голосования
+        context: Контекст приложения
+        auto_vote_for_non_voters: Включить автоголосование для не проголосовавших
+        excluded_player_ids: Список ID игроков, которые должны быть исключены из победителей.
+                            Эти игроки могут голосовать (их голоса учитываются с полным весом),
+                            но ни один из них не может быть выбран победителем.
     """
     import json
     from datetime import datetime
@@ -448,40 +567,36 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
         # Преобразуем set в количество
         results[candidate_id]['unique_voters'] = len(results[candidate_id]['unique_voters'])
 
-    # ШАГ 7: Определяем победителей
+    # ШАГ 7: Определяем победителей (исключая указанных игроков)
+    if excluded_player_ids is None:
+        excluded_player_ids = []
+
+    max_winners = calculate_max_votes(final_voting.missed_days_count)
+
     if not results:
         # Если никто не проголосовал, выбираем случайных кандидатов
-        import random
-        all_candidates = context.db_session.exec(
-            select(TGUser.id)
-            .join(GameResult, GameResult.winner_id == TGUser.id)
-            .filter(GameResult.game_id == final_voting.game_id, GameResult.year == final_voting.year)
-            .group_by(TGUser.id)
-        ).all()
-
-        if not all_candidates:
-            raise ValueError("No candidates found for voting")
-
-        max_winners = calculate_max_votes(final_voting.missed_days_count)
-        num_winners = min(max_winners, len(all_candidates))
-        winner_ids = random.sample(all_candidates, num_winners)
-
-        # Добавляем результаты для случайных победителей
-        for winner_id in winner_ids:
-            results[winner_id] = {
-                'weighted': 0.0,
-                'votes': 0,
-                'unique_voters': 0,
-                'auto_voted': True
-            }
+        winner_ids = _select_random_winners(
+            context, final_voting.game_id, final_voting.year,
+            excluded_player_ids, max_winners, results
+        )
     else:
         # Сортируем кандидатов по взвешенным очкам
         sorted_candidates = sorted(results.items(), key=lambda x: x[1]['weighted'], reverse=True)
 
-        # Берем первых N победителей
-        max_winners = calculate_max_votes(final_voting.missed_days_count)
-        num_winners = min(max_winners, len(sorted_candidates))
-        winner_ids = [candidate_id for candidate_id, _ in sorted_candidates[:num_winners]]
+        # Фильтруем исключенных игроков из списка кандидатов
+        eligible_candidates = [(candidate_id, data) for candidate_id, data in sorted_candidates
+                              if candidate_id not in excluded_player_ids]
+
+        if not eligible_candidates:
+            # Если нет подходящих кандидатов с голосами, выбираем случайных
+            winner_ids = _select_random_winners(
+                context, final_voting.game_id, final_voting.year,
+                excluded_player_ids, max_winners, results
+            )
+        else:
+            # Берем первых N победителей из оставшихся кандидатов
+            num_winners = min(max_winners, len(eligible_candidates))
+            winner_ids = [candidate_id for candidate_id, _ in eligible_candidates[:num_winners]]
 
     # ШАГ 8: Загружаем объекты победителей
     winners = []
@@ -494,10 +609,25 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
     final_voting.winner_id = winners[0][0] if winners else None
     context.db_session.commit()
 
-    # ШАГ 8: Рассчитываем распределение дней между победителями и сохраняем в winners_data
+    # ШАГ 8: Рассчитываем распределение дней между победителями с использованием пропорционального распределения
     winners_data_list = []
     if winners and final_voting.missed_days_count > 0:
-        winners_data_list = calculate_days_distribution(winners, final_voting.missed_days_count)
+        # Подготавливаем данные для пропорционального распределения
+        winners_scores = []
+        for winner_id, winner in winners:
+            weighted_score = results[winner_id]['weighted']
+            winners_scores.append((winner_id, winner, weighted_score))
+
+        # Используем пропорциональное распределение
+        proportional_distribution = distribute_days_proportionally(winners_scores, final_voting.missed_days_count)
+
+        # Преобразуем результат в формат winners_data
+        winners_data_list = []
+        for winner_id, winner, days_count in proportional_distribution:
+            winners_data_list.append({
+                'winner_id': winner_id,
+                'days_count': days_count
+            })
 
     # ШАГ 9: Обновляем FinalVoting
     final_voting.winners_data = json.dumps(winners_data_list)
@@ -540,6 +670,68 @@ def calculate_days_distribution(winners: List[Tuple[int, TGUser]], missed_days_c
         })
 
     return winners_data_list
+
+
+def distribute_days_proportionally(winners_scores: List[Tuple[int, TGUser, float]], total_days: int) -> List[Tuple[int, TGUser, int]]:
+    """
+    Распределяет дни пропорционально взвешенным очкам победителей.
+
+    Алгоритм:
+    1. Рассчитать точные доли для каждого победителя: (score / total_score) * total_days
+    2. Округлить вниз все значения и сохранить дробные части
+    3. Распределить остаток дней победителям с наибольшими дробными частями
+    4. Гарантировать, что сумма распределенных дней равна total_days
+
+    Args:
+        winners_scores: Список кортежей (winner_id, TGUser, weighted_score)
+        total_days: Общее количество дней для распределения
+
+    Returns:
+        Список кортежей (winner_id, TGUser, days_count)
+    """
+    if not winners_scores or total_days <= 0:
+        return []
+
+    # Рассчитываем сумму взвешенных очков
+    total_score = sum(score for _, _, score in winners_scores)
+
+    if total_score == 0:
+        # Если все очки равны 0, распределяем равномерно
+        days_per_winner = total_days // len(winners_scores)
+        remainder = total_days % len(winners_scores)
+
+        result = []
+        for i, (winner_id, user, _) in enumerate(winners_scores):
+            days_count = days_per_winner + (1 if i < remainder else 0)
+            result.append((winner_id, user, days_count))
+
+        return result
+
+    # Рассчитываем точные доли для каждого победителя
+    exact_days = [(winner_id, user, (score / total_score) * total_days)
+                  for winner_id, user, score in winners_scores]
+
+    # Округляем вниз и сохраняем дробную часть
+    floored_days = [(winner_id, user, int(days), days - int(days))
+                    for winner_id, user, days in exact_days]
+
+    # Считаем остаток
+    distributed = sum(floored for _, _, floored, _ in floored_days)
+    remainder = total_days - distributed
+
+    # Сортируем по убыванию дробной части
+    floored_days.sort(key=lambda x: x[3], reverse=True)
+
+    # Распределяем остаток
+    result = []
+    for i, (winner_id, user, floored, _) in enumerate(floored_days):
+        days_count = floored + (1 if i < remainder else 0)
+        result.append((winner_id, user, days_count))
+
+    # Сортируем обратно по убыванию очков (для красивого вывода)
+    result.sort(key=lambda x: next(score for wid, _, score in winners_scores if wid == x[0]), reverse=True)
+
+    return result
 
 
 def format_voting_results(
@@ -616,17 +808,26 @@ def format_voting_results(
     # Формируем информацию о распределении дней
     days_distribution_list = []
     if winners and missed_days_count > 0:
-        # Используем функцию для расчета распределения
-        winners_distribution = calculate_days_distribution(winners, missed_days_count)
+        # Рассчитываем сумму взвешенных очков победителей для процентов
+        total_weighted_score = sum(results[winner_id]['weighted'] for winner_id, _ in winners)
 
-        for winner_info in winners_distribution:
-            winner_id = winner_info['winner_id']
-            days_count = winner_info['days_count']
+        # Используем пропорциональное распределение для расчета дней
+        winners_scores = []
+        for winner_id, winner in winners:
+            weighted_score = results[winner_id]['weighted']
+            winners_scores.append((winner_id, winner, weighted_score))
 
-            # Находим объект победителя
-            winner = next((w for wid, w in winners if wid == winner_id), None)
-            if not winner:
-                continue
+        # Получаем пропорциональное распределение дней
+        proportional_distribution = distribute_days_proportionally(winners_scores, missed_days_count)
+
+        for winner_id, winner, days_count in proportional_distribution:
+            # Рассчитываем процент от общих взвешенных очков
+            winner_weighted_score = results[winner_id]['weighted']
+            if total_weighted_score > 0:
+                percentage = (winner_weighted_score / total_weighted_score) * 100
+                percentage_str = f"{percentage:.1f}%"
+            else:
+                percentage_str = "0.0%"
 
             # Формируем правильное склонение для "день"
             if days_count % 10 == 1 and days_count % 100 != 11:
@@ -637,7 +838,7 @@ def format_voting_results(
                 days_word = "дней"
 
             days_distribution_list.append(
-                f"• {escape_markdown2(winner.full_username())} получает *{days_count}* {escape_word(days_word)} в свою копилку\\!"
+                f"• {escape_markdown2(winner.full_username())} получает *{days_count}* {escape_word(days_word)} ({percentage_str} от общих очков) в свою копилку\\!"
             )
 
     days_distribution_text = '\n'.join(days_distribution_list) if days_distribution_list else ""

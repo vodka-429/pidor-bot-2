@@ -11,10 +11,13 @@ from bot.handlers.game.voting_helpers import (
     finalize_voting,
     format_player_with_wins,
     get_player_weights,
+    get_year_leaders,
     format_weights_message,
+    format_voting_results,
     count_voters,
     calculate_max_votes,
     duplicate_candidates_for_test,
+    distribute_days_proportionally,
     VOTE_CALLBACK_PREFIX
 )
 from bot.app.models import FinalVoting, GameResult, TGUser as DBUser
@@ -505,6 +508,117 @@ def test_format_weights_message(sample_players):
     assert "Чарли Браун \\(2 победы\\)" in result
     assert "Финальное голосование года" in result
     assert "Голосуйте мудро" in result
+
+
+@pytest.mark.unit
+def test_get_year_leaders_single():
+    """Test get_year_leaders with single leader."""
+    # Create mock players
+    player1 = Mock(spec=DBUser)
+    player1.first_name = "Alice"
+    player1.last_name = "Smith"
+
+    player2 = Mock(spec=DBUser)
+    player2.first_name = "Bob"
+    player2.last_name = None
+
+    player3 = Mock(spec=DBUser)
+    player3.first_name = "Charlie"
+    player3.last_name = "Brown"
+
+    # Setup player weights with single leader (Alice with 5 wins)
+    player_weights = [
+        (player1, 5),
+        (player2, 3),
+        (player3, 2)
+    ]
+
+    # Execute
+    result = get_year_leaders(player_weights)
+
+    # Verify only Alice is returned as leader
+    assert len(result) == 1
+    assert result[0] == (player1, 5)
+
+
+@pytest.mark.unit
+def test_get_year_leaders_multiple_with_same_max():
+    """Test get_year_leaders with multiple leaders having same max wins."""
+    # Create mock players
+    player1 = Mock(spec=DBUser)
+    player1.first_name = "Alice"
+    player1.last_name = "Smith"
+
+    player2 = Mock(spec=DBUser)
+    player2.first_name = "Bob"
+    player2.last_name = None
+
+    player3 = Mock(spec=DBUser)
+    player3.first_name = "Charlie"
+    player3.last_name = "Brown"
+
+    player4 = Mock(spec=DBUser)
+    player4.first_name = "David"
+    player4.last_name = "Wilson"
+
+    # Setup player weights with multiple leaders (Alice and Bob with 5 wins each)
+    player_weights = [
+        (player1, 5),
+        (player2, 5),
+        (player3, 3),
+        (player4, 2)
+    ]
+
+    # Execute
+    result = get_year_leaders(player_weights)
+
+    # Verify both Alice and Bob are returned as leaders
+    assert len(result) == 2
+    assert (player1, 5) in result
+    assert (player2, 5) in result
+
+
+@pytest.mark.unit
+def test_get_year_leaders_all_equal():
+    """Test get_year_leaders when all players have equal wins."""
+    # Create mock players
+    player1 = Mock(spec=DBUser)
+    player1.first_name = "Alice"
+    player1.last_name = "Smith"
+
+    player2 = Mock(spec=DBUser)
+    player2.first_name = "Bob"
+    player2.last_name = None
+
+    player3 = Mock(spec=DBUser)
+    player3.first_name = "Charlie"
+    player3.last_name = "Brown"
+
+    # Setup player weights with all players having same wins
+    player_weights = [
+        (player1, 3),
+        (player2, 3),
+        (player3, 3)
+    ]
+
+    # Execute
+    result = get_year_leaders(player_weights)
+
+    # Verify all players are returned as leaders
+    assert len(result) == 3
+    assert (player1, 3) in result
+    assert (player2, 3) in result
+    assert (player3, 3) in result
+
+
+@pytest.mark.unit
+def test_get_year_leaders_empty_list():
+    """Test get_year_leaders with empty player weights list."""
+    # Execute
+    result = get_year_leaders([])
+
+    # Verify empty list is returned
+    assert result == []
 
 
 
@@ -1066,3 +1180,1065 @@ def test_finalize_voting_with_tg_id_mapping(mock_context, sample_players):
     # Candidate 2 should win with highest weighted score (8.0 > 2.0)
     assert winner_id == 2
     assert winner_obj.id == 2
+
+
+@pytest.mark.unit
+def test_distribute_days_proportionally_equal_scores():
+    """Test distribute_days_proportionally with equal scores."""
+    # Create mock users
+    user1 = Mock(spec=DBUser)
+    user1.first_name = "Alice"
+    user1.last_name = "Smith"
+
+    user2 = Mock(spec=DBUser)
+    user2.first_name = "Bob"
+    user2.last_name = None
+
+    user3 = Mock(spec=DBUser)
+    user3.first_name = "Charlie"
+    user3.last_name = "Brown"
+
+    # Setup winners with equal scores
+    winners_scores = [
+        (1, user1, 10.0),
+        (2, user2, 10.0),
+        (3, user3, 10.0)
+    ]
+
+    total_days = 6
+
+    # Execute
+    result = distribute_days_proportionally(winners_scores, total_days)
+
+    # Verify equal distribution (6 days / 3 winners = 2 days each)
+    assert len(result) == 3
+    assert result[0] == (1, user1, 2)
+    assert result[1] == (2, user2, 2)
+    assert result[2] == (3, user3, 2)
+
+    # Verify sum equals total_days
+    assert sum(days for _, _, days in result) == total_days
+
+
+@pytest.mark.unit
+def test_distribute_days_proportionally_different_scores():
+    """Test distribute_days_proportionally with different scores."""
+    # Create mock users
+    user1 = Mock(spec=DBUser)
+    user1.first_name = "Alice"
+    user1.last_name = "Smith"
+
+    user2 = Mock(spec=DBUser)
+    user2.first_name = "Bob"
+    user2.last_name = None
+
+    user3 = Mock(spec=DBUser)
+    user3.first_name = "Charlie"
+    user3.last_name = "Brown"
+
+    # Setup winners with different scores
+    winners_scores = [
+        (1, user1, 40.0),  # 40/60 = 66.7% → 4.0 days
+        (2, user2, 15.0),  # 15/60 = 25.0% → 1.5 days
+        (3, user3, 5.0)    # 5/60 = 8.3% → 0.5 days
+    ]
+
+    total_days = 6
+
+    # Execute
+    result = distribute_days_proportionally(winners_scores, total_days)
+
+    # Verify proportional distribution
+    assert len(result) == 3
+
+    # Alice should get 4 days (66.7% of 6)
+    assert result[0][0] == 1  # Alice is first (highest score)
+    assert result[0][2] == 4
+
+    # Bob should get 2 days (25% of 6 = 1.5, rounded up due to remainder)
+    assert result[1][0] == 2  # Bob is second
+    assert result[1][2] == 2
+
+    # Charlie should get 0 days (8.3% of 6 = 0.5, rounded down)
+    assert result[2][0] == 3  # Charlie is third
+    assert result[2][2] == 0
+
+    # Verify sum equals total_days
+    assert sum(days for _, _, days in result) == total_days
+
+
+@pytest.mark.unit
+def test_distribute_days_proportionally_remainder():
+    """Test distribute_days_proportionally with remainder distribution."""
+    # Create mock users
+    user1 = Mock(spec=DBUser)
+    user1.first_name = "Alice"
+    user1.last_name = "Smith"
+
+    user2 = Mock(spec=DBUser)
+    user2.first_name = "Bob"
+    user2.last_name = None
+
+    user3 = Mock(spec=DBUser)
+    user3.first_name = "Charlie"
+    user3.last_name = "Brown"
+
+    # Setup winners with scores that create remainders
+    winners_scores = [
+        (1, user1, 33.3),  # 33.3/100 = 33.3% → 3.33 days
+        (2, user2, 33.3),  # 33.3/100 = 33.3% → 3.33 days
+        (3, user3, 33.4)   # 33.4/100 = 33.4% → 3.34 days
+    ]
+
+    total_days = 10
+
+    # Execute
+    result = distribute_days_proportionally(winners_scores, total_days)
+
+    # Verify distribution with remainder
+    assert len(result) == 3
+
+    # All should get 3 days (floor of 3.33, 3.33, 3.34)
+    # Remainder = 10 - (3+3+3) = 1
+    # The one with highest fractional part (0.34) gets the extra day
+
+    # Charlie should get 4 days (highest fractional part)
+    assert result[0][0] == 3  # Charlie is first (highest fractional part)
+    assert result[0][2] == 4
+
+    # Alice should get 3 days
+    assert result[1][0] == 1  # Alice is second
+    assert result[1][2] == 3
+
+    # Bob should get 3 days
+    assert result[2][0] == 2  # Bob is third
+    assert result[2][2] == 3
+
+    # Verify sum equals total_days
+    assert sum(days for _, _, days in result) == total_days
+
+
+@pytest.mark.unit
+def test_distribute_days_proportionally_sum_preserved():
+    """Test that distribute_days_proportionally always preserves the sum."""
+    # Create mock users
+    user1 = Mock(spec=DBUser)
+    user1.first_name = "Alice"
+    user1.last_name = "Smith"
+
+    user2 = Mock(spec=DBUser)
+    user2.first_name = "Bob"
+    user2.last_name = None
+
+    # Test with various total_days values
+    for total_days in [1, 3, 5, 7, 10, 13]:
+        # Setup winners with any scores
+        winners_scores = [
+            (1, user1, 60.0),
+            (2, user2, 40.0)
+        ]
+
+        # Execute
+        result = distribute_days_proportionally(winners_scores, total_days)
+
+        # Verify sum equals total_days
+        assert sum(days for _, _, days in result) == total_days
+
+
+@pytest.mark.unit
+def test_distribute_days_proportionally_empty_list():
+    """Test distribute_days_proportionally with empty winners list."""
+    # Execute with empty list
+    result = distribute_days_proportionally([], 5)
+
+    # Verify empty result
+    assert result == []
+
+
+@pytest.mark.unit
+def test_distribute_days_proportionally_zero_days():
+    """Test distribute_days_proportionally with zero total days."""
+    # Create mock users
+    user1 = Mock(spec=DBUser)
+    user1.first_name = "Alice"
+    user1.last_name = "Smith"
+
+    # Setup winners
+    winners_scores = [
+        (1, user1, 10.0)
+    ]
+
+    # Execute with zero days
+    result = distribute_days_proportionally(winners_scores, 0)
+
+    # Verify empty result
+    assert result == []
+
+
+@pytest.mark.unit
+def test_distribute_days_proportionally_zero_scores():
+    """Test distribute_days_proportionally with all zero scores."""
+    # Create mock users
+    user1 = Mock(spec=DBUser)
+    user1.first_name = "Alice"
+    user1.last_name = "Smith"
+
+    user2 = Mock(spec=DBUser)
+    user2.first_name = "Bob"
+    user2.last_name = None
+
+    user3 = Mock(spec=DBUser)
+    user3.first_name = "Charlie"
+    user3.last_name = "Brown"
+
+    # Setup winners with zero scores
+    winners_scores = [
+        (1, user1, 0.0),
+        (2, user2, 0.0),
+        (3, user3, 0.0)
+    ]
+
+    total_days = 5
+
+    # Execute
+    result = distribute_days_proportionally(winners_scores, total_days)
+
+    # Verify equal distribution (5 days / 3 winners = 1, 2, 2)
+    assert len(result) == 3
+    assert sum(days for _, _, days in result) == total_days
+
+    # First winner gets 2 days (remainder distribution)
+    assert result[0][2] == 2
+    # Second winner gets 2 days (remainder distribution)
+    assert result[1][2] == 2
+    # Third winner gets 1 day
+    assert result[2][2] == 1
+
+
+@pytest.mark.unit
+def test_create_voting_keyboard_with_single_exclusion():
+    """Test create_voting_keyboard with single excluded player."""
+    # Create mock candidates
+    candidate1 = Mock(spec=TGUser)
+    candidate1.id = 1
+    candidate1.first_name = "Alice"
+    candidate1.last_name = "Smith"
+
+    candidate2 = Mock(spec=TGUser)
+    candidate2.id = 2
+    candidate2.first_name = "Bob"
+    candidate2.last_name = None
+
+    candidate3 = Mock(spec=TGUser)
+    candidate3.id = 3
+    candidate3.first_name = "Charlie"
+    candidate3.last_name = "Brown"
+
+    candidates = [candidate1, candidate2, candidate3]
+
+    # Create keyboard with excluded player (Bob with ID 2)
+    voting_id = 123
+    excluded_players = [2]
+    keyboard = create_voting_keyboard(candidates, voting_id=voting_id, excluded_players=excluded_players)
+
+    # Verify structure: 2 candidates (Alice and Charlie) remain
+    assert len(keyboard.inline_keyboard) == 1  # 1 row
+    assert len(keyboard.inline_keyboard[0]) == 2  # 2 buttons in row
+
+    # Verify button texts (Bob should be excluded)
+    button_texts = [button.text for button in keyboard.inline_keyboard[0]]
+    assert "Alice Smith" in button_texts
+    assert "Charlie Brown" in button_texts
+    assert "Bob" not in button_texts
+
+    # Verify callback_data contains only remaining candidates
+    callback_data_list = [button.callback_data for button in keyboard.inline_keyboard[0]]
+    assert "vote_123_1" in callback_data_list  # Alice
+    assert "vote_123_3" in callback_data_list  # Charlie
+    assert "vote_123_2" not in callback_data_list  # Bob should be excluded
+
+
+@pytest.mark.unit
+def test_create_voting_keyboard_with_multiple_exclusions():
+    """Test create_voting_keyboard with multiple excluded players."""
+    # Create mock candidates
+    candidate1 = Mock(spec=TGUser)
+    candidate1.id = 1
+    candidate1.first_name = "Alice"
+    candidate1.last_name = "Smith"
+
+    candidate2 = Mock(spec=TGUser)
+    candidate2.id = 2
+    candidate2.first_name = "Bob"
+    candidate2.last_name = None
+
+    candidate3 = Mock(spec=TGUser)
+    candidate3.id = 3
+    candidate3.first_name = "Charlie"
+    candidate3.last_name = "Brown"
+
+    candidate4 = Mock(spec=TGUser)
+    candidate4.id = 4
+    candidate4.first_name = "David"
+    candidate4.last_name = "Wilson"
+
+    candidates = [candidate1, candidate2, candidate3, candidate4]
+
+    # Create keyboard with multiple excluded players (Bob and David)
+    voting_id = 456
+    excluded_players = [2, 4]
+    keyboard = create_voting_keyboard(candidates, voting_id=voting_id, excluded_players=excluded_players)
+
+    # Verify structure: 2 candidates (Alice and Charlie) remain
+    assert len(keyboard.inline_keyboard) == 1  # 1 row
+    assert len(keyboard.inline_keyboard[0]) == 2  # 2 buttons in row
+
+    # Verify button texts (Bob and David should be excluded)
+    button_texts = [button.text for button in keyboard.inline_keyboard[0]]
+    assert "Alice Smith" in button_texts
+    assert "Charlie Brown" in button_texts
+    assert "Bob" not in button_texts
+    assert "David Wilson" not in button_texts
+
+    # Verify callback_data contains only remaining candidates
+    callback_data_list = [button.callback_data for button in keyboard.inline_keyboard[0]]
+    assert "vote_456_1" in callback_data_list  # Alice
+    assert "vote_456_3" in callback_data_list  # Charlie
+    assert "vote_456_2" not in callback_data_list  # Bob should be excluded
+    assert "vote_456_4" not in callback_data_list  # David should be excluded
+
+
+@pytest.mark.unit
+def test_create_voting_keyboard_exclude_all_but_one():
+    """Test create_voting_keyboard with all but one candidate excluded."""
+    # Create mock candidates
+    candidate1 = Mock(spec=TGUser)
+    candidate1.id = 1
+    candidate1.first_name = "Alice"
+    candidate1.last_name = "Smith"
+
+    candidate2 = Mock(spec=TGUser)
+    candidate2.id = 2
+    candidate2.first_name = "Bob"
+    candidate2.last_name = None
+
+    candidate3 = Mock(spec=TGUser)
+    candidate3.id = 3
+    candidate3.first_name = "Charlie"
+    candidate3.last_name = "Brown"
+
+    candidates = [candidate1, candidate2, candidate3]
+
+    # Create keyboard excluding all but Alice
+    voting_id = 789
+    excluded_players = [2, 3]
+    keyboard = create_voting_keyboard(candidates, voting_id=voting_id, excluded_players=excluded_players)
+
+    # Verify structure: only 1 candidate (Alice) remains
+    assert len(keyboard.inline_keyboard) == 1  # 1 row
+    assert len(keyboard.inline_keyboard[0]) == 1  # 1 button in row
+
+    # Verify button text (only Alice should remain)
+    assert keyboard.inline_keyboard[0][0].text == "Alice Smith"
+
+    # Verify callback_data contains only Alice
+    assert keyboard.inline_keyboard[0][0].callback_data == "vote_789_1"
+
+
+@pytest.mark.unit
+def test_create_voting_keyboard_with_exclusions_and_player_wins():
+    """Test create_voting_keyboard with both exclusions and player_wins."""
+    # Create mock candidates
+    candidate1 = Mock(spec=TGUser)
+    candidate1.id = 1
+    candidate1.first_name = "Alice"
+    candidate1.last_name = "Smith"
+
+    candidate2 = Mock(spec=TGUser)
+    candidate2.id = 2
+    candidate2.first_name = "Bob"
+    candidate2.last_name = None
+
+    candidate3 = Mock(spec=TGUser)
+    candidate3.id = 3
+    candidate3.first_name = "Charlie"
+    candidate3.last_name = "Brown"
+
+    candidates = [candidate1, candidate2, candidate3]
+
+    # Create keyboard with excluded player (Bob) and player_wins
+    voting_id = 123
+    excluded_players = [2]
+    player_wins = {1: 5, 3: 2}  # Alice has 5 wins, Charlie has 2 wins
+    keyboard = create_voting_keyboard(candidates, voting_id=voting_id, excluded_players=excluded_players, player_wins=player_wins)
+
+    # Verify structure: 2 candidates (Alice and Charlie) remain
+    assert len(keyboard.inline_keyboard) == 1  # 1 row
+    assert len(keyboard.inline_keyboard[0]) == 2  # 2 buttons in row
+
+    # Verify button texts with wins (Bob should be excluded)
+    button_texts = [button.text for button in keyboard.inline_keyboard[0]]
+    assert "Alice Smith (5)" in button_texts
+    assert "Charlie Brown (2)" in button_texts
+    assert "Bob" not in button_texts
+
+    # Verify callback_data contains only remaining candidates
+    callback_data_list = [button.callback_data for button in keyboard.inline_keyboard[0]]
+    assert "vote_123_1" in callback_data_list  # Alice
+    assert "vote_123_3" in callback_data_list  # Charlie
+    assert "vote_123_2" not in callback_data_list  # Bob should be excluded
+
+
+@pytest.mark.unit
+def test_create_voting_keyboard_with_empty_exclusions():
+    """Test create_voting_keyboard with empty excluded_players list."""
+    # Create mock candidates
+    candidate1 = Mock(spec=TGUser)
+    candidate1.id = 1
+    candidate1.first_name = "Alice"
+    candidate1.last_name = "Smith"
+
+    candidate2 = Mock(spec=TGUser)
+    candidate2.id = 2
+    candidate2.first_name = "Bob"
+    candidate2.last_name = None
+
+    candidates = [candidate1, candidate2]
+
+    # Create keyboard with empty excluded_players list
+    voting_id = 123
+    excluded_players = []
+    keyboard = create_voting_keyboard(candidates, voting_id=voting_id, excluded_players=excluded_players)
+
+    # Verify structure: all candidates remain
+    assert len(keyboard.inline_keyboard) == 1  # 1 row
+    assert len(keyboard.inline_keyboard[0]) == 2  # 2 buttons in row
+
+    # Verify button texts (all candidates should be present)
+    button_texts = [button.text for button in keyboard.inline_keyboard[0]]
+    assert "Alice Smith" in button_texts
+    assert "Bob" in button_texts
+
+    # Verify callback_data contains all candidates
+    callback_data_list = [button.callback_data for button in keyboard.inline_keyboard[0]]
+    assert "vote_123_1" in callback_data_list  # Alice
+    assert "vote_123_2" in callback_data_list  # Bob
+
+
+@pytest.mark.unit
+def test_create_voting_keyboard_with_none_exclusions():
+    """Test create_voting_keyboard with None excluded_players."""
+    # Create mock candidates
+    candidate1 = Mock(spec=TGUser)
+    candidate1.id = 1
+    candidate1.first_name = "Alice"
+    candidate1.last_name = "Smith"
+
+    candidate2 = Mock(spec=TGUser)
+    candidate2.id = 2
+    candidate2.first_name = "Bob"
+    candidate2.last_name = None
+
+    candidates = [candidate1, candidate2]
+
+    # Create keyboard with None excluded_players
+    voting_id = 123
+    excluded_players = None
+    keyboard = create_voting_keyboard(candidates, voting_id=voting_id, excluded_players=excluded_players)
+
+    # Verify structure: all candidates remain
+    assert len(keyboard.inline_keyboard) == 1  # 1 row
+    assert len(keyboard.inline_keyboard[0]) == 2  # 2 buttons in row
+
+    # Verify button texts (all candidates should be present)
+    button_texts = [button.text for button in keyboard.inline_keyboard[0]]
+    assert "Alice Smith" in button_texts
+    assert "Bob" in button_texts
+
+    # Verify callback_data contains all candidates
+    callback_data_list = [button.callback_data for button in keyboard.inline_keyboard[0]]
+    assert "vote_123_1" in callback_data_list  # Alice
+    assert "vote_123_2" in callback_data_list  # Bob
+
+
+@pytest.mark.unit
+def test_format_weights_message_with_single_exclusion():
+    """Test format_weights_message with single excluded leader."""
+    # Create mock players
+    player1 = Mock(spec=DBUser)
+    player1.first_name = "Алиса"
+    player1.last_name = "Смит"
+
+    player2 = Mock(spec=DBUser)
+    player2.first_name = "Боб"
+    player2.last_name = None
+
+    player3 = Mock(spec=DBUser)
+    player3.first_name = "Чарли"
+    player3.last_name = "Браун"
+
+    # Setup player weights
+    player_weights = [
+        (player1, 5),
+        (player2, 3),
+        (player3, 2)
+    ]
+
+    # Setup excluded leader (Алиса with 5 wins)
+    excluded_leaders = [(player1, 5)]
+
+    # Execute
+    result = format_weights_message(player_weights, missed_count=7, excluded_leaders=excluded_leaders)
+
+    # Verify message contains expected elements
+    assert "7" in result  # missed days count
+    assert "Алиса Смит \\(5 побед\\)" in result  # player weights
+    assert "Боб \\(3 победы\\)" in result
+    assert "Чарли Браун \\(2 победы\\)" in result
+    assert "❌ Алиса Смит НЕ УЧАСТВУЕТ (лидер года)" in result  # excluded leader info
+    assert "Лидер года исключен из голосования\\!" in result  # exclusion text
+    assert "Финальное голосование года" in result
+    assert "Голосуйте мудро" in result
+
+
+@pytest.mark.unit
+def test_format_weights_message_with_multiple_exclusions():
+    """Test format_weights_message with multiple excluded leaders."""
+    # Create mock players
+    player1 = Mock(spec=DBUser)
+    player1.first_name = "Алиса"
+    player1.last_name = "Смит"
+
+    player2 = Mock(spec=DBUser)
+    player2.first_name = "Боб"
+    player2.last_name = None
+
+    player3 = Mock(spec=DBUser)
+    player3.first_name = "Чарли"
+    player3.last_name = "Браун"
+
+    player4 = Mock(spec=DBUser)
+    player4.first_name = "Дэвид"
+    player4.last_name = "Уилсон"
+
+    # Setup player weights
+    player_weights = [
+        (player1, 5),
+        (player2, 5),
+        (player3, 3),
+        (player4, 2)
+    ]
+
+    # Setup excluded leaders (Алиса and Боб with 5 wins each)
+    excluded_leaders = [(player1, 5), (player2, 5)]
+
+    # Execute
+    result = format_weights_message(player_weights, missed_count=7, excluded_leaders=excluded_leaders)
+
+    # Verify message contains expected elements
+    assert "7" in result  # missed days count
+    assert "Алиса Смит \\(5 побед\\)" in result  # player weights
+    assert "Боб \\(5 побед\\)" in result
+    assert "Чарли Браун \\(3 победы\\)" in result
+    assert "Дэвид Уилсон \\(2 победы\\)" in result
+    assert "❌ Алиса Смит НЕ УЧАСТВУЕТ (лидер года)" in result  # excluded leader info
+    assert "❌ Боб НЕ УЧАСТВУЕТ (лидер года)" in result  # excluded leader info
+    assert "2 лидера года исключены из голосования\\!" in result  # exclusion text for multiple leaders
+    assert "Финальное голосование года" in result
+    assert "Голосуйте мудро" in result
+
+
+@pytest.mark.unit
+def test_format_weights_message_with_no_exclusions():
+    """Test format_weights_message without excluded leaders (original behavior)."""
+    # Create mock players
+    player1 = Mock(spec=DBUser)
+    player1.first_name = "Алиса"
+    player1.last_name = "Смит"
+
+    player2 = Mock(spec=DBUser)
+    player2.first_name = "Боб"
+    player2.last_name = None
+
+    # Setup player weights
+    player_weights = [
+        (player1, 5),
+        (player2, 3)
+    ]
+
+    # Execute without excluded leaders
+    result = format_weights_message(player_weights, missed_count=7)
+
+    # Verify message contains expected elements
+    assert "7" in result  # missed days count
+    assert "Алиса Смит \\(5 побед\\)" in result  # player weights
+    assert "Боб \\(3 победы\\)" in result
+    assert "❌" not in result  # No exclusion markers
+    assert "исключен" not in result  # No exclusion text
+    assert "Финальное голосование года" in result
+    assert "Голосуйте мудро" in result
+
+
+@pytest.mark.unit
+def test_format_weights_message_with_empty_exclusions():
+    """Test format_weights_message with empty excluded leaders list."""
+    # Create mock players
+    player1 = Mock(spec=DBUser)
+    player1.first_name = "Алиса"
+    player1.last_name = "Смит"
+
+    player2 = Mock(spec=DBUser)
+    player2.first_name = "Боб"
+    player2.last_name = None
+
+    # Setup player weights
+    player_weights = [
+        (player1, 5),
+        (player2, 3)
+    ]
+
+    # Execute with empty excluded leaders list
+    result = format_weights_message(player_weights, missed_count=7, excluded_leaders=[])
+
+    # Verify message contains expected elements
+    assert "7" in result  # missed days count
+    assert "Алиса Смит \\(5 побед\\)" in result  # player weights
+    assert "Боб \\(3 победы\\)" in result
+    assert "❌" not in result  # No exclusion markers
+    assert "исключен" not in result  # No exclusion text
+    assert "Финальное голосование года" in result
+    assert "Голосуйте мудро" in result
+
+
+@pytest.mark.unit
+def test_finalize_voting_with_single_exclusion(mock_context, sample_players):
+    """Test finalize_voting with single excluded leader."""
+    # Setup mock FinalVoting
+    mock_voting = MagicMock()
+    mock_voting.game_id = 1
+    mock_voting.year = 2024
+    mock_voting.missed_days_list = json.dumps([1, 2, 3, 4])
+    mock_voting.missed_days_count = 4  # 4 дня → 2 выбора
+
+    # Setup votes_data: all users vote
+    # User 1 (leader, excluded) votes for candidate 2
+    # User 2 votes for candidate 3
+    # User 3 votes for candidate 2
+    votes_data = {
+        "1001": [2],  # User 1 (tg_id=1001, leader) votes for candidate 2
+        "1002": [3],  # User 2 (tg_id=1002) votes for candidate 3
+        "1003": [2]   # User 3 (tg_id=1003) votes for candidate 2
+    }
+    mock_voting.votes_data = json.dumps(votes_data)
+
+    # Setup player weights: User 1 is leader with 10 wins
+    mock_weights_result = MagicMock()
+    mock_weights_result.all.return_value = [(1, 1001, 10), (2, 1002, 5), (3, 1003, 3)]
+
+    # Setup winner queries
+    winner2 = sample_players[1]
+    winner2.id = 2
+    winner3 = sample_players[2]
+    winner3.id = 3
+
+    mock_context.db_session.exec.return_value = mock_weights_result
+
+    # Mock query to return different winners based on filter_by call
+    def query_side_effect(*args, **kwargs):
+        mock_q = MagicMock()
+        def filter_by_side_effect(id=None):
+            mock_filter_q = MagicMock()
+            if id == 2:
+                mock_filter_q.one.return_value = winner2
+            elif id == 3:
+                mock_filter_q.one.return_value = winner3
+            else:
+                mock_filter_q.one.return_value = winner2
+            return mock_filter_q
+        mock_q.filter_by.side_effect = filter_by_side_effect
+        return mock_q
+
+    mock_context.db_session.query.side_effect = query_side_effect
+
+    # Execute with excluded leader (User 1)
+    excluded_player_ids = [1]
+    winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True, excluded_player_ids=excluded_player_ids)
+
+    # Verify winners list
+    assert isinstance(winners, list)
+    assert len(winners) >= 1
+    winner_id, winner_obj = winners[0]
+
+    # Verify User 1 (excluded leader) is NOT in winners
+    winner_ids = [wid for wid, _ in winners]
+    assert 1 not in winner_ids
+
+    # Verify results:
+    # Candidate 2: voted by user 1 (weight 10, 1 vote) + voted by user 3 (weight 3, 1 vote) = 10.0 + 3.0 = 13.0 weighted
+    # Candidate 3: voted by user 2 (weight 5, 1 vote) = 5.0 weighted
+    assert results[2]['weighted'] == 13.0
+    assert results[2]['votes'] == 2
+    assert results[3]['weighted'] == 5.0
+    assert results[3]['votes'] == 1
+
+    # Candidate 2 should win (highest weighted score among non-excluded)
+    assert winner_id == 2
+    assert winner_obj.id == 2
+
+
+@pytest.mark.unit
+def test_finalize_voting_with_multiple_exclusions(mock_context, sample_players):
+    """Test finalize_voting with multiple excluded leaders."""
+    # Setup mock FinalVoting
+    mock_voting = MagicMock()
+    mock_voting.game_id = 1
+    mock_voting.year = 2024
+    mock_voting.missed_days_list = json.dumps([1, 2, 3, 4])
+    mock_voting.missed_days_count = 4  # 4 дня → 2 выбора
+
+    # Setup votes_data: all users vote
+    # User 1 (leader, excluded) votes for candidate 3
+    # User 2 (leader, excluded) votes for candidate 3
+    # User 3 votes for candidate 4
+    # User 4 votes for candidate 3
+    votes_data = {
+        "1001": [3],  # User 1 (tg_id=1001, leader) votes for candidate 3
+        "1002": [3],  # User 2 (tg_id=1002, leader) votes for candidate 3
+        "1003": [4],  # User 3 (tg_id=1003) votes for candidate 4
+        "1004": [3]   # User 4 (tg_id=1004) votes for candidate 3
+    }
+    mock_voting.votes_data = json.dumps(votes_data)
+
+    # Setup player weights: Users 1 and 2 are leaders with 10 wins each
+    mock_weights_result = MagicMock()
+    mock_weights_result.all.return_value = [(1, 1001, 10), (2, 1002, 10), (3, 1003, 5), (4, 1004, 3)]
+
+    # Setup winner queries
+    winner3 = sample_players[2]
+    winner3.id = 3
+    winner4 = Mock(spec=sample_players[0].__class__)
+    winner4.id = 4
+
+    mock_context.db_session.exec.return_value = mock_weights_result
+
+    # Mock query to return different winners based on filter_by call
+    def query_side_effect(*args, **kwargs):
+        mock_q = MagicMock()
+        def filter_by_side_effect(id=None):
+            mock_filter_q = MagicMock()
+            if id == 3:
+                mock_filter_q.one.return_value = winner3
+            elif id == 4:
+                mock_filter_q.one.return_value = winner4
+            else:
+                mock_filter_q.one.return_value = winner3
+            return mock_filter_q
+        mock_q.filter_by.side_effect = filter_by_side_effect
+        return mock_q
+
+    mock_context.db_session.query.side_effect = query_side_effect
+
+    # Execute with multiple excluded leaders (Users 1 and 2)
+    excluded_player_ids = [1, 2]
+    winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True, excluded_player_ids=excluded_player_ids)
+
+    # Verify winners list
+    assert isinstance(winners, list)
+    assert len(winners) >= 1
+
+    # Verify Users 1 and 2 (excluded leaders) are NOT in winners
+    winner_ids = [wid for wid, _ in winners]
+    assert 1 not in winner_ids
+    assert 2 not in winner_ids
+
+    # Verify results:
+    # Candidate 3: voted by user 1 (weight 10) + user 2 (weight 10) + user 4 (weight 3) = 23.0 weighted
+    # Candidate 4: voted by user 3 (weight 5) = 5.0 weighted
+    assert results[3]['weighted'] == 23.0
+    assert results[3]['votes'] == 3
+    assert results[4]['weighted'] == 5.0
+    assert results[4]['votes'] == 1
+
+    # Candidate 3 should win (highest weighted score among non-excluded)
+    winner_id, winner_obj = winners[0]
+    assert winner_id == 3
+    assert winner_obj.id == 3
+
+
+@pytest.mark.unit
+def test_finalize_voting_excluded_leaders_can_vote(mock_context, sample_players):
+    """Test that excluded leaders can vote and their votes count with full weight."""
+    # Setup mock FinalVoting
+    mock_voting = MagicMock()
+    mock_voting.game_id = 1
+    mock_voting.year = 2024
+    mock_voting.missed_days_list = json.dumps([1, 2, 3])
+    mock_voting.missed_days_count = 3  # 3 дня → 1 выбор
+
+    # Setup votes_data: excluded leader votes for another candidate
+    # User 1 (leader, excluded) votes for candidate 2
+    # User 2 votes for candidate 3
+    votes_data = {
+        "1001": [2],  # User 1 (tg_id=1001, leader) votes for candidate 2
+        "1002": [3]   # User 2 (tg_id=1002) votes for candidate 3
+    }
+    mock_voting.votes_data = json.dumps(votes_data)
+
+    # Setup player weights: User 1 is leader with 15 wins
+    mock_weights_result = MagicMock()
+    mock_weights_result.all.return_value = [(1, 1001, 15), (2, 1002, 5), (3, 1003, 3)]
+
+    # Setup winner queries
+    winner2 = sample_players[1]
+    winner2.id = 2
+    winner3 = sample_players[2]
+    winner3.id = 3
+
+    mock_context.db_session.exec.return_value = mock_weights_result
+
+    # Mock query to return different winners based on filter_by call
+    def query_side_effect(*args, **kwargs):
+        mock_q = MagicMock()
+        def filter_by_side_effect(id=None):
+            mock_filter_q = MagicMock()
+            if id == 2:
+                mock_filter_q.one.return_value = winner2
+            elif id == 3:
+                mock_filter_q.one.return_value = winner3
+            else:
+                mock_filter_q.one.return_value = winner2
+            return mock_filter_q
+        mock_q.filter_by.side_effect = filter_by_side_effect
+        return mock_q
+
+    mock_context.db_session.query.side_effect = query_side_effect
+
+    # Execute with excluded leader (User 1)
+    excluded_player_ids = [1]
+    winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True, excluded_player_ids=excluded_player_ids)
+
+    # Verify excluded leader's vote counted with FULL weight
+    # Candidate 2: voted by user 1 (weight 15, excluded but vote counts) = 15.0 weighted
+    # Candidate 3: voted by user 2 (weight 5) + auto-voted by user 3 (weight 3) = 8.0 weighted
+    assert results[2]['weighted'] == 15.0
+    assert results[2]['votes'] == 1
+    assert results[3]['weighted'] == 8.0
+
+    # Candidate 2 should win (highest weighted score, even though voted by excluded leader)
+    winner_id, winner_obj = winners[0]
+    assert winner_id == 2
+    assert winner_obj.id == 2
+
+
+@pytest.mark.unit
+def test_finalize_voting_excluded_leaders_cannot_win(mock_context, sample_players):
+    """Test that excluded leaders cannot win even with highest votes."""
+    # Setup mock FinalVoting
+    mock_voting = MagicMock()
+    mock_voting.game_id = 1
+    mock_voting.year = 2024
+    mock_voting.missed_days_list = json.dumps([1, 2, 3])
+    mock_voting.missed_days_count = 3  # 3 дня → 1 выбор
+
+    # Setup votes_data: everyone votes for the excluded leader
+    # User 1 (leader, excluded) - doesn't vote, gets auto-vote for himself
+    # User 2 votes for candidate 1 (excluded leader)
+    # User 3 votes for candidate 1 (excluded leader)
+    votes_data = {
+        "1002": [1],  # User 2 (tg_id=1002) votes for candidate 1 (excluded)
+        "1003": [1]   # User 3 (tg_id=1003) votes for candidate 1 (excluded)
+    }
+    mock_voting.votes_data = json.dumps(votes_data)
+
+    # Setup player weights: User 1 is leader with 20 wins
+    mock_weights_result = MagicMock()
+    mock_weights_result.all.return_value = [(1, 1001, 20), (2, 1002, 5), (3, 1003, 3)]
+
+    # Setup candidates result for _select_random_winners (только ID, не кортежи)
+    mock_candidates_result = MagicMock()
+    mock_candidates_result.all.return_value = [1, 2, 3]
+
+    # Setup winner queries
+    winner2 = sample_players[1]
+    winner2.id = 2
+    winner3 = sample_players[2]
+    winner3.id = 3
+
+    # Мокаем exec для возврата разных результатов: сначала веса, потом кандидаты для random selection
+    mock_context.db_session.exec.side_effect = [mock_weights_result, mock_candidates_result]
+
+    # Mock query to return different winners based on filter_by call
+    def query_side_effect(*args, **kwargs):
+        mock_q = MagicMock()
+        def filter_by_side_effect(id=None):
+            mock_filter_q = MagicMock()
+            if id == 2:
+                mock_filter_q.one.return_value = winner2
+            elif id == 3:
+                mock_filter_q.one.return_value = winner3
+            else:
+                mock_filter_q.one.return_value = winner2
+            return mock_filter_q
+        mock_q.filter_by.side_effect = filter_by_side_effect
+        return mock_q
+
+    mock_context.db_session.query.side_effect = query_side_effect
+
+    # Execute with excluded leader (User 1)
+    excluded_player_ids = [1]
+    winners, results = finalize_voting(mock_voting, mock_context, auto_vote_for_non_voters=True, excluded_player_ids=excluded_player_ids)
+
+    # Verify results:
+    # Candidate 1 (excluded): voted by user 2 (weight 5) + user 3 (weight 3) + auto-voted by user 1 (weight 20) = 28.0 weighted
+    # Candidate 2: no votes, 0.0 weighted
+    # Candidate 3: no votes, 0.0 weighted
+    assert results[1]['weighted'] == 28.0
+    assert results[1]['votes'] == 2
+    assert results[1]['auto_votes'] == 1
+
+    # Verify User 1 (excluded leader) is NOT in winners despite highest votes
+    winner_ids = [wid for wid, _ in winners]
+    assert 1 not in winner_ids
+
+    # One of the non-excluded candidates should win (User 2 or 3)
+    # Since they have 0 votes, it should be random selection from eligible candidates
+    winner_id, winner_obj = winners[0]
+    assert winner_id in [2, 3]
+
+
+@pytest.mark.unit
+def test_format_voting_results_with_percentages():
+    """Test format_voting_results displays percentages correctly."""
+    # Create mock winners
+    winner1 = Mock(spec=DBUser)
+    winner1.id = 1
+    winner1.first_name = "Alice"
+    winner1.last_name = "Smith"
+    winner1.full_username.return_value = "Alice Smith"
+
+    winner2 = Mock(spec=DBUser)
+    winner2.id = 2
+    winner2.first_name = "Bob"
+    winner2.last_name = None
+    winner2.full_username.return_value = "Bob"
+
+    winners = [(1, winner1), (2, winner2)]
+
+    # Create mock results with weighted scores
+    results = {
+        1: {
+            'weighted': 23.5,
+            'votes': 5,
+            'auto_votes': 0,
+            'auto_voted': False
+        },
+        2: {
+            'weighted': 22.5,
+            'votes': 6,
+            'auto_votes': 0,
+            'auto_voted': False
+        }
+    }
+
+    # Create mock db_session
+    mock_db_session = Mock()
+    mock_db_session.query.return_value.filter_by.return_value.one.side_effect = [
+        winner1,  # For candidate 1
+        winner2   # For candidate 2
+    ]
+
+    # Execute
+    winners_text, voting_results_text, days_distribution_text = format_voting_results(
+        winners, results, missed_days_count=8, db_session=mock_db_session
+    )
+
+    # Verify winners text
+    assert winners_text == "Alice Smith, Bob"
+
+    # Verify voting results text contains weighted scores (with escaped dots)
+    assert "Alice Smith" in voting_results_text
+    assert "Bob" in voting_results_text
+    assert "23\\.5" in voting_results_text  # Dots are escaped in Markdown V2
+    assert "22\\.5" in voting_results_text  # Dots are escaped in Markdown V2
+
+    # Verify days distribution text contains percentages
+    assert "Alice Smith" in days_distribution_text
+    assert "Bob" in days_distribution_text
+    assert "51.1%" in days_distribution_text  # 23.5 / (23.5 + 22.5) = 51.1%
+    assert "48.9%" in days_distribution_text  # 22.5 / (23.5 + 22.5) = 48.9%
+    assert "от общих очков" in days_distribution_text
+
+
+@pytest.mark.unit
+def test_format_voting_results_percentage_sum():
+    """Test that percentages in format_voting_results sum to approximately 100%."""
+    # Create mock winners
+    winner1 = Mock(spec=DBUser)
+    winner1.id = 1
+    winner1.first_name = "Alice"
+    winner1.last_name = "Smith"
+    winner1.full_username.return_value = "Alice Smith"
+
+    winner2 = Mock(spec=DBUser)
+    winner2.id = 2
+    winner2.first_name = "Bob"
+    winner2.last_name = None
+    winner2.full_username.return_value = "Bob"
+
+    winner3 = Mock(spec=DBUser)
+    winner3.id = 3
+    winner3.first_name = "Charlie"
+    winner3.last_name = "Brown"
+    winner3.full_username.return_value = "Charlie Brown"
+
+    winners = [(1, winner1), (2, winner2), (3, winner3)]
+
+    # Create mock results with weighted scores
+    results = {
+        1: {
+            'weighted': 40.0,
+            'votes': 5,
+            'auto_votes': 0,
+            'auto_voted': False
+        },
+        2: {
+            'weighted': 30.0,
+            'votes': 3,
+            'auto_votes': 0,
+            'auto_voted': False
+        },
+        3: {
+            'weighted': 30.0,
+            'votes': 2,
+            'auto_votes': 0,
+            'auto_voted': False
+        }
+    }
+
+    # Create mock db_session
+    mock_db_session = Mock()
+    mock_db_session.query.return_value.filter_by.return_value.one.side_effect = [
+        winner1,  # For candidate 1
+        winner2,  # For candidate 2
+        winner3   # For candidate 3
+    ]
+
+    # Execute
+    winners_text, voting_results_text, days_distribution_text = format_voting_results(
+        winners, results, missed_days_count=10, db_session=mock_db_session
+    )
+
+    # Extract percentages from days_distribution_text
+    import re
+    percentage_pattern = r'(\d+\.\d+)%'
+    percentages = re.findall(percentage_pattern, days_distribution_text)
+
+    # Convert to float and sum
+    percentage_sum = sum(float(p) for p in percentages)
+
+    # Verify sum is approximately 100% (allowing for rounding errors)
+    assert 99.0 <= percentage_sum <= 101.0, f"Percentage sum {percentage_sum}% is not close to 100%"
+
+    # Verify individual percentages are correct
+    assert "40.0%" in days_distribution_text  # 40.0 / 100.0 = 40.0%
+    assert "30.0%" in days_distribution_text  # 30.0 / 100.0 = 30.0% (appears twice for Bob and Charlie)

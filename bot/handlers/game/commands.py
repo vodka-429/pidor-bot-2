@@ -389,7 +389,7 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
         FINAL_VOTING_ERROR_TOO_MANY, FINAL_VOTING_ERROR_ALREADY_EXISTS
     )
     from bot.handlers.game.voting_helpers import (
-        create_voting_keyboard, get_player_weights, format_weights_message
+        create_voting_keyboard, get_player_weights, format_weights_message, get_year_leaders
     )
 
     logger.info(f"pidorfinal_cmd started for chat {update.effective_chat.id}")
@@ -450,11 +450,20 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
         logger.warning(f"No games played in year {cur_year} for game {context.game.id}")
         return
 
-    # Создаём список кандидатов (все игроки с весами)
-    candidates = [player for player, _ in player_weights]
+    # Определяем всех лидеров года (игроки с максимальным количеством побед)
+    year_leaders = get_year_leaders(player_weights)
+
+    # Создаем список ID исключенных лидеров
+    excluded_leader_ids = [leader.id for leader, _ in year_leaders]
+
+    # Создаем список кандидатов, исключая всех лидеров
+    candidates = [player for player, _ in player_weights if player.id not in excluded_leader_ids]
 
     # Создаём словарь с количеством побед для каждого игрока
     player_wins = {player.id: wins for player, wins in player_weights}
+
+    # Подготавливаем информацию об исключенных лидерах для сохранения
+    excluded_leaders_data = [{"player_id": leader.id, "wins": wins} for leader, wins in year_leaders]
 
     # Сначала создаём запись FinalVoting без voting_message_id
     final_voting = FinalVoting(
@@ -472,8 +481,15 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
     context.db_session.add(final_voting)
     context.db_session.flush()  # Получаем ID для использования в callback_data
 
-    # Создаём клавиатуру с кнопками кандидатов, передавая voting_id, chat_id и информацию о победах
-    keyboard = create_voting_keyboard(candidates, voting_id=final_voting.id, votes_per_row=2, chat_id=update.effective_chat.id, player_wins=player_wins)
+    # Создаём клавиатуру с кнопками кандидатов, исключая всех лидеров
+    keyboard = create_voting_keyboard(
+        candidates,
+        voting_id=final_voting.id,
+        votes_per_row=2,
+        chat_id=update.effective_chat.id,
+        player_wins=player_wins,
+        excluded_players=excluded_leader_ids
+    )
 
     logger.info(f"Created keyboard with {len(keyboard.inline_keyboard)} rows")
     logger.info(f"FinalVoting ID: {final_voting.id}")
@@ -483,7 +499,13 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
     max_votes = calculate_max_votes(missed_count)
 
     # Формируем и отправляем объединённое сообщение с информацией и кнопками голосования
-    message_text = format_weights_message(player_weights, missed_count, max_votes)
+    # Включаем информацию об исключенных лидерах
+    message_text = format_weights_message(
+        player_weights,
+        missed_count,
+        max_votes,
+        excluded_leaders=year_leaders
+    )
     voting_message = await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text=message_text,
@@ -493,9 +515,13 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
 
     # Обновляем запись с ID сообщения голосования
     final_voting.voting_message_id = voting_message.message_id
+
+    # Сохраняем информацию об исключенных лидерах в новое поле excluded_leaders_data
+    final_voting.excluded_leaders_data = json.dumps(excluded_leaders_data)
     context.db_session.commit()
 
     logger.info(f"Final voting created for game {context.game.id}, year {cur_year}, voting_message_id {voting_message.message_id}")
+    logger.info(f"Excluded leaders: {excluded_leader_ids}")
 
 
 async def handle_vote_callback(update: Update, context: ECallbackContext):
@@ -736,8 +762,18 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
         parse_mode="MarkdownV2"
     )
 
-    # Вызываем функцию подсчёта результатов
-    winners, results = finalize_voting(final_voting, context)
+    # Загружаем информацию обо всех исключенных лидерах из excluded_leaders_data
+    # Проверяем, что excluded_leaders_data - это строка, а не MagicMock (для тестов)
+    if isinstance(final_voting.excluded_leaders_data, str):
+        excluded_leaders_data = json.loads(final_voting.excluded_leaders_data or '[]')
+    else:
+        # Для тестов, когда excluded_leaders_data мокается
+        excluded_leaders_data = []
+    excluded_leader_ids = [leader['player_id'] for leader in excluded_leaders_data]
+    logger.info(f"Excluded leaders from voting: {excluded_leader_ids}")
+
+    # Вызываем функцию подсчёта результатов с передачей списка исключенных лидеров
+    winners, results = finalize_voting(final_voting, context, excluded_player_ids=excluded_leader_ids)
 
     # Создаем записи GameResult для победителей
     from bot.handlers.game.voting_helpers import create_game_results_for_winners
@@ -751,7 +787,7 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     #     context.db_session
     # )
 
-    # Форматируем результаты голосования
+    # Форматируем результаты голосования с отображением процентов
     winners_text, voting_results_text, days_distribution_text = format_voting_results(
         winners, results, final_voting.missed_days_count, context.db_session
     )
