@@ -78,6 +78,7 @@ class FinalVoting(SQLModel, table=True):
     votes_data: str = Field(default='{}')  # JSON string with votes structure: {user_id: [candidate_ids]}
     is_results_hidden: bool = Field(default=True)  # Hide results until voting ends
     voting_message_id: Optional[int] = None  # ID of the message with voting buttons
+    winners_data: str = Field(default='[]')  # JSON string with list of all winners: [{"winner_id": 1, "days_count": 3}, ...]
 
     winner: Optional[TGUser] = Relationship(back_populates="final_voting_wins")
     game: Game = Relationship(back_populates="final_votings")

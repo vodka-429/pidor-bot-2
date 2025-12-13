@@ -629,16 +629,35 @@ async def pidorfinalstatus_cmd(update: Update, context: GECallbackContext):
         return
 
     # Если ended_at is not None - показываем статус "завершено"
-    winner_name = escape_markdown2(final_voting.winner.full_username())
+    # Загружаем информацию о победителях из winners_data
+    try:
+        winners_data = json.loads(final_voting.winners_data)
+        if winners_data:
+            # Загружаем объекты победителей
+            winner_names = []
+            for winner_info in winners_data:
+                winner = context.db_session.query(TGUser).filter_by(id=winner_info['winner_id']).one()
+                winner_names.append(escape_markdown2(winner.full_username()))
+            winners_text = ', '.join(winner_names)
+        else:
+            # Fallback на старое поле winner_id
+            winners_text = escape_markdown2(final_voting.winner.full_username()) if final_voting.winner else "Нет победителей"
+    except (json.JSONDecodeError, KeyError):
+        # Fallback на старое поле winner_id
+        winners_text = escape_markdown2(final_voting.winner.full_username()) if final_voting.winner else "Нет победителей"
+
     ended_str = final_voting.ended_at.strftime("%d\\.%m\\.%Y %H:%M МСК")
 
     message = FINAL_VOTING_STATUS_COMPLETED.format(
-        winner=winner_name,
+        winner=winners_text,
         ended_at=ended_str,
         missed_days=final_voting.missed_days_count
     )
     await update.effective_chat.send_message(message, parse_mode="MarkdownV2")
-    logger.info(f"Final voting completed for game {context.game.id}, year {cur_year}, winner: {final_voting.winner.full_username()}")
+
+    # Логируем всех победителей
+    winners_log = winners_text.replace('\\', '')  # Убираем экранирование для лога
+    logger.info(f"Final voting completed for game {context.game.id}, year {cur_year}, winners: {winners_log}")
 
 
 @ensure_game
