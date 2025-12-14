@@ -914,12 +914,15 @@ def create_game_results_for_winners(
     missed_days_list: List[int],
     game_id: int,
     year: int,
-    db_session
+    db_session,
+    winners_data: Optional[str] = None
 ) -> None:
     """
     Создает записи GameResult для победителей финального голосования.
 
     Распределяет пропущенные дни между победителями и создает записи в базе данных.
+    Использует пропорциональное распределение из winners_data, если доступно,
+    иначе использует равномерное распределение для обратной совместимости.
 
     Args:
         winners: Список кортежей (winner_id, TGUser) с победителями
@@ -927,12 +930,26 @@ def create_game_results_for_winners(
         game_id: ID игры
         year: Год
         db_session: Сессия базы данных
+        winners_data: JSON строка с распределением дней из final_voting.winners_data (опционально)
     """
     if not winners or not missed_days_list:
         return
 
-    # Используем функцию для расчета распределения
-    winners_distribution = calculate_days_distribution(winners, len(missed_days_list))
+    # Пытаемся использовать пропорциональное распределение из winners_data
+    winners_distribution = None
+    if winners_data:
+        try:
+            winners_data_parsed = json.loads(winners_data)
+            if winners_data_parsed:
+                winners_distribution = winners_data_parsed
+                logger.info(f"Using proportional distribution from winners_data: {winners_distribution}")
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning(f"Error parsing winners_data: {e}")
+
+    # Если не удалось получить распределение из winners_data, используем равномерное
+    if winners_distribution is None:
+        winners_distribution = calculate_days_distribution(winners, len(missed_days_list))
+        logger.info("Using uniform distribution (fallback)")
 
     # Создаем записи GameResult для каждого победителя
     day_index = 0
