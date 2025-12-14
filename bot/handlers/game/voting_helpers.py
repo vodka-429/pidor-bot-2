@@ -1,7 +1,7 @@
 """Helper functions for custom voting functionality."""
 import json
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.app.models import TGUser, GameResult
@@ -62,37 +62,42 @@ def parse_vote_callback_data(callback_data: str) -> Tuple[int, int]:
     return voting_id, candidate_id
 
 
-def calculate_max_votes(missed_days: int) -> int:
+def calculate_voting_params(missed_days: int, chat_id: Optional[int] = None) -> tuple[int, int]:
     """
-    Рассчитывает максимальное количество выборов на основе пропущенных дней.
+    Рассчитывает параметры голосования: эффективное количество дней и максимальное количество выборов.
 
-    Формула:
+    Формула для max_votes:
     - Для четных чисел: количество_дней / 2
     - Для простых чисел: 1 выбор
     - Для составных нечетных чисел: количество_дней / наименьший_делитель
 
     Args:
         missed_days: Количество пропущенных дней
+        chat_id: ID чата (опционально, для проверки тестового чата)
 
     Returns:
-        Максимальное количество выборов для пользователя
+        Кортеж (effective_missed_days, max_votes):
+        - effective_missed_days: фактическое количество дней для голосования
+        - max_votes: максимальное количество выборов для пользователя
     """
     # Преобразуем в int на случай, если передан MagicMock или другой объект
     try:
         missed_days = int(missed_days)
     except (TypeError, ValueError):
-        return 1
+        return 1, 1
 
-    # For TEST_CHAT_ID
-    if missed_days > 10:
-        missed_days = 4
+    # Применяем ограничение для тестового чата
+    effective_missed_days = missed_days
+    if chat_id is not None and is_test_chat(chat_id) and missed_days > 10:
+        effective_missed_days = 10
 
-    if missed_days <= 0:
-        return 1
+    if effective_missed_days <= 0:
+        return max(1, effective_missed_days), 1
 
     # Для четных чисел - делим на 2
-    if missed_days % 2 == 0:
-        return missed_days // 2
+    if effective_missed_days % 2 == 0:
+        max_votes = effective_missed_days // 2
+        return effective_missed_days, max_votes
 
     # Для нечетных чисел проверяем, является ли число простым
     def is_prime(n):
@@ -104,16 +109,35 @@ def calculate_max_votes(missed_days: int) -> int:
         return True
 
     # Если простое число - возвращаем 1
-    if is_prime(missed_days):
-        return 1
+    if is_prime(effective_missed_days):
+        return effective_missed_days, 1
 
     # Для составных нечетных чисел находим наименьший делитель
-    for i in range(3, int(missed_days ** 0.5) + 1, 2):
-        if missed_days % i == 0:
-            return missed_days // i
+    for i in range(3, int(effective_missed_days ** 0.5) + 1, 2):
+        if effective_missed_days % i == 0:
+            max_votes = effective_missed_days // i
+            return effective_missed_days, max_votes
 
     # Если не нашли делитель, возвращаем 1 (на всякий случай)
-    return 1
+    return effective_missed_days, 1
+
+
+def calculate_max_votes(missed_days: int, chat_id: Optional[int] = None) -> int:
+    """
+    Рассчитывает максимальное количество выборов на основе пропущенных дней.
+
+    Функция-обертка для обратной совместимости. Использует calculate_voting_params
+    и возвращает только max_votes.
+
+    Args:
+        missed_days: Количество пропущенных дней
+        chat_id: ID чата (опционально, для проверки тестового чата)
+
+    Returns:
+        Максимальное количество выборов для пользователя
+    """
+    _, max_votes = calculate_voting_params(missed_days, chat_id)
+    return max_votes
 
 
 def count_voters(votes_data: str) -> int:
@@ -272,6 +296,37 @@ def format_weights_message(player_weights: List[Tuple[TGUser, int]], missed_coun
         max_votes=max_votes,
         winner_text=winner_text
     )
+
+
+def format_voting_rules_message(player_weights: List[Tuple[TGUser, int]], missed_count: int, max_votes: int = None, excluded_leaders: List[Tuple[TGUser, int]] = None) -> str:
+    """
+    Форматирует информационное сообщение с правилами голосования (без кнопок).
+
+    Args:
+        player_weights: Список кортежей (TGUser, количество побед)
+        missed_count: Количество пропущенных дней
+        max_votes: Максимальное количество выборов (опционально)
+        excluded_leaders: Список кортежей (TGUser, количество побед) исключенных лидеров (опционально)
+
+    Returns:
+        Отформатированное сообщение в формате Markdown V2
+    """
+    # Получаем базовое сообщение с весами игроков
+    base_message = format_weights_message(player_weights, missed_count, max_votes, excluded_leaders)
+
+    # Добавляем информацию о том, когда можно запустить голосование
+    date_info = "\n\n📅 *Запустить голосование можно 29-30 декабря командой /pidorfinal*"
+
+    # Заменяем призыв к голосованию на информационное сообщение
+    rules_message = base_message.replace(
+        "Голосуйте мудро\! Или тупо\, как обычно\. 🗳️",
+        "Готовьтесь мудро голосовать\! Или тупо\, как обычно\. 🗳️"
+    )
+
+    # Добавляем информацию о датах
+    rules_message += date_info
+
+    return rules_message
 
 
 def duplicate_candidates_for_test(candidates: List[TGUser], chat_id: int, target_count: int = 30) -> List[TGUser]:
