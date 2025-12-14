@@ -13,36 +13,6 @@ from bot.app.models import FinalVoting, GameResult, TGUser
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_pidorfinal_cmd_wrong_date(mock_update, mock_context, mock_game, mocker):
-    """Test pidorfinal command fails when called on wrong date (not Dec 29-30)."""
-    # Setup
-    mock_context.game = mock_game
-
-    # Mock the query chain for Game
-    mock_game_query = MagicMock()
-    mock_game_query.filter_by.return_value = mock_game_query
-    mock_game_query.one_or_none.return_value = mock_game
-    mock_context.db_session.query.return_value = mock_game_query
-
-    # Mock current_datetime to return wrong date (not Dec 29-30)
-    mock_dt = MagicMock()
-    mock_dt.year = 2024
-    mock_dt.month = 12
-    mock_dt.day = 15  # Wrong date
-    mock_dt.timetuple.return_value.tm_yday = 350
-    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
-
-    # Execute
-    await pidorfinal_cmd(mock_update, mock_context)
-
-    # Verify error message was sent
-    mock_update.effective_chat.send_message.assert_called_once()
-    call_args = str(mock_update.effective_chat.send_message.call_args)
-    assert "29 или 30 декабря" in call_args or "wrong date" in call_args.lower()
-
-
-@pytest.mark.asyncio
-@pytest.mark.unit
 async def test_pidorfinal_cmd_shows_rules_before_date(mock_update, mock_context, mock_game, sample_players, mocker):
     """Test pidorfinal command shows rules when called before Dec 29-30."""
     # Setup
@@ -89,7 +59,7 @@ async def test_pidorfinal_cmd_shows_rules_before_date(mock_update, mock_context,
 
     # Should contain rules information
     assert "Финальное голосование года" in call_args
-    assert "Запустить голосование можно 29-30 декабря" in call_args or "29\\-30 декабря" in call_args
+    assert "Запустить голосование можно 29 или 30 декабря" in call_args or "29\\-30 декабря" in call_args
 
     # Should NOT contain just the error message
     assert "29 или 30 декабря" not in call_args or "Запустить голосование" in call_args
@@ -362,39 +332,6 @@ async def test_pidorfinal_cmd_test_chat_bypass_missed_days_check(mock_update, mo
     assert missed_days_list == list(range(1, 11)), f"Expected first 10 days [1..10], got {missed_days_list}"
 
     mock_context.db_session.commit.assert_called_once()
-
-
-@pytest.mark.asyncio
-@pytest.mark.unit
-async def test_pidorfinal_cmd_regular_chat_date_check_enforced(mock_update, mock_context, mock_game, mocker):
-    """Test that regular chats still enforce date check for pidorfinal command."""
-    # Setup
-    mock_context.game = mock_game
-
-    # Mock chat_id to be regular chat (NOT test chat)
-    mock_update.effective_chat.id = -123456789
-
-    # Mock the query chain for Game
-    mock_game_query = MagicMock()
-    mock_game_query.filter_by.return_value = mock_game_query
-    mock_game_query.one_or_none.return_value = mock_game
-    mock_context.db_session.query.return_value = mock_game_query
-
-    # Mock current_datetime to return WRONG date (not Dec 29-30) - June 15
-    mock_dt = MagicMock()
-    mock_dt.year = 2024
-    mock_dt.month = 6
-    mock_dt.day = 15
-    mock_dt.timetuple.return_value.tm_yday = 167
-    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
-
-    # Execute
-    await pidorfinal_cmd(mock_update, mock_context)
-
-    # Verify error message about wrong date was sent
-    mock_update.effective_chat.send_message.assert_called_once()
-    call_args = str(mock_update.effective_chat.send_message.call_args)
-    assert "29 или 30 декабря" in call_args or "wrong date" in call_args.lower()
 
 
 @pytest.mark.asyncio

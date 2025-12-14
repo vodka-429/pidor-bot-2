@@ -315,7 +315,7 @@ def format_voting_rules_message(player_weights: List[Tuple[TGUser, int]], missed
     base_message = format_weights_message(player_weights, missed_count, max_votes, excluded_leaders)
 
     # Добавляем информацию о том, когда можно запустить голосование
-    date_info = "\n\n📅 *Запустить голосование можно 29-30 декабря командой /pidorfinal*"
+    date_info = "\n\n📅 *Запустить голосование можно 29 или 30 декабря командой /pidorfinal*"
 
     # Заменяем призыв к голосованию на информационное сообщение
     rules_message = base_message.replace(
