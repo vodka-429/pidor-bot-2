@@ -803,7 +803,8 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
         missed_days_list,
         final_voting.game_id,
         final_voting.year,
-        context.db_session
+        context.db_session,
+        winners_data=final_voting.winners_data
     )
 
     # Форматируем результаты голосования с отображением процентов
