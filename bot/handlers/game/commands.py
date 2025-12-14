@@ -399,31 +399,46 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
     current_dt = current_datetime()
     cur_year, cur_day = current_dt.year, current_dt.timetuple().tm_yday
 
+    # Получаем список пропущенных дней
+    missed_days = get_all_missed_days(context.db_session, context.game.id, cur_year, cur_day)
+
+    # Рассчитываем эффективное количество дней и максимальное количество голосов
+    effective_missed_days, max_votes = calculate_voting_params(len(missed_days), update.effective_chat.id)
+
+    # Ограничиваем список пропущенных дней до effective_missed_days
+    missed_days = missed_days[:effective_missed_days]
+    missed_count = effective_missed_days
+
+    # Получаем веса игроков (количество побед в году)
+    player_weights = get_player_weights(context.db_session, context.game.id, cur_year)
+
+    # Определяем всех лидеров года (игроки с максимальным количеством побед)
+    year_leaders = get_year_leaders(player_weights)
+
+    # Проверяем, что пропущено меньше MAX_MISSED_DAYS_FOR_FINAL_VOTING дней (пропускаем для тестового чата)
+    if not is_test_chat(update.effective_chat.id):
+        if effective_missed_days >= MAX_MISSED_DAYS_FOR_FINAL_VOTING:
+            await update.effective_chat.send_message(
+                FINAL_VOTING_ERROR_TOO_MANY.format(
+                    count=effective_missed_days,
+                    max_days=MAX_MISSED_DAYS_FOR_FINAL_VOTING
+                ),
+                parse_mode="MarkdownV2"
+            )
+            logger.warning(f"Too many missed days for final voting: {effective_missed_days}")
+            return
+
     # Проверяем, что сейчас 29 или 30 декабря (пропускаем для тестового чата)
     # TODO: избавиться от дублирования логики
     if not is_test_chat(update.effective_chat.id):
         if not (current_dt.month == 12 and current_dt.day in [29, 30]):
-            # Показываем правила голосования вместо ошибки
-            # Получаем список пропущенных дней для информации
-            missed_days_temp = get_all_missed_days(context.db_session, context.game.id, cur_year, cur_day)
-            missed_count_temp = len(missed_days_temp)
-
-            # Получаем веса игроков
-            player_weights_temp = get_player_weights(context.db_session, context.game.id, cur_year)
-
-            if len(player_weights_temp) > 0:
-                # Определяем лидеров года
-                year_leaders_temp = get_year_leaders(player_weights_temp)
-
-                # Рассчитываем максимальное количество голосов
-                max_votes_temp = calculate_max_votes(missed_count_temp)
-
+            if len(player_weights) > 0:
                 # Формируем информационное сообщение с правилами
                 rules_message = format_voting_rules_message(
-                    player_weights_temp,
-                    missed_count_temp,
-                    max_votes_temp,
-                    excluded_leaders=year_leaders_temp
+                    player_weights,
+                    effective_missed_days,
+                    max_votes,
+                    excluded_leaders=year_leaders
                 )
 
                 await update.effective_chat.send_message(
@@ -440,29 +455,6 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
                 logger.warning(f"Attempt to start final voting on wrong date: {current_dt.date()}")
             return
 
-    # Получаем список пропущенных дней
-    missed_days = get_all_missed_days(context.db_session, context.game.id, cur_year, cur_day)
-
-    # Рассчитываем эффективное количество дней и максимальное количество голосов
-    effective_missed_days, max_votes = calculate_voting_params(len(missed_days), update.effective_chat.id)
-
-    # Ограничиваем список пропущенных дней до effective_missed_days
-    missed_days = missed_days[:effective_missed_days]
-    missed_count = effective_missed_days
-
-    # Проверяем, что пропущено меньше MAX_MISSED_DAYS_FOR_FINAL_VOTING дней (пропускаем для тестового чата)
-    if not is_test_chat(update.effective_chat.id):
-        if effective_missed_days >= MAX_MISSED_DAYS_FOR_FINAL_VOTING:
-            await update.effective_chat.send_message(
-                FINAL_VOTING_ERROR_TOO_MANY.format(
-                    count=effective_missed_days,
-                    max_days=MAX_MISSED_DAYS_FOR_FINAL_VOTING
-                ),
-                parse_mode="MarkdownV2"
-            )
-            logger.warning(f"Too many missed days for final voting: {effective_missed_days}")
-            return
-
     # Проверяем, что голосование ещё не запущено
     existing_voting = context.db_session.query(FinalVoting).filter_by(
         game_id=context.game.id,
@@ -477,9 +469,6 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
         logger.warning(f"Final voting already exists for game {context.game.id}, year {cur_year}")
         return
 
-    # Получаем веса игроков (количество побед в году)
-    player_weights = get_player_weights(context.db_session, context.game.id, cur_year)
-
     if len(player_weights) == 0:
         await update.effective_chat.send_message(
             "❌ *Ошибка\\!* В этом году ещё не было ни одного розыгрыша\\. Финальное голосование невозможно\\.",
@@ -487,9 +476,6 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
         )
         logger.warning(f"No games played in year {cur_year} for game {context.game.id}")
         return
-
-    # Определяем всех лидеров года (игроки с максимальным количеством побед)
-    year_leaders = get_year_leaders(player_weights)
 
     # Создаем список ID исключенных лидеров
     excluded_leader_ids = [leader.id for leader, _ in year_leaders]
@@ -812,14 +798,13 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     # Создаем записи GameResult для победителей
     from bot.handlers.game.voting_helpers import create_game_results_for_winners
     missed_days_list = json.loads(final_voting.missed_days_list)
-    # TODO: включить и не убирать при рефакторинге
-    # create_game_results_for_winners(
-    #     winners,
-    #     missed_days_list,
-    #     final_voting.game_id,
-    #     final_voting.year,
-    #     context.db_session
-    # )
+    create_game_results_for_winners(
+        winners,
+        missed_days_list,
+        final_voting.game_id,
+        final_voting.year,
+        context.db_session
+    )
 
     # Форматируем результаты голосования с отображением процентов
     winners_text, voting_results_text, days_distribution_text = format_voting_results(

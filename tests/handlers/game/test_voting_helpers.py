@@ -2371,7 +2371,7 @@ def test_format_voting_rules_message(sample_players):
     assert "❌ Алиса Смит НЕ УЧАСТВУЕТ \\(лидер года\\)" in result  # excluded leader
     assert "Максимум *1*" in result  # max votes info
     assert "24 часа" in result  # duration info
-    assert "Запустить голосование можно 29-30 декабря" in result  # date info
+    assert "Запустить голосование можно 29 или 30 декабря" in result  # date info
 
     # Verify proper MarkdownV2 escaping
     assert "\\(" in result  # parentheses escaped
