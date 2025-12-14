@@ -43,6 +43,64 @@ async def test_pidorfinal_cmd_wrong_date(mock_update, mock_context, mock_game, m
 
 @pytest.mark.asyncio
 @pytest.mark.unit
+async def test_pidorfinal_cmd_shows_rules_before_date(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test pidorfinal command shows rules when called before Dec 29-30."""
+    # Setup
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+
+    # Mock the query chain for Game
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+
+    # Mock FinalVoting query - no existing voting
+    mock_voting_query = MagicMock()
+    mock_voting_query.filter_by.return_value = mock_voting_query
+    mock_voting_query.one_or_none.return_value = None
+
+    # Mock player weights query
+    mock_weights_query = MagicMock()
+    player_weights = [(sample_players[0], 5), (sample_players[1], 3), (sample_players[2], 2)]
+    mock_weights_query.all.return_value = player_weights
+
+    # Setup query side effects
+    mock_context.db_session.query.side_effect = [mock_game_query]
+    mock_context.db_session.exec.return_value = mock_weights_query
+
+    # Mock current_datetime to return wrong date (not Dec 29-30) - June 15
+    mock_dt = MagicMock()
+    mock_dt.year = 2024
+    mock_dt.month = 6
+    mock_dt.day = 15
+    mock_dt.timetuple.return_value.tm_yday = 167
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+
+    # Mock get_all_missed_days
+    missed_days = [1, 2, 3, 4, 5]
+    mocker.patch('bot.handlers.game.commands.get_all_missed_days', return_value=missed_days)
+
+    # Execute
+    await pidorfinal_cmd(mock_update, mock_context)
+
+    # Verify informational message was sent (not error about wrong date)
+    mock_update.effective_chat.send_message.assert_called_once()
+    call_args = str(mock_update.effective_chat.send_message.call_args)
+
+    # Should contain rules information
+    assert "Финальное голосование года" in call_args
+    assert "Запустить голосование можно 29-30 декабря" in call_args or "29\\-30 декабря" in call_args
+
+    # Should NOT contain just the error message
+    assert "29 или 30 декабря" not in call_args or "Запустить голосование" in call_args
+
+    # Verify FinalVoting was NOT created
+    mock_context.db_session.add.assert_not_called()
+    mock_context.db_session.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
 async def test_pidorfinal_cmd_too_many_missed_days(mock_update, mock_context, mock_game, mocker):
     """Test pidorfinal command fails when there are too many missed days."""
     # Setup
@@ -236,7 +294,7 @@ async def test_pidorfinal_cmd_test_chat_bypass_date_check(mock_update, mock_cont
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_pidorfinal_cmd_test_chat_bypass_missed_days_check(mock_update, mock_context, mock_game, sample_players, mocker):
-    """Test that test chat bypasses missed days count check for pidorfinal command."""
+    """Test that test chat limits missed days to 10 when more than 10 days are missed."""
     # Setup
     mock_game.players = sample_players
     mock_context.game = mock_game
@@ -271,8 +329,8 @@ async def test_pidorfinal_cmd_test_chat_bypass_missed_days_check(mock_update, mo
     mock_dt.timetuple.return_value.tm_yday = 364
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
 
-    # Mock get_all_missed_days to return TOO MANY days (>= 10)
-    missed_days = list(range(1, 16))  # 15 days - more than MAX_MISSED_DAYS_FOR_FINAL_VOTING
+    # Mock get_all_missed_days to return 15 days (more than 10)
+    missed_days = list(range(1, 16))  # 15 days - should be limited to 10 in test chat
     mocker.patch('bot.handlers.game.commands.get_all_missed_days', return_value=missed_days)
 
     # Mock bot.send_message for voting keyboard
@@ -291,6 +349,18 @@ async def test_pidorfinal_cmd_test_chat_bypass_missed_days_check(mock_update, mo
 
     # Verify FinalVoting was added to session
     mock_context.db_session.add.assert_called_once()
+
+    # Get the FinalVoting object that was added
+    final_voting = mock_context.db_session.add.call_args[0][0]
+
+    # Verify that missed_days_count is limited to 10
+    assert final_voting.missed_days_count == 10, f"Expected missed_days_count to be 10, got {final_voting.missed_days_count}"
+
+    # Verify that missed_days_list contains only 10 elements (first 10 from original list)
+    missed_days_list = json.loads(final_voting.missed_days_list)
+    assert len(missed_days_list) == 10, f"Expected 10 days in missed_days_list, got {len(missed_days_list)}"
+    assert missed_days_list == list(range(1, 11)), f"Expected first 10 days [1..10], got {missed_days_list}"
+
     mock_context.db_session.commit.assert_called_once()
 
 

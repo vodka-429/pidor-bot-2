@@ -16,6 +16,7 @@ from bot.handlers.game.voting_helpers import (
     format_voting_results,
     count_voters,
     calculate_max_votes,
+    calculate_voting_params,
     duplicate_candidates_for_test,
     distribute_days_proportionally,
     VOTE_CALLBACK_PREFIX
@@ -672,6 +673,83 @@ def test_calculate_max_votes_edge_cases():
     """Test calculate_max_votes with edge cases."""
     assert calculate_max_votes(0) == 1
     assert calculate_max_votes(-1) == 1
+
+@pytest.mark.unit
+def test_calculate_voting_params_test_chat_limit():
+    """Test calculate_voting_params with test chat limit."""
+    from bot.handlers.game.commands import TEST_CHAT_ID
+
+    # Test with 15 missed days in test chat - should limit to 10
+    effective_days, max_votes = calculate_voting_params(15, TEST_CHAT_ID)
+    assert effective_days == 10
+    assert max_votes == 5  # 10 days (even) → 10/2 = 5 votes
+
+    # Test with regular chat - no limit, 15 is composite (3*5)
+    effective_days, max_votes = calculate_voting_params(15, -123456789)
+    assert effective_days == 15
+    assert max_votes == 5  # 15/3 = 5 (15 is composite odd, smallest divisor is 3)
+
+
+@pytest.mark.unit
+def test_calculate_voting_params_regular_chat():
+    """Test calculate_voting_params for regular chat without limit."""
+    # Test various values without chat_id (no limit)
+    effective_days, max_votes = calculate_voting_params(2)
+    assert effective_days == 2
+    assert max_votes == 1  # 2/2 = 1
+
+    effective_days, max_votes = calculate_voting_params(4)
+    assert effective_days == 4
+    assert max_votes == 2  # 4/2 = 2
+
+    effective_days, max_votes = calculate_voting_params(6)
+    assert effective_days == 6
+    assert max_votes == 3  # 6/2 = 3
+
+    effective_days, max_votes = calculate_voting_params(9)
+    assert effective_days == 9
+    assert max_votes == 3  # 9/3 = 3 (composite odd)
+
+    # Test with regular chat_id (not test chat)
+    effective_days, max_votes = calculate_voting_params(8, -987654321)
+    assert effective_days == 8
+    assert max_votes == 4  # 8/2 = 4
+
+
+@pytest.mark.unit
+def test_calculate_voting_params_test_chat_under_limit():
+    """Test calculate_voting_params with test chat when under limit."""
+    from bot.handlers.game.commands import TEST_CHAT_ID
+
+    # Test with 5 missed days in test chat - under limit, no change
+    effective_days, max_votes = calculate_voting_params(5, TEST_CHAT_ID)
+    assert effective_days == 5
+    assert max_votes == 1  # 5 is prime → 1 vote
+
+    # Test with exactly 10 days - at limit, no change
+    effective_days, max_votes = calculate_voting_params(10, TEST_CHAT_ID)
+    assert effective_days == 10
+    assert max_votes == 5  # 10/2 = 5
+
+
+@pytest.mark.unit
+def test_calculate_max_votes_backward_compatibility():
+    """Test calculate_max_votes backward compatibility wrapper."""
+    from bot.handlers.game.commands import TEST_CHAT_ID
+
+    # Test that calculate_max_votes returns only max_votes
+    max_votes = calculate_max_votes(10)
+    assert max_votes == 5
+    assert isinstance(max_votes, int)
+
+    # Test with test chat - should apply limit
+    max_votes = calculate_max_votes(15, TEST_CHAT_ID)
+    assert max_votes == 5  # Limited to 10 days → 10/2 = 5
+
+    # Test with regular chat - no limit, 15 is composite (3*5)
+    max_votes = calculate_max_votes(15, -123456789)
+    assert max_votes == 5  # 15/3 = 5 (15 is composite odd, smallest divisor is 3)
+
     assert calculate_max_votes('invalid') == 1
 
 
@@ -2252,3 +2330,50 @@ def test_format_voting_results_percentage_sum():
     # Verify individual percentages are correct (with escaped dots for Markdown V2)
     assert "40\\.0%" in days_distribution_text  # 40.0 / 100.0 = 40.0%
     assert "30\\.0%" in days_distribution_text  # 30.0 / 100.0 = 30.0% (appears twice for Bob and Charlie)
+
+
+
+@pytest.mark.unit
+def test_format_voting_rules_message(sample_players):
+    """Test format_voting_rules_message creates correct informational message."""
+    # Setup player weights
+    sample_players[0].first_name = "Алиса"
+    sample_players[0].last_name = "Смит"
+    sample_players[1].first_name = "Боб"
+    sample_players[1].last_name = None
+    sample_players[2].first_name = "Чарли"
+    sample_players[2].last_name = "Браун"
+
+    player_weights = [
+        (sample_players[0], 5),
+        (sample_players[1], 3),
+        (sample_players[2], 2)
+    ]
+
+    # Setup excluded leaders
+    excluded_leaders = [(sample_players[0], 5)]
+
+    # Execute
+    from bot.handlers.game.voting_helpers import format_voting_rules_message
+    result = format_voting_rules_message(
+        player_weights,
+        missed_count=7,
+        max_votes=1,
+        excluded_leaders=excluded_leaders
+    )
+
+    # Verify message contains expected elements
+    assert "Финальное голосование года" in result
+    assert "7" in result  # missed days count
+    assert "Алиса Смит \\(5 побед\\)" in result  # player weights
+    assert "Боб \\(3 победы\\)" in result
+    assert "Чарли Браун \\(2 победы\\)" in result
+    assert "❌ Алиса Смит НЕ УЧАСТВУЕТ \\(лидер года\\)" in result  # excluded leader
+    assert "Максимум *1*" in result  # max votes info
+    assert "24 часа" in result  # duration info
+    assert "Запустить голосование можно 29-30 декабря" in result  # date info
+
+    # Verify proper MarkdownV2 escaping
+    assert "\\(" in result  # parentheses escaped
+    assert "\\)" in result
+    assert "\\-" in result  # hyphens escaped
