@@ -5,11 +5,18 @@ from typing import List, Tuple, Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.app.models import TGUser, GameResult
-from bot.handlers.game.commands import is_test_chat
 from bot.utils import escape_markdown2
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
+
+# ID тестового чата для обхода ограничений по датам
+TEST_CHAT_ID = -4608252738
+
+
+def is_test_chat(chat_id: int) -> bool:
+    """Проверяет, является ли чат тестовым"""
+    return chat_id == TEST_CHAT_ID
 
 
 # Константа для идентификации callback голосования
