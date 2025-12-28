@@ -22,6 +22,7 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
     CURRENT_DAY_GAME_RESULT, \
     YEAR_RESULTS_MSG, YEAR_RESULTS_ANNOUNCEMENT, REGISTRATION_MANY_SUCCESS, \
     ERROR_ALREADY_REGISTERED_MANY, VOTING_ENDED_RESPONSE
+from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders, is_test_chat
 from bot.utils import escape_markdown2, escape_word, format_number, ECallbackContext
 
 # Получаем логгер для этого модуля
@@ -30,18 +31,12 @@ logger = logging.getLogger(__name__)
 
 GAME_RESULT_TIME_DELAY = 2
 MAX_MISSED_DAYS_FOR_FINAL_VOTING = 10  # Максимальное количество пропущенных дней для финального голосования
-TEST_CHAT_ID = -4608252738  # ID тестового чата для обхода ограничений по датам
 
 MOSCOW_TZ = ZoneInfo('Europe/Moscow')
 
 
 def current_datetime():
     return datetime.now(tz=MOSCOW_TZ)
-
-
-def is_test_chat(chat_id: int) -> bool:
-    """Проверяет, является ли чат тестовым"""
-    return chat_id == TEST_CHAT_ID
 
 
 def get_missed_days_count(db_session, game_id: int, current_year: int, current_day: int) -> int:
@@ -110,6 +105,54 @@ class GECallbackContext(ECallbackContext):
     game: Game
 
 
+async def run_tiebreaker(update: Update, context: GECallbackContext, leaders: List[TGUser], year: int):
+    """
+    Запустить tie-breaker розыгрыш между лидерами года.
+
+    Args:
+        update: Telegram Update объект
+        context: Расширенный контекст с игрой
+        leaders: Список лидеров года (TGUser объекты)
+        year: Год для которого проводится tie-breaker
+    """
+    from bot.handlers.game.text_static import TIEBREAKER_ANNOUNCEMENT, TIEBREAKER_RESULT
+
+    logger.info(f"Starting tie-breaker for year {year} with {len(leaders)} leaders")
+
+    # Сообщение о tie-breaker
+    leaders_names = ', '.join([escape_markdown2(leader.full_username()) for leader in leaders])
+    await update.effective_chat.send_message(
+        TIEBREAKER_ANNOUNCEMENT.format(count=len(leaders), leaders=leaders_names),
+        parse_mode="MarkdownV2"
+    )
+    await asyncio.sleep(GAME_RESULT_TIME_DELAY)
+
+    # Выбор победителя
+    winner = random.choice(leaders)
+    logger.info(f"Tie-breaker winner: {winner.full_username()}")
+
+    # Определяем специальный день для tie-breaker
+    is_leap_year = (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
+    tiebreaker_day = 367 if is_leap_year else 366
+
+    # Создаём запись GameResult для tie-breaker
+    context.game.results.append(
+        GameResult(game_id=context.game.id, year=year, day=tiebreaker_day, winner=winner)
+    )
+    context.db_session.commit()
+    logger.info(f"Created tie-breaker GameResult for day {tiebreaker_day}")
+
+    # Объявление победителя года
+    await update.effective_chat.send_message(
+        TIEBREAKER_RESULT.format(
+            year=year,
+            username=escape_markdown2(winner.full_username())
+        ),
+        parse_mode="MarkdownV2"
+    )
+    logger.info(f"Tie-breaker completed for year {year}, winner: {winner.full_username()}")
+
+
 def ensure_game(func):
     @functools.wraps(func)
     async def wrapper(update: Update, context: ECallbackContext):
@@ -176,6 +219,25 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         logger.debug("Sending stage 4 message")
         await update.effective_chat.send_message(random.choice(stage4.phrases).format(
             username=winner.full_username(mention=True)))
+
+        # Проверка на tie-breaker в последний день года
+        if last_day:
+            logger.debug("Checking for tie-breaker situation")
+            # Получаем веса всех игроков
+            player_weights = get_player_weights(context.db_session, context.game.id, cur_year)
+
+            # Получаем только лидеров
+            year_leaders = get_year_leaders(player_weights)
+
+            # Если лидеров больше одного - запускаем tie-breaker
+            if len(year_leaders) > 1:
+                logger.info(f"Multiple leaders detected ({len(year_leaders)}), starting tie-breaker")
+                # Извлекаем только объекты TGUser
+                leaders = [player for player, wins in year_leaders]
+                await run_tiebreaker(update, context, leaders, cur_year)
+                return  # Завершаем выполнение, tie-breaker уже объявил результат
+            else:
+                logger.debug(f"Single leader detected, no tie-breaker needed")
 
 
 async def pidorules_cmd(update: Update, _context: CallbackContext):

@@ -1,6 +1,6 @@
 """Тесты для вспомогательных функций тестового чата"""
 import pytest
-from bot.handlers.game.commands import is_test_chat, TEST_CHAT_ID
+from bot.handlers.game.voting_helpers import is_test_chat, TEST_CHAT_ID
 
 
 def test_is_test_chat_returns_true_for_test_chat():

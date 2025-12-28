@@ -677,7 +677,7 @@ def test_calculate_max_votes_edge_cases():
 @pytest.mark.unit
 def test_calculate_voting_params_test_chat_limit():
     """Test calculate_voting_params with test chat limit."""
-    from bot.handlers.game.commands import TEST_CHAT_ID
+    from bot.handlers.game.voting_helpers import TEST_CHAT_ID
 
     # Test with 15 missed days in test chat - should limit to 10
     effective_days, max_votes = calculate_voting_params(15, TEST_CHAT_ID)
@@ -719,7 +719,7 @@ def test_calculate_voting_params_regular_chat():
 @pytest.mark.unit
 def test_calculate_voting_params_test_chat_under_limit():
     """Test calculate_voting_params with test chat when under limit."""
-    from bot.handlers.game.commands import TEST_CHAT_ID
+    from bot.handlers.game.voting_helpers import TEST_CHAT_ID
 
     # Test with 5 missed days in test chat - under limit, no change
     effective_days, max_votes = calculate_voting_params(5, TEST_CHAT_ID)
@@ -735,7 +735,7 @@ def test_calculate_voting_params_test_chat_under_limit():
 @pytest.mark.unit
 def test_calculate_max_votes_backward_compatibility():
     """Test calculate_max_votes backward compatibility wrapper."""
-    from bot.handlers.game.commands import TEST_CHAT_ID
+    from bot.handlers.game.voting_helpers import TEST_CHAT_ID
 
     # Test that calculate_max_votes returns only max_votes
     max_votes = calculate_max_votes(10)
