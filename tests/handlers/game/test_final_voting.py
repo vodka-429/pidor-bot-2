@@ -1574,7 +1574,7 @@ async def test_pidorfinalclose_cmd_wrong_username(mock_update, mock_context, moc
     # Verify error message was sent
     mock_update.effective_chat.send_message.assert_called_once()
     call_args = str(mock_update.effective_chat.send_message.call_args)
-    assert "папка" in call_args or "папа" in call_args.lower()
+    assert "настоятель" in call_args
 
 
 @pytest.mark.asyncio
@@ -1608,4 +1608,4 @@ async def test_pidorfinalclose_cmd_no_username(mock_update, mock_context, mock_g
     # Verify error message was sent
     mock_update.effective_chat.send_message.assert_called_once()
     call_args = str(mock_update.effective_chat.send_message.call_args)
-    assert "папка" in call_args or "папа" in call_args.lower()
+    assert "настоятель" in call_args
