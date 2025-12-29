@@ -135,7 +135,7 @@ FINAL_VOTING_CLOSE_SUCCESS = """✅ Голосование завершено\\!
 
 FINAL_VOTING_CLOSE_ERROR_NOT_ADMIN = """❌ *Ошибка\\!* Завершить голосование может только администратор чата\\."""
 
-FINAL_VOTING_CLOSE_ERROR_NOT_AUTHORIZED = """❌ *Ошибка\\!* Завершить голосование может только папка\\."""
+FINAL_VOTING_CLOSE_ERROR_NOT_AUTHORIZED = """❌ *Ошибка\\!* Завершить голосование может только настоятель\\."""
 
 FINAL_VOTING_CLOSE_ERROR_NOT_ACTIVE = """❌ *Ошибка\\!* Нет активного голосования для завершения\\."""
 
