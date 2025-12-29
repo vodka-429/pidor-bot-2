@@ -675,7 +675,9 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
         winners.append((winner_id, winner))
 
     # ШАГ 9: Обновляем FinalVoting
-    final_voting.ended_at = datetime.now(tz=MOSCOW_TZ)
+    # Конвертируем в UTC naive для хранения в БД
+    ended_at_utc = datetime.now(tz=MOSCOW_TZ).astimezone(ZoneInfo('UTC')).replace(tzinfo=None)
+    final_voting.ended_at = ended_at_utc
     final_voting.winner_id = winners[0][0] if winners else None
     context.db_session.commit()
 
