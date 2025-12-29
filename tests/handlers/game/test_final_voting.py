@@ -614,6 +614,7 @@ async def test_pidorfinalclose_cmd_success(mock_update, mock_context, mock_game,
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
+    mock_update.effective_user.username = 'kanst9'
 
     # Mock current_datetime - 25 hours after voting started (more than 24 hours)
     mock_dt = datetime(2024, 12, 30, 13, 0, 0)
@@ -680,6 +681,7 @@ async def test_pidorfinalclose_cmd_not_admin(mock_update, mock_context, mock_gam
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
+    mock_update.effective_user.username = 'kanst9'
 
     # Mock current_datetime
     mock_dt = MagicMock()
@@ -764,6 +766,7 @@ async def test_pidorfinalclose_cmd_too_early(mock_update, mock_context, mock_gam
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
+    mock_update.effective_user.username = 'kanst9'
     mock_update.effective_chat.id = -123456789  # Regular chat (not test chat)
 
     # Mock current_datetime - only 12 hours after voting started (less than 24 hours)
@@ -798,6 +801,7 @@ async def test_pidorfinalclose_cmd_test_chat_bypass_time_check(mock_update, mock
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
+    mock_update.effective_user.username = 'kanst9'
     mock_update.effective_chat.id = -4608252738  # Test chat
 
     # Mock current_datetime - only 1 hour after voting started (less than 24 hours)
@@ -987,6 +991,7 @@ async def test_final_voting_results_escaping(mock_update, mock_context, mock_gam
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
+    mock_update.effective_user.username = 'kanst9'
 
     # Mock current_datetime - 25 hours after voting started (more than 24 hours)
     mock_dt = datetime(2024, 12, 30, 13, 0, 0)
@@ -1352,6 +1357,7 @@ async def test_pidorfinalclose_escapes_special_chars(mock_update, mock_context, 
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
+    mock_update.effective_user.username = 'kanst9'
 
     # Mock current_datetime - 25 hours after voting started (more than 24 hours)
     mock_dt = datetime(2024, 12, 30, 13, 0, 0)
@@ -1498,6 +1504,7 @@ async def test_error_messages_escape_correctly(mock_update, mock_context, mock_g
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
+    mock_update.effective_user.username = 'kanst9'
     mock_update.effective_chat.id = -123456789  # Regular chat (not test chat)
 
     # Mock current_datetime - only 12.5 hours after voting started (less than 24 hours)
@@ -1534,3 +1541,71 @@ async def test_error_messages_escape_correctly(mock_update, mock_context, mock_g
         decimal_pattern = r'\d+\\\.\d+'
         if re.search(r'\d+\.\d+', call_args):
             assert re.search(decimal_pattern, call_args), f"Expected escaped decimal numbers in error message: {call_args}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_pidorfinalclose_cmd_wrong_username(mock_update, mock_context, mock_game, mocker):
+    """Test that user with wrong username cannot close voting."""
+    # Setup
+    mock_context.game = mock_game
+    mock_update.effective_user.id = 999
+    mock_update.effective_user.username = 'wrong_user'  # Not 'kanst9'
+
+    # Mock current_datetime
+    mock_dt = MagicMock()
+    mock_dt.year = 2024
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+
+    # Setup active FinalVoting
+    mock_voting = MagicMock()
+    mock_voting.ended_at = None
+
+    mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_voting
+
+    # Mock admin check - user IS admin
+    mock_chat_member = MagicMock()
+    mock_chat_member.status = 'administrator'
+    mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)
+
+    # Execute
+    await pidorfinalclose_cmd(mock_update, mock_context)
+
+    # Verify error message was sent
+    mock_update.effective_chat.send_message.assert_called_once()
+    call_args = str(mock_update.effective_chat.send_message.call_args)
+    assert "папка" in call_args or "папа" in call_args.lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_pidorfinalclose_cmd_no_username(mock_update, mock_context, mock_game, mocker):
+    """Test that user without username cannot close voting."""
+    # Setup
+    mock_context.game = mock_game
+    mock_update.effective_user.id = 999
+    mock_update.effective_user.username = None  # No username
+
+    # Mock current_datetime
+    mock_dt = MagicMock()
+    mock_dt.year = 2024
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+
+    # Setup active FinalVoting
+    mock_voting = MagicMock()
+    mock_voting.ended_at = None
+
+    mock_context.db_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_voting
+
+    # Mock admin check - user IS admin
+    mock_chat_member = MagicMock()
+    mock_chat_member.status = 'administrator'
+    mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)
+
+    # Execute
+    await pidorfinalclose_cmd(mock_update, mock_context)
+
+    # Verify error message was sent
+    mock_update.effective_chat.send_message.assert_called_once()
+    call_args = str(mock_update.effective_chat.send_message.call_args)
+    assert "папка" in call_args or "папа" in call_args.lower()
