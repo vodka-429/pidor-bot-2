@@ -835,7 +835,20 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     if not is_test_chat(update.effective_chat.id):
         from datetime import timedelta
         min_voting_duration = timedelta(hours=24)
-        time_since_start = current_dt - final_voting.started_at
+
+        # Логируем информацию о датах для отладки
+        logger.info(f"Current datetime (tz-aware): {current_dt}, tzinfo: {current_dt.tzinfo}")
+        logger.info(f"Voting started_at: {final_voting.started_at}, tzinfo: {final_voting.started_at.tzinfo}")
+
+        # Проверяем, есть ли у started_at информация о часовом поясе
+        if final_voting.started_at.tzinfo is None:
+            # Если started_at не имеет информации о часовом поясе, добавляем московский часовой пояс
+            logger.warning("started_at has no timezone info, adding Moscow timezone")
+            started_at_with_tz = final_voting.started_at.replace(tzinfo=MOSCOW_TZ)
+        else:
+            started_at_with_tz = final_voting.started_at
+
+        time_since_start = current_dt - started_at_with_tz
 
         if time_since_start < min_voting_duration:
             remaining_time = min_voting_duration - time_since_start
