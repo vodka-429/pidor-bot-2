@@ -554,12 +554,15 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
     excluded_leaders_data = [{"player_id": leader.id, "wins": wins} for leader, wins in year_leaders]
 
     # Сначала создаём запись FinalVoting без voting_message_id
+    # Конвертируем current_dt в UTC naive для хранения в БД
+    started_at_utc = current_dt.astimezone(ZoneInfo('UTC')).replace(tzinfo=None)
+
     final_voting = FinalVoting(
         game_id=context.game.id,
         year=cur_year,
         poll_id='',  # Больше не используется для кастомного голосования
         poll_message_id=0,  # Временное значение, будет обновлено
-        started_at=current_dt,
+        started_at=started_at_utc,
         missed_days_count=effective_missed_days,
         missed_days_list=json.dumps(missed_days),
         votes_data='{}',  # Инициализируем пустым JSON объектом
@@ -723,8 +726,10 @@ async def pidorfinalstatus_cmd(update: Update, context: GECallbackContext):
 
     # Если ended_at is None - показываем статус "активно"
     if final_voting.ended_at is None:
+        # Конвертируем started_at из UTC в Moscow TZ для отображения
+        started_at_moscow = final_voting.started_at.replace(tzinfo=ZoneInfo('UTC')).astimezone(MOSCOW_TZ)
         # Форматируем дату для вывода
-        started_str = final_voting.started_at.strftime("%d\\.%m\\.%Y %H:%M МСК")
+        started_str = started_at_moscow.strftime("%d\\.%m\\.%Y %H:%M МСК")
 
         # Подсчитываем количество проголосовавших
         voters_count = count_voters(final_voting.votes_data)
@@ -756,7 +761,9 @@ async def pidorfinalstatus_cmd(update: Update, context: GECallbackContext):
         # Fallback на старое поле winner_id
         winners_text = escape_markdown2(final_voting.winner.full_username()) if final_voting.winner else "Нет победителей"
 
-    ended_str = final_voting.ended_at.strftime("%d\\.%m\\.%Y %H:%M МСК")
+    # Конвертируем ended_at из UTC в Moscow TZ для отображения
+    ended_at_moscow = final_voting.ended_at.replace(tzinfo=ZoneInfo('UTC')).astimezone(MOSCOW_TZ)
+    ended_str = ended_at_moscow.strftime("%d\\.%m\\.%Y %H:%M МСК")
 
     message = FINAL_VOTING_STATUS_COMPLETED.format(
         winner=winners_text,
@@ -835,7 +842,10 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     if not is_test_chat(update.effective_chat.id):
         from datetime import timedelta
         min_voting_duration = timedelta(hours=24)
-        time_since_start = current_dt - final_voting.started_at
+
+        # Конвертируем started_at из UTC naive в Moscow TZ aware для корректного сравнения
+        started_at_moscow = final_voting.started_at.replace(tzinfo=ZoneInfo('UTC')).astimezone(MOSCOW_TZ)
+        time_since_start = current_dt - started_at_moscow
 
         if time_since_start < min_voting_duration:
             remaining_time = min_voting_duration - time_since_start
