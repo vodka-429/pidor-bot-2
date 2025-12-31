@@ -46,10 +46,10 @@ def init_dispatcher(application: Application, db_engine):
     # Также добавляем middleware для CallbackQueryHandler
     application.add_handler(MessageHandler(filters.ALL, open_db_session(db_engine)), group=-100)
     application.add_handler(CallbackQueryHandler(open_db_session(db_engine)), group=-100)
-    
+
     application.add_handler(MessageHandler(filters.ALL, tg_user_middleware_handler), group=-99)
     application.add_handler(CallbackQueryHandler(tg_user_middleware_handler), group=-99)
-    
+
     application.add_handler(MessageHandler(filters.ALL, close_db_session_handler), group=100)
     application.add_handler(CallbackQueryHandler(close_db_session_handler), group=100)
 

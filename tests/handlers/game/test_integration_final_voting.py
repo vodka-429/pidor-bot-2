@@ -457,7 +457,10 @@ async def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sa
     # Step 3: Close voting (admin)
     mock_update.effective_user = MagicMock()
     mock_update.effective_user.id = 100000001
-    mock_update.effective_user.username = 'kanst9'
+    mock_update.effective_user.username = 'test_admin'
+
+    # Mock get_allowed_final_voting_closers to return test_admin
+    mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
     # Mock admin check
     mock_chat_member = MagicMock()
@@ -901,7 +904,11 @@ async def test_final_voting_proportional_distribution_integration(mock_update, m
     # Mock admin check
     mock_update.effective_user = MagicMock()
     mock_update.effective_user.id = 100000001
-    mock_update.effective_user.username = 'kanst9'
+    mock_update.effective_user.username = 'test_admin'
+
+    # Mock get_allowed_final_voting_closers to return test_admin
+    mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
+
     mock_chat_member = MagicMock()
     mock_chat_member.status = 'administrator'
     mock_context.bot.get_chat_member = AsyncMock(return_value=mock_chat_member)

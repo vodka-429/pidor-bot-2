@@ -26,6 +26,15 @@ Bot reads Telegram Bot Token from both `.env` file in current folder and also
 * Setup telegram bot token `export TELEGDAM_BOT_API_TOKEN=<token>`
 * Start the bot `python3 main.py`
 
+## Configuration
+
+The bot uses the following environment variables:
+
+* `TELEGRAM_BOT_API_SECRET` - Telegram Bot API token (required)
+* `CHAT_WHITELIST` - Comma-separated list of chat IDs allowed to use the bot (optional)
+* `TEST_CHAT_ID` - ID of the test chat for testing purposes (optional, enables special test mode features)
+* `ALLOWED_FINAL_VOTING_CLOSERS` - Comma-separated list of usernames allowed to close final voting (optional, if not set all chat administrators can close voting)
+
 ## Docker
 
 * Build the image `docker build . -t <imagename>`

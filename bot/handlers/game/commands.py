@@ -24,7 +24,7 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
     ERROR_ALREADY_REGISTERED_MANY, VOTING_ENDED_RESPONSE, \
     FINAL_VOTING_CLOSE_ERROR_NOT_AUTHORIZED
 from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders, is_test_chat
-from bot.utils import escape_markdown2, escape_word, format_number, ECallbackContext
+from bot.utils import escape_markdown2, escape_word, format_number, ECallbackContext, get_allowed_final_voting_closers
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
@@ -34,7 +34,6 @@ GAME_RESULT_TIME_DELAY = 2
 MAX_MISSED_DAYS_FOR_FINAL_VOTING = 10  # Максимальное количество пропущенных дней для финального голосования
 
 MOSCOW_TZ = ZoneInfo('Europe/Moscow')
-ALLOWED_FINAL_VOTING_CLOSER_USERNAME = 'kanst9'
 
 
 def current_datetime():
@@ -263,7 +262,7 @@ async def pidorules_cmd(update: Update, _context: CallbackContext):
         "*Финальное голосование:* В конце года (29-30 декабря) можно запустить взвешенное голосование для распределения пропущенных дней. "
         "Финальное голосование с кастомными кнопками (поддерживает любое количество участников). Результаты скрыты до завершения. "
         "Вес каждого голоса равен количеству побед игрока в текущем году. "
-        "Голосование доступно только если пропущено менее 10 дней. Завершить голосование может только папка: */pidorfinalclose*\n"
+        "Голосование доступно только если пропущено менее 10 дней. Завершить голосование могут администраторы чата (список можно ограничить через переменную окружения ALLOWED\\_FINAL\\_VOTING\\_CLOSERS): */pidorfinalclose*\n"
         "\n"
         "Сброс розыгрыша происходит каждый день в 12 часов ночи по UTC+2 (примерно в два часа ночи по Москве).\n\n"
         "Поддержать бота можно по [ссылке](https://github.com/vodka-429/pidor-bot-2/):)",
@@ -840,9 +839,12 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
         logger.warning(f"Non-admin user {update.effective_user.id} tried to close voting")
         return
 
-    # Проверяем, что команду вызвал пользователь с username 'kanst9'
+    # Проверяем, что команду вызвал разрешенный пользователь
+    allowed_closers = get_allowed_final_voting_closers()
     user_username = update.effective_user.username
-    if user_username != ALLOWED_FINAL_VOTING_CLOSER_USERNAME:
+
+    # Если список разрешенных пользователей не пуст, проверяем username
+    if allowed_closers and user_username not in allowed_closers:
         await update.effective_chat.send_message(
             FINAL_VOTING_CLOSE_ERROR_NOT_AUTHORIZED,
             parse_mode="MarkdownV2"

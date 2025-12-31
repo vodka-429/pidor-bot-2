@@ -677,12 +677,15 @@ def test_calculate_max_votes_edge_cases():
 @pytest.mark.unit
 def test_calculate_voting_params_test_chat_limit():
     """Test calculate_voting_params with test chat limit."""
-    from bot.handlers.game.voting_helpers import TEST_CHAT_ID
+    from unittest.mock import patch
 
-    # Test with 15 missed days in test chat - should limit to 10
-    effective_days, max_votes = calculate_voting_params(15, TEST_CHAT_ID)
-    assert effective_days == 10
-    assert max_votes == 5  # 10 days (even) → 10/2 = 5 votes
+    TEST_CHAT_ID = -4608252738
+
+    with patch('bot.handlers.game.voting_helpers.get_test_chat_id', return_value=TEST_CHAT_ID):
+        # Test with 15 missed days in test chat - should limit to 10
+        effective_days, max_votes = calculate_voting_params(15, TEST_CHAT_ID)
+        assert effective_days == 10
+        assert max_votes == 5  # 10 days (even) → 10/2 = 5 votes
 
     # Test with regular chat - no limit, 15 is composite (3*5)
     effective_days, max_votes = calculate_voting_params(15, -123456789)
@@ -719,32 +722,38 @@ def test_calculate_voting_params_regular_chat():
 @pytest.mark.unit
 def test_calculate_voting_params_test_chat_under_limit():
     """Test calculate_voting_params with test chat when under limit."""
-    from bot.handlers.game.voting_helpers import TEST_CHAT_ID
+    from unittest.mock import patch
 
-    # Test with 5 missed days in test chat - under limit, no change
-    effective_days, max_votes = calculate_voting_params(5, TEST_CHAT_ID)
-    assert effective_days == 5
-    assert max_votes == 1  # 5 is prime → 1 vote
+    TEST_CHAT_ID = -4608252738
 
-    # Test with exactly 10 days - at limit, no change
-    effective_days, max_votes = calculate_voting_params(10, TEST_CHAT_ID)
-    assert effective_days == 10
-    assert max_votes == 5  # 10/2 = 5
+    with patch('bot.handlers.game.voting_helpers.get_test_chat_id', return_value=TEST_CHAT_ID):
+        # Test with 5 missed days in test chat - under limit, no change
+        effective_days, max_votes = calculate_voting_params(5, TEST_CHAT_ID)
+        assert effective_days == 5
+        assert max_votes == 1  # 5 is prime → 1 vote
+
+        # Test with exactly 10 days - at limit, no change
+        effective_days, max_votes = calculate_voting_params(10, TEST_CHAT_ID)
+        assert effective_days == 10
+        assert max_votes == 5  # 10/2 = 5
 
 
 @pytest.mark.unit
 def test_calculate_max_votes_backward_compatibility():
     """Test calculate_max_votes backward compatibility wrapper."""
-    from bot.handlers.game.voting_helpers import TEST_CHAT_ID
+    from unittest.mock import patch
+
+    TEST_CHAT_ID = -4608252738
 
     # Test that calculate_max_votes returns only max_votes
     max_votes = calculate_max_votes(10)
     assert max_votes == 5
     assert isinstance(max_votes, int)
 
-    # Test with test chat - should apply limit
-    max_votes = calculate_max_votes(15, TEST_CHAT_ID)
-    assert max_votes == 5  # Limited to 10 days → 10/2 = 5
+    with patch('bot.handlers.game.voting_helpers.get_test_chat_id', return_value=TEST_CHAT_ID):
+        # Test with test chat - should apply limit
+        max_votes = calculate_max_votes(15, TEST_CHAT_ID)
+        assert max_votes == 5  # Limited to 10 days → 10/2 = 5
 
     # Test with regular chat - no limit, 15 is composite (3*5)
     max_votes = calculate_max_votes(15, -123456789)
@@ -948,6 +957,8 @@ def test_finalize_voting_weighted_division_float():
 @pytest.mark.unit
 def test_duplicate_candidates_for_test_chat():
     """Test duplicate_candidates_for_test duplicates candidates for test chat."""
+    from unittest.mock import patch
+
     # Create mock candidates
     candidate1 = Mock(spec=TGUser)
     candidate1.id = 1
@@ -965,22 +976,24 @@ def test_duplicate_candidates_for_test_chat():
 
     # Test with test chat ID
     TEST_CHAT_ID = -4608252738
-    result = duplicate_candidates_for_test(candidates, TEST_CHAT_ID, target_count=5)
 
-    # Should have 5 candidates total
-    assert len(result) == 5
+    with patch('bot.handlers.game.voting_helpers.get_test_chat_id', return_value=TEST_CHAT_ID):
+        result = duplicate_candidates_for_test(candidates, TEST_CHAT_ID, target_count=5)
 
-    # First 2 should be originals
-    assert result[0].first_name == "Alice"
-    assert result[1].first_name == "Bob"
+        # Should have 5 candidates total
+        assert len(result) == 5
 
-    # Next should be duplicates with modified names but same IDs
-    assert result[2].first_name == "Alice (копия 2)"
-    assert result[2].id == 1  # Same ID as original
-    assert result[3].first_name == "Bob (копия 2)"
-    assert result[3].id == 2  # Same ID as original
-    assert result[4].first_name == "Alice (копия 3)"
-    assert result[4].id == 1  # Same ID as original
+        # First 2 should be originals
+        assert result[0].first_name == "Alice"
+        assert result[1].first_name == "Bob"
+
+        # Next should be duplicates with modified names but same IDs
+        assert result[2].first_name == "Alice (копия 2)"
+        assert result[2].id == 1  # Same ID as original
+        assert result[3].first_name == "Bob (копия 2)"
+        assert result[3].id == 2  # Same ID as original
+        assert result[4].first_name == "Alice (копия 3)"
+        assert result[4].id == 1  # Same ID as original
 
 
 @pytest.mark.unit
@@ -1007,6 +1020,8 @@ def test_duplicate_candidates_regular_chat():
 @pytest.mark.unit
 def test_duplicate_candidates_exact_count():
     """Test duplicate_candidates_for_test with exact target count."""
+    from unittest.mock import patch
+
     # Create mock candidates
     candidates = []
     for i in range(1, 4):  # 3 candidates
@@ -1019,16 +1034,20 @@ def test_duplicate_candidates_exact_count():
 
     # Test with test chat ID and target count of 3 (exact match)
     TEST_CHAT_ID = -4608252738
-    result = duplicate_candidates_for_test(candidates, TEST_CHAT_ID, target_count=3)
 
-    # Should return original candidates unchanged (already at target count)
-    assert len(result) == 3
-    assert all(result[i] is candidates[i] for i in range(3))
+    with patch('bot.handlers.game.voting_helpers.get_test_chat_id', return_value=TEST_CHAT_ID):
+        result = duplicate_candidates_for_test(candidates, TEST_CHAT_ID, target_count=3)
+
+        # Should return original candidates unchanged (already at target count)
+        assert len(result) == 3
+        assert all(result[i] is candidates[i] for i in range(3))
 
 
 @pytest.mark.unit
 def test_duplicate_candidates_vote_counting():
     """Test that votes for duplicates count towards original candidate."""
+    from unittest.mock import patch
+
     # This is tested implicitly by checking that duplicate.id == original.id
     # The actual vote counting logic is in finalize_voting and handle_vote_callback
     # which use candidate.id for vote tracking
@@ -1044,16 +1063,18 @@ def test_duplicate_candidates_vote_counting():
 
     # Test duplication
     TEST_CHAT_ID = -4608252738
-    result = duplicate_candidates_for_test(candidates, TEST_CHAT_ID, target_count=3)
 
-    # Verify all duplicates have same ID as original
-    assert len(result) == 3
-    assert all(candidate.id == 1 for candidate in result)
+    with patch('bot.handlers.game.voting_helpers.get_test_chat_id', return_value=TEST_CHAT_ID):
+        result = duplicate_candidates_for_test(candidates, TEST_CHAT_ID, target_count=3)
 
-    # Verify names are different for duplicates
-    assert result[0].first_name == "Alice"
-    assert result[1].first_name == "Alice (копия 2)"
-    assert result[2].first_name == "Alice (копия 3)"
+        # Verify all duplicates have same ID as original
+        assert len(result) == 3
+        assert all(candidate.id == 1 for candidate in result)
+
+        # Verify names are different for duplicates
+        assert result[0].first_name == "Alice"
+        assert result[1].first_name == "Alice (копия 2)"
+        assert result[2].first_name == "Alice (копия 3)"
 
 
 @pytest.mark.unit
