@@ -209,7 +209,11 @@ async def test_pidorfinal_cmd_test_chat_bypass_date_check(mock_update, mock_cont
     mock_context.game = mock_game
 
     # Mock chat_id to be test chat
-    mock_update.effective_chat.id = -4608252738
+    TEST_CHAT_ID = -4608252738
+    mock_update.effective_chat.id = TEST_CHAT_ID
+
+    # Mock is_test_chat to return True for this chat
+    mocker.patch('bot.handlers.game.commands.is_test_chat', return_value=True)
 
     # Mock the query chain for Game
     mock_game_query = MagicMock()
@@ -270,7 +274,12 @@ async def test_pidorfinal_cmd_test_chat_bypass_missed_days_check(mock_update, mo
     mock_context.game = mock_game
 
     # Mock chat_id to be test chat
-    mock_update.effective_chat.id = -4608252738
+    TEST_CHAT_ID = -4608252738
+    mock_update.effective_chat.id = TEST_CHAT_ID
+
+    # Mock is_test_chat to return True for this chat in both modules
+    mocker.patch('bot.handlers.game.commands.is_test_chat', return_value=True)
+    mocker.patch('bot.handlers.game.voting_helpers.is_test_chat', return_value=True)
 
     # Mock the query chain for Game
     mock_game_query = MagicMock()
@@ -614,7 +623,10 @@ async def test_pidorfinalclose_cmd_success(mock_update, mock_context, mock_game,
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
-    mock_update.effective_user.username = 'kanst9'
+    mock_update.effective_user.username = 'test_admin'
+
+    # Mock get_allowed_final_voting_closers to return test_admin
+    mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
     # Mock current_datetime - 25 hours after voting started (more than 24 hours)
     mock_dt = datetime(2024, 12, 30, 13, 0, 0)
@@ -681,7 +693,10 @@ async def test_pidorfinalclose_cmd_not_admin(mock_update, mock_context, mock_gam
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
-    mock_update.effective_user.username = 'kanst9'
+    mock_update.effective_user.username = 'test_admin'
+
+    # Mock get_allowed_final_voting_closers to return test_admin
+    mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
     # Mock current_datetime
     mock_dt = MagicMock()
@@ -766,8 +781,11 @@ async def test_pidorfinalclose_cmd_too_early(mock_update, mock_context, mock_gam
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
-    mock_update.effective_user.username = 'kanst9'
+    mock_update.effective_user.username = 'test_admin'
     mock_update.effective_chat.id = -123456789  # Regular chat (not test chat)
+
+    # Mock get_allowed_final_voting_closers to return test_admin
+    mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
     # Mock current_datetime - only 12 hours after voting started (less than 24 hours)
     mock_dt = datetime(2024, 12, 30, 0, 0, 0)
@@ -801,8 +819,15 @@ async def test_pidorfinalclose_cmd_test_chat_bypass_time_check(mock_update, mock
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
-    mock_update.effective_user.username = 'kanst9'
-    mock_update.effective_chat.id = -4608252738  # Test chat
+    mock_update.effective_user.username = 'test_admin'
+    TEST_CHAT_ID = -4608252738
+    mock_update.effective_chat.id = TEST_CHAT_ID  # Test chat
+
+    # Mock is_test_chat to return True for this chat
+    mocker.patch('bot.handlers.game.commands.is_test_chat', return_value=True)
+
+    # Mock get_allowed_final_voting_closers to return test_admin
+    mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
     # Mock current_datetime - only 1 hour after voting started (less than 24 hours)
     mock_dt = datetime(2024, 12, 29, 13, 0, 0)
@@ -991,7 +1016,10 @@ async def test_final_voting_results_escaping(mock_update, mock_context, mock_gam
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
-    mock_update.effective_user.username = 'kanst9'
+    mock_update.effective_user.username = 'test_admin'
+
+    # Mock get_allowed_final_voting_closers to return test_admin
+    mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
     # Mock current_datetime - 25 hours after voting started (more than 24 hours)
     mock_dt = datetime(2024, 12, 30, 13, 0, 0)
@@ -1357,7 +1385,10 @@ async def test_pidorfinalclose_escapes_special_chars(mock_update, mock_context, 
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
-    mock_update.effective_user.username = 'kanst9'
+    mock_update.effective_user.username = 'test_admin'
+
+    # Mock get_allowed_final_voting_closers to return test_admin
+    mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
     # Mock current_datetime - 25 hours after voting started (more than 24 hours)
     mock_dt = datetime(2024, 12, 30, 13, 0, 0)
@@ -1504,8 +1535,11 @@ async def test_error_messages_escape_correctly(mock_update, mock_context, mock_g
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
-    mock_update.effective_user.username = 'kanst9'
+    mock_update.effective_user.username = 'test_admin'
     mock_update.effective_chat.id = -123456789  # Regular chat (not test chat)
+
+    # Mock get_allowed_final_voting_closers to return test_admin
+    mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
     # Mock current_datetime - only 12.5 hours after voting started (less than 24 hours)
     mock_dt = datetime(2024, 12, 29, 23, 30, 0)  # 23:30
@@ -1550,7 +1584,10 @@ async def test_pidorfinalclose_cmd_wrong_username(mock_update, mock_context, moc
     # Setup
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
-    mock_update.effective_user.username = 'wrong_user'  # Not 'kanst9'
+    mock_update.effective_user.username = 'wrong_user'  # Not in allowed list
+
+    # Mock get_allowed_final_voting_closers to return test_admin (not wrong_user)
+    mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
     # Mock current_datetime
     mock_dt = MagicMock()
@@ -1585,6 +1622,9 @@ async def test_pidorfinalclose_cmd_no_username(mock_update, mock_context, mock_g
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
     mock_update.effective_user.username = None  # No username
+
+    # Mock get_allowed_final_voting_closers to return test_admin
+    mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
     # Mock current_datetime
     mock_dt = MagicMock()

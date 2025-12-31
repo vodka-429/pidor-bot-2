@@ -23,7 +23,7 @@ def escape_markdown2_safe(text: str):
     """
     if not text:
         return text
-    
+
     # Если текст уже содержит экранированные символы, используем обычное экранирование
     # В противном случае, это может быть признаком частичного экранирования
     return escape_markdown(text, version=2)
@@ -52,7 +52,7 @@ def escape_word(word: str):
     """
     if not word:
         return word
-    
+
     return escape_markdown2(word)
 
 
@@ -66,5 +66,35 @@ def chat_whitelist():
     env = os.environ.get('CHAT_WHITELIST', '')
     if env:
         return [int(x) for x in env.split(',')]
+    else:
+        return []
+
+
+def get_test_chat_id():
+    """
+    Получает ID тестового чата из переменной окружения TEST_CHAT_ID.
+
+    Returns:
+        Optional[int]: ID тестового чата или None, если не задано
+    """
+    env = os.environ.get('TEST_CHAT_ID', '')
+    if env:
+        try:
+            return int(env)
+        except ValueError:
+            return None
+    return None
+
+
+def get_allowed_final_voting_closers():
+    """
+    Получает список username пользователей, которые могут закрывать финальное голосование.
+
+    Returns:
+        List[str]: Список username или пустой список, если не задано
+    """
+    env = os.environ.get('ALLOWED_FINAL_VOTING_CLOSERS', '')
+    if env:
+        return [x.strip() for x in env.split(',') if x.strip()]
     else:
         return []
