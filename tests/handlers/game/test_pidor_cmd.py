@@ -128,11 +128,11 @@ async def test_pidor_cmd_new_game_result(mock_update, mock_context, mock_game, s
     # Since there are no previous games, missed_days = current_day - 1 = 167 - 1 = 166
     assert mock_update.effective_chat.send_message.call_count == 5
 
-    # Verify that game result was appended
-    mock_game.results.append.assert_called_once()
+    # Verify that game result was appended (GameResult + PidorCoinTransaction)
+    assert mock_game.results.append.call_count == 1  # Only GameResult is appended to game.results
 
-    # Verify that db session was committed
-    mock_context.db_session.commit.assert_called_once()
+    # Verify that db session was committed twice (game result + coins)
+    assert mock_context.db_session.commit.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -409,10 +409,10 @@ async def test_run_tiebreaker_two_leaders(mock_update, mock_context, mock_game, 
     assert mock_update.effective_chat.send_message.call_count == 2
 
     # Verify: GameResult was created
-    mock_game.results.append.assert_called_once()
+    assert mock_game.results.append.call_count == 1  # Only GameResult is appended to game.results
 
-    # Verify: DB session was committed
-    mock_context.db_session.commit.assert_called_once()
+    # Verify: DB session was committed once (only game result in tie-breaker, no coins)
+    assert mock_context.db_session.commit.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -569,7 +569,7 @@ async def test_pidor_cmd_last_day_triggers_tiebreaker(mock_update, mock_context,
     assert mock_update.effective_chat.send_message.call_count == 8
 
     # Verify: Two GameResults were created (main draw + tie-breaker)
-    assert mock_game.results.append.call_count == 2
+    assert mock_game.results.append.call_count == 2  # GameResults only, coins are added separately
 
 
 @pytest.mark.asyncio
@@ -632,7 +632,7 @@ async def test_pidor_cmd_last_day_single_leader_no_tiebreaker(mock_update, mock_
     assert mock_update.effective_chat.send_message.call_count == 6
 
     # Verify: Only one GameResult was created (main draw only)
-    assert mock_game.results.append.call_count == 1
+    assert mock_game.results.append.call_count == 1  # GameResults only, coins are added separately
 
 
 @pytest.mark.asyncio
@@ -687,4 +687,102 @@ async def test_pidor_cmd_not_last_day_no_tiebreaker(mock_update, mock_context, m
     assert mock_update.effective_chat.send_message.call_count == 5
 
     # Verify: Only one GameResult was created (main draw only)
-    assert mock_game.results.append.call_count == 1
+    assert mock_game.results.append.call_count == 1  # GameResults only, coins are added separately
+
+
+# Tests for coin integration in pidor_cmd
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_pidor_cmd_awards_coin_to_winner(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test that winner gets coins when new game result is created."""
+    # Setup: game with enough players and no result for today
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+
+    # Mock the query chain
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+
+    # Mock missed days check
+    mock_missed_query = MagicMock()
+    mock_missed_query.filter_by.return_value = mock_missed_query
+    mock_missed_query.order_by.return_value = mock_missed_query
+    mock_missed_query.first.return_value = None
+
+    mock_result_query = MagicMock()
+    mock_result_query.filter_by.return_value = mock_result_query
+    mock_result_query.one_or_none.return_value = None
+
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+
+    # Mock random.choice
+    mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
+        sample_players[0],  # winner
+        "Stage 1",
+        "Stage 2",
+        "Stage 3",
+        "Stage 4: {username}",
+    ])
+
+    # Mock asyncio.sleep
+    mocker.patch('bot.handlers.game.commands.asyncio.sleep')
+
+    # Mock current_datetime
+    mock_dt = MagicMock()
+    mock_dt.year = 2024
+    mock_dt.month = 6
+    mock_dt.day = 15
+    mock_dt.timetuple.return_value.tm_yday = 167
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+
+    # Execute
+    await pidor_cmd(mock_update, mock_context)
+
+    # Verify: Two commits were made (game result + coins)
+    # add_coins calls commit internally, so total should be 2
+    assert mock_context.db_session.commit.call_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_pidor_cmd_no_coin_for_existing_result(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test that coins are not awarded when game result already exists for today."""
+    # Setup: game with enough players and existing result for today
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+
+    # Mock existing result for today
+    mock_result = MagicMock()
+    mock_result.winner = sample_players[0]
+    mock_result.day = 167
+
+    # Mock the query chain
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+
+    # Mock missed days check
+    mock_missed_query = MagicMock()
+    mock_missed_query.filter_by.return_value = mock_missed_query
+    mock_missed_query.order_by.return_value = mock_missed_query
+    mock_missed_query.first.return_value = mock_result
+
+    mock_result_query = MagicMock()
+    mock_result_query.filter_by.return_value = mock_result_query
+    mock_result_query.one_or_none.return_value = mock_result
+
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+
+    # Mock add_coins to ensure it's not called
+    mock_add_coins = mocker.patch('bot.handlers.game.commands.add_coins')
+
+    # Execute
+    await pidor_cmd(mock_update, mock_context)
+
+    # Verify: add_coins was NOT called (existing result, no new coins)
+    mock_add_coins.assert_not_called()
+
+    # Verify: No commits were made (only queries)
+    mock_context.db_session.commit.assert_not_called()

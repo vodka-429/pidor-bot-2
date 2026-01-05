@@ -22,8 +22,10 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
     CURRENT_DAY_GAME_RESULT, \
     YEAR_RESULTS_MSG, YEAR_RESULTS_ANNOUNCEMENT, REGISTRATION_MANY_SUCCESS, \
     ERROR_ALREADY_REGISTERED_MANY, VOTING_ENDED_RESPONSE, \
-    FINAL_VOTING_CLOSE_ERROR_NOT_AUTHORIZED
+    FINAL_VOTING_CLOSE_ERROR_NOT_AUTHORIZED, COIN_INFO, \
+    COINS_PERSONAL, COINS_CURRENT_YEAR, COINS_ALL_TIME, COINS_LIST_ITEM, COIN_EARNED
 from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders, is_test_chat
+from bot.handlers.game.coin_service import add_coins, get_balance, get_leaderboard, get_leaderboard_by_year
 from bot.utils import escape_markdown2, escape_word, format_number, ECallbackContext, get_allowed_final_voting_closers
 
 # Получаем логгер для этого модуля
@@ -32,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 GAME_RESULT_TIME_DELAY = 2
 MAX_MISSED_DAYS_FOR_FINAL_VOTING = 10  # Максимальное количество пропущенных дней для финального голосования
+COINS_PER_WIN = 4  # Количество койнов за победу в розыгрыше
 
 MOSCOW_TZ = ZoneInfo('Europe/Moscow')
 
@@ -201,7 +204,12 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         logger.debug("Creating new game result")
         winner: TGUser = random.choice(players)
         context.game.results.append(GameResult(game_id=context.game.id, year=cur_year, day=cur_day, winner=winner))
-        logger.debug("Committing game result to DB")
+
+        # Начислить койны победителю
+        add_coins(context.db_session, context.game.id, winner.id, COINS_PER_WIN, cur_year, "pidor_win")
+        logger.debug(f"Awarded {COINS_PER_WIN} coins to winner {winner.id}")
+
+        logger.debug("Committing game result and coins to DB")
         context.db_session.commit()
 
         if last_day:
@@ -218,8 +226,13 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         await update.effective_chat.send_message(random.choice(stage3.phrases))
         await asyncio.sleep(GAME_RESULT_TIME_DELAY)
         logger.debug("Sending stage 4 message")
-        await update.effective_chat.send_message(random.choice(stage4.phrases).format(
-            username=winner.full_username(mention=True)))
+        # Получить баланс койнов победителя
+        balance = get_balance(context.db_session, context.game.id, winner.id)
+        stage4_message = random.choice(stage4.phrases).format(
+            username=winner.full_username(mention=True))
+        # Добавить информацию о койнах
+        stage4_message += COIN_INFO.format(amount=COINS_PER_WIN, balance=balance + COINS_PER_WIN)
+        await update.effective_chat.send_message(stage4_message, parse_mode="HTML")
 
         # Проверка на tie-breaker в последний день года
         if last_day:
@@ -953,3 +966,78 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     # Формируем строку с именами победителей для логирования
     winners_log = ', '.join([winner.full_username() for _, winner in winners])
     logger.info(f"Final voting manually closed for game {context.game.id}, year {cur_year}, winners: {winners_log}")
+
+
+def build_coins_table(player_list: list[tuple[TGUser, int]]) -> str:
+    """Построить таблицу для отображения топа по койнам"""
+    result = []
+    for number, (tg_user, amount) in enumerate(player_list, 1):
+        result.append(COINS_LIST_ITEM.format(number=number,
+                                             username=escape_markdown2(tg_user.full_username()),
+                                             amount=format_number(amount)))
+    return ''.join(result)
+
+
+@ensure_game
+async def pidorcoinsme_cmd(update: Update, context: GECallbackContext):
+    """Показать личный баланс пидор-койнов"""
+    logger.info(f"pidorcoinsme_cmd started for chat {update.effective_chat.id}")
+
+    # Получаем баланс текущего пользователя
+    balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+
+    await update.effective_chat.send_message(
+        COINS_PERSONAL.format(
+            username=escape_markdown2(context.tg_user.full_username()),
+            amount=format_number(balance)
+        ),
+        parse_mode="MarkdownV2"
+    )
+    logger.info(f"Showed coin balance for user {context.tg_user.id}: {balance} coins")
+
+
+@ensure_game
+async def pidorcoinsstats_cmd(update: Update, context: GECallbackContext):
+    """Показать топ по пидор-койнам за текущий год"""
+    logger.info(f"pidorcoinsstats_cmd started for chat {update.effective_chat.id}")
+
+    # Получаем текущий год
+    cur_year = current_datetime().year
+
+    # Получаем топ по койнам за текущий год
+    leaderboard = get_leaderboard_by_year(context.db_session, context.game.id, cur_year, limit=50)
+
+    if len(leaderboard) == 0:
+        await update.effective_chat.send_message(
+            "📊 В этом году ещё нет пидор-койнов\\!",
+            parse_mode="MarkdownV2"
+        )
+        return
+
+    player_table = build_coins_table(leaderboard)
+    answer = COINS_CURRENT_YEAR.format(player_stats=player_table,
+                                       player_count=len(context.game.players))
+    await update.effective_chat.send_message(answer, parse_mode="MarkdownV2")
+    logger.info(f"Showed coin stats for year {cur_year}, {len(leaderboard)} players")
+
+
+@ensure_game
+async def pidorcoinsall_cmd(update: Update, context: GECallbackContext):
+    """Показать топ по пидор-койнам за всё время"""
+    logger.info(f"pidorcoinsall_cmd started for chat {update.effective_chat.id}")
+
+    # Получаем топ по койнам за всё время
+    leaderboard = get_leaderboard(context.db_session, context.game.id, limit=50)
+
+    if len(leaderboard) == 0:
+        await update.effective_chat.send_message(
+            "📊 Пока нет пидор-койнов\\!",
+            parse_mode="MarkdownV2"
+        )
+        return
+
+    player_table = build_coins_table(leaderboard)
+    answer = COINS_ALL_TIME.format(player_stats=player_table,
+                                   player_count=len(context.game.players))
+    await update.effective_chat.send_message(answer, parse_mode="MarkdownV2")
+    logger.info(f"Showed coin stats for all time, {len(leaderboard)} players")
