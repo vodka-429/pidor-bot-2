@@ -143,6 +143,7 @@ async def run_tiebreaker(update: Update, context: GECallbackContext, leaders: Li
     context.game.results.append(
         GameResult(game_id=context.game.id, year=year, day=tiebreaker_day, winner=winner)
     )
+    logger.debug("Committing tie-breaker result to DB")
     context.db_session.commit()
     logger.info(f"Created tie-breaker GameResult for day {tiebreaker_day}")
 
@@ -211,6 +212,7 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
 
         logger.debug("Committing game result and coins to DB")
         context.db_session.commit()
+        logger.debug("Game result and coins committed to DB")
 
         if last_day:
             logger.debug("Sending year results announcement")
@@ -1009,7 +1011,7 @@ async def pidorcoinsstats_cmd(update: Update, context: GECallbackContext):
 
     if len(leaderboard) == 0:
         await update.effective_chat.send_message(
-            "📊 В этом году ещё нет пидор-койнов\\!",
+            "📊 В этом году ещё нет пидор\\-койнов\\!",
             parse_mode="MarkdownV2"
         )
         return

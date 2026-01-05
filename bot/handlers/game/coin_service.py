@@ -66,7 +66,9 @@ def get_balance(db_session, game_id: int, user_id: int) -> int:
         )
 
     result = db_session.exec(stmt).first()
-    return result[0] if result and result[0] is not None else 0
+    logger.debug(f"get_balance result: {result}, type: {type(result)}")
+    # func.sum() возвращает скалярное значение (int), а не кортеж
+    return result if result is not None else 0
 
 
 def get_leaderboard(db_session, game_id: int, limit: int = 50) -> List[Tuple[TGUser, int]]:
