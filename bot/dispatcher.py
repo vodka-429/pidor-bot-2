@@ -15,7 +15,7 @@ from bot.handlers.game.commands import pidor_cmd, pidorules_cmd, pidoreg_cmd, \
     pidorunreg_cmd, pidorstats_cmd, pidorall_cmd, pidorme_cmd, \
     pidoryearresults_cmd, pidoregmany_cmd, pidormissed_cmd, pidorfinal_cmd, \
     pidorfinalstatus_cmd, handle_vote_callback, pidorfinalclose_cmd, \
-    pidorcoinsme_cmd, pidorcoinsstats_cmd, pidorcoinsall_cmd
+    pidorcoinsme_cmd, pidorcoinsstats_cmd
 from bot.handlers.kvstore.commands import get_cmd, set_cmd, del_cmd, list_cmd
 from bot.handlers.meme.commands import meme_cmd, memeru_cmd, \
     meme_refresh_callback, memeru_refresh_callback, meme_save_callback, \
@@ -92,7 +92,6 @@ def init_dispatcher(application: Application, db_engine):
     # PidorCoin handlers
     application.add_handler(CommandHandler('pidorcoinsme', pidorcoinsme_cmd, filters=ne))
     application.add_handler(CommandHandler('pidorcoinsstats', pidorcoinsstats_cmd, filters=ne))
-    application.add_handler(CommandHandler('pidorcoinsall', pidorcoinsall_cmd, filters=ne))
 
     # Регистрируем CallbackQueryHandler для голосования
     # В python-telegram-bot v21+ CallbackQueryHandler не поддерживает filters параметр

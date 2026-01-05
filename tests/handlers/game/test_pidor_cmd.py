@@ -131,8 +131,8 @@ async def test_pidor_cmd_new_game_result(mock_update, mock_context, mock_game, s
     # Verify that game result was appended (GameResult + PidorCoinTransaction)
     assert mock_game.results.append.call_count == 1  # Only GameResult is appended to game.results
 
-    # Verify that db session was committed twice (game result + coins)
-    assert mock_context.db_session.commit.call_count == 2
+    # Verify that db session was committed once (all changes in one transaction)
+    assert mock_context.db_session.commit.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -694,11 +694,16 @@ async def test_pidor_cmd_not_last_day_no_tiebreaker(mock_update, mock_context, m
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_pidor_cmd_awards_coin_to_winner(mock_update, mock_context, mock_game, sample_players, mocker):
-    """Test that winner gets coins when new game result is created."""
+async def test_pidor_cmd_awards_coins_to_winner_and_executor(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test that winner and command executor get coins when new game result is created."""
     # Setup: game with enough players and no result for today
     mock_game.players = sample_players
     mock_context.game = mock_game
+
+    # Setup usernames for winner and executor (different users to avoid self-pidor case)
+    sample_players[0].username = "winner_user"
+    mock_context.tg_user.id = 999  # Different ID from winner
+    mock_update.effective_user.username = "executor_user"
 
     # Mock the query chain
     mock_game_query = MagicMock()
@@ -737,12 +742,55 @@ async def test_pidor_cmd_awards_coin_to_winner(mock_update, mock_context, mock_g
     mock_dt.timetuple.return_value.tm_yday = 167
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
 
+    # Mock add_coins to track calls
+    mock_add_coins = mocker.patch('bot.handlers.game.commands.add_coins')
+
+    # Mock get_balance to return some balance
+    mock_get_balance = mocker.patch('bot.handlers.game.commands.get_balance', side_effect=[15, 20])  # winner_balance, executor_balance
+
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
-    # Verify: Two commits were made (game result + coins)
-    # add_coins calls commit internally, so total should be 2
-    assert mock_context.db_session.commit.call_count == 2
+    # Verify: add_coins was called twice (winner + executor)
+    assert mock_add_coins.call_count == 2
+
+    # Verify: First call - coins for winner
+    winner_call = mock_add_coins.call_args_list[0]
+    assert winner_call[0][0] == mock_context.db_session  # db_session
+    assert winner_call[0][1] == mock_game.id  # game_id
+    assert winner_call[0][2] == sample_players[0].id  # winner_id
+    assert winner_call[0][3] == 4  # COINS_PER_WIN
+    assert winner_call[0][4] == 2024  # year
+    assert winner_call[0][5] == "pidor_win"  # reason
+    assert winner_call[1]['auto_commit'] == False  # auto_commit=False
+
+    # Verify: Second call - coins for executor
+    executor_call = mock_add_coins.call_args_list[1]
+    assert executor_call[0][0] == mock_context.db_session  # db_session
+    assert executor_call[0][1] == mock_game.id  # game_id
+    assert executor_call[0][2] == mock_context.tg_user.id  # executor_id
+    assert executor_call[0][3] == 1  # COINS_PER_COMMAND
+    assert executor_call[0][4] == 2024  # year
+    assert executor_call[0][5] == "command_execution"  # reason
+    assert executor_call[1]['auto_commit'] == False  # auto_commit=False
+
+    # Verify: Only one commit was made (all changes in one transaction)
+    assert mock_context.db_session.commit.call_count == 1
+
+    # Verify: Stage 4 message includes usernames in coin info
+    stage4_call = None
+    for call in mock_update.effective_chat.send_message.call_args_list:
+        call_str = str(call)
+        if "Stage 4:" in call_str:
+            stage4_call = call
+            break
+
+    assert stage4_call is not None
+    call_str = str(stage4_call)
+    assert "winner_user" in call_str
+    assert "executor_user" in call_str
+    assert "+4" in call_str  # COINS_PER_WIN
+    assert "+1" in call_str  # COINS_PER_COMMAND
 
 
 @pytest.mark.asyncio
@@ -786,3 +834,90 @@ async def test_pidor_cmd_no_coin_for_existing_result(mock_update, mock_context, 
 
     # Verify: No commits were made (only queries)
     mock_context.db_session.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_pidor_cmd_self_pidor_case(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test that self-pidor case awards special coins and shows special message."""
+    # Setup: game with enough players and executor is the same as winner
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+
+    # Make executor the same as first player (winner)
+    mock_context.tg_user.id = sample_players[0].id
+
+    # Mock the query chain
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+
+    # Mock missed days check
+    mock_missed_query = MagicMock()
+    mock_missed_query.filter_by.return_value = mock_missed_query
+    mock_missed_query.order_by.return_value = mock_missed_query
+    mock_missed_query.first.return_value = None
+
+    mock_result_query = MagicMock()
+    mock_result_query.filter_by.return_value = mock_result_query
+    mock_result_query.one_or_none.return_value = None
+
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+
+    # Mock random.choice to return first player (same as executor)
+    mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
+        sample_players[0],  # winner (same as executor)
+        "Stage 1",
+        "Stage 2",
+        "Stage 3",
+        "Stage 4: {username}",
+    ])
+
+    # Mock asyncio.sleep
+    mocker.patch('bot.handlers.game.commands.asyncio.sleep')
+
+    # Mock current_datetime
+    mock_dt = MagicMock()
+    mock_dt.year = 2024
+    mock_dt.month = 6
+    mock_dt.day = 15
+    mock_dt.timetuple.return_value.tm_yday = 167
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+
+    # Mock add_coins to track calls
+    mock_add_coins = mocker.patch('bot.handlers.game.commands.add_coins')
+
+    # Mock get_balance to return some balance
+    mock_get_balance = mocker.patch('bot.handlers.game.commands.get_balance', return_value=10)
+
+    # Execute
+    await pidor_cmd(mock_update, mock_context)
+
+    # Verify: add_coins was called only once (special self-pidor coins)
+    assert mock_add_coins.call_count == 1
+
+    # Verify: Special self-pidor coins were awarded (COINS_PER_WIN * SELF_PIDOR_MULTIPLIER = 4 * 2 = 8)
+    self_pidor_call = mock_add_coins.call_args_list[0]
+    assert self_pidor_call[0][0] == mock_context.db_session  # db_session
+    assert self_pidor_call[0][1] == mock_game.id  # game_id
+    assert self_pidor_call[0][2] == sample_players[0].id  # winner/executor id
+    assert self_pidor_call[0][3] == 8  # COINS_PER_WIN * SELF_PIDOR_MULTIPLIER
+    assert self_pidor_call[0][4] == 2024  # year
+    assert self_pidor_call[0][5] == "self_pidor_win"  # reason
+    assert self_pidor_call[1]['auto_commit'] == False  # auto_commit=False
+
+    # Verify: Special self-pidor message was included in stage4 message
+    stage4_call = None
+    for call in mock_update.effective_chat.send_message.call_args_list:
+        call_str = str(call)
+        if "Stage 4:" in call_str:
+            stage4_call = call
+            break
+
+    assert stage4_call is not None
+    call_str = str(stage4_call)
+    assert "Сам себе пидор" in call_str
+    assert "+8" in call_str  # Special self-pidor coins amount
+
+    # Verify: Only one commit was made (all changes in one transaction)
+    assert mock_context.db_session.commit.call_count == 1

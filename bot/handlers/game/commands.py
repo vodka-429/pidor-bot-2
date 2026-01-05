@@ -23,7 +23,7 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
     YEAR_RESULTS_MSG, YEAR_RESULTS_ANNOUNCEMENT, REGISTRATION_MANY_SUCCESS, \
     ERROR_ALREADY_REGISTERED_MANY, VOTING_ENDED_RESPONSE, \
     FINAL_VOTING_CLOSE_ERROR_NOT_AUTHORIZED, COIN_INFO, \
-    COINS_PERSONAL, COINS_CURRENT_YEAR, COINS_ALL_TIME, COINS_LIST_ITEM, COIN_EARNED
+    COINS_PERSONAL, COINS_CURRENT_YEAR, COINS_ALL_TIME, COINS_LIST_ITEM, COIN_EARNED, COIN_INFO_SELF_PIDOR
 from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders, is_test_chat
 from bot.handlers.game.coin_service import add_coins, get_balance, get_leaderboard, get_leaderboard_by_year
 from bot.utils import escape_markdown2, escape_word, format_number, ECallbackContext, get_allowed_final_voting_closers
@@ -35,6 +35,8 @@ logger = logging.getLogger(__name__)
 GAME_RESULT_TIME_DELAY = 2
 MAX_MISSED_DAYS_FOR_FINAL_VOTING = 10  # Максимальное количество пропущенных дней для финального голосования
 COINS_PER_WIN = 4  # Количество койнов за победу в розыгрыше
+COINS_PER_COMMAND = 1  # Количество койнов за запуск команды /pidor
+SELF_PIDOR_MULTIPLIER = 2  # Множитель для случая self-pidor
 
 MOSCOW_TZ = ZoneInfo('Europe/Moscow')
 
@@ -143,7 +145,12 @@ async def run_tiebreaker(update: Update, context: GECallbackContext, leaders: Li
     context.game.results.append(
         GameResult(game_id=context.game.id, year=year, day=tiebreaker_day, winner=winner)
     )
-    logger.debug("Committing tie-breaker result to DB")
+
+    # Начислить койны победителю tie-breaker'а (без коммита)
+    add_coins(context.db_session, context.game.id, winner.id, COINS_PER_WIN, year, "tiebreaker_win", auto_commit=False)
+    logger.debug(f"Awarded {COINS_PER_WIN} coins to tie-breaker winner {winner.id}")
+
+    logger.debug("Committing tie-breaker result and coin transaction to DB")
     context.db_session.commit()
     logger.info(f"Created tie-breaker GameResult for day {tiebreaker_day}")
 
@@ -205,13 +212,27 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         logger.debug("Creating new game result")
         winner: TGUser = random.choice(players)
         context.game.results.append(GameResult(game_id=context.game.id, year=cur_year, day=cur_day, winner=winner))
-        logger.debug("Committing game result and coins to DB")
-        context.db_session.commit()
-        logger.debug("Game result and coins committed to DB")
 
-        # Начислить койны победителю
-        add_coins(context.db_session, context.game.id, winner.id, COINS_PER_WIN, cur_year, "pidor_win")
-        logger.debug(f"Awarded {COINS_PER_WIN} coins to winner {winner.id}")
+        # Проверяем, является ли победитель тем же, кто запустил команду
+        is_self_pidor = winner.id == context.tg_user.id
+
+        if is_self_pidor:
+            # Начислить специальные койны с множителем
+            self_pidor_coins = COINS_PER_WIN * SELF_PIDOR_MULTIPLIER
+            add_coins(context.db_session, context.game.id, winner.id, self_pidor_coins, cur_year, "self_pidor_win", auto_commit=False)
+            logger.debug(f"Awarded {self_pidor_coins} coins to self-pidor winner {winner.id}")
+        else:
+            # Начислить койны победителю (без коммита)
+            add_coins(context.db_session, context.game.id, winner.id, COINS_PER_WIN, cur_year, "pidor_win", auto_commit=False)
+            logger.debug(f"Awarded {COINS_PER_WIN} coins to winner {winner.id}")
+
+            # Начислить койны игроку, который запустил команду (без коммита)
+            add_coins(context.db_session, context.game.id, context.tg_user.id, COINS_PER_COMMAND, cur_year, "command_execution", auto_commit=False)
+            logger.debug(f"Awarded {COINS_PER_COMMAND} coin to command executor {context.tg_user.id}")
+
+        # Коммит всех изменений одним запросом
+        context.db_session.commit()
+        logger.debug("Committed game result and all coin transactions")
 
         if last_day:
             logger.debug("Sending year results announcement")
@@ -228,11 +249,25 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         await asyncio.sleep(GAME_RESULT_TIME_DELAY)
         logger.debug("Sending stage 4 message")
         # Получить баланс койнов победителя
-        balance = get_balance(context.db_session, context.game.id, winner.id)
+        winner_balance = get_balance(context.db_session, context.game.id, winner.id)
         stage4_message = random.choice(stage4.phrases).format(
             username=winner.full_username(mention=True))
-        # Добавить информацию о койнах
-        stage4_message += COIN_INFO.format(amount=COINS_PER_WIN, balance=balance)
+
+        # Добавить информацию о койнах в зависимости от ситуации
+        if is_self_pidor:
+            self_pidor_coins = COINS_PER_WIN * SELF_PIDOR_MULTIPLIER
+            stage4_message += COIN_INFO_SELF_PIDOR.format(amount=self_pidor_coins, balance=winner_balance)
+        else:
+            # Получить баланс койнов игрока, который запустил команду
+            executor_balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+            stage4_message += COIN_INFO.format(
+                winner_username=winner.username,
+                amount=COINS_PER_WIN,
+                balance=winner_balance,
+                executor_username=update.effective_user.username,
+                executor_amount=COINS_PER_COMMAND,
+                executor_balance=executor_balance
+            )
         await update.effective_chat.send_message(stage4_message, parse_mode="HTML")
 
         # Проверка на tie-breaker в последний день года
@@ -1022,23 +1057,3 @@ async def pidorcoinsstats_cmd(update: Update, context: GECallbackContext):
     logger.info(f"Showed coin stats for year {cur_year}, {len(leaderboard)} players")
 
 
-@ensure_game
-async def pidorcoinsall_cmd(update: Update, context: GECallbackContext):
-    """Показать топ по пидор-койнам за всё время"""
-    logger.info(f"pidorcoinsall_cmd started for chat {update.effective_chat.id}")
-
-    # Получаем топ по койнам за всё время
-    leaderboard = get_leaderboard(context.db_session, context.game.id, limit=50)
-
-    if len(leaderboard) == 0:
-        await update.effective_chat.send_message(
-            "📊 Пока нет пидор\\-койнов\\!",
-            parse_mode="MarkdownV2"
-        )
-        return
-
-    player_table = build_coins_table(leaderboard)
-    answer = COINS_ALL_TIME.format(player_stats=player_table,
-                                   player_count=len(context.game.players))
-    await update.effective_chat.send_message(answer, parse_mode="MarkdownV2")
-    logger.info(f"Showed coin stats for all time, {len(leaderboard)} players")

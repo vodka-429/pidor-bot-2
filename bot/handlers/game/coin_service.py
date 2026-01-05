@@ -11,7 +11,7 @@ from bot.app.models import PidorCoinTransaction, TGUser
 logger = logging.getLogger(__name__)
 
 
-def add_coins(db_session, game_id: int, user_id: int, amount: int, year: int, reason: str = "pidor_win") -> PidorCoinTransaction:
+def add_coins(db_session, game_id: int, user_id: int, amount: int, year: int, reason: str = "pidor_win", auto_commit: bool = True) -> PidorCoinTransaction:
     """
     Начислить койны пользователю.
 
@@ -22,6 +22,7 @@ def add_coins(db_session, game_id: int, user_id: int, amount: int, year: int, re
         amount: Количество койнов для начисления (положительное число)
         year: Год транзакции
         reason: Причина начисления (по умолчанию "pidor_win")
+        auto_commit: Автоматически коммитить транзакцию (по умолчанию True)
 
     Returns:
         Созданная транзакция PidorCoinTransaction
@@ -39,8 +40,10 @@ def add_coins(db_session, game_id: int, user_id: int, amount: int, year: int, re
     )
 
     db_session.add(transaction)
-    db_session.commit()
-    db_session.refresh(transaction)
+
+    if auto_commit:
+        db_session.commit()
+        db_session.refresh(transaction)
 
     logger.info(f"Added {amount} coins to user {user_id} in game {game_id} for year {year}, reason: {reason}")
 
