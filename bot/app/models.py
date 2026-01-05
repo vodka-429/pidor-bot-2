@@ -26,6 +26,7 @@ class TGUser(SQLModel, table=True):
     games: List['Game'] = Relationship(back_populates="players", link_model=GamePlayer)
     game_results: List['GameResult'] = Relationship(back_populates="winner")
     final_voting_wins: List['FinalVoting'] = Relationship(back_populates="winner")
+    coin_transactions: List['PidorCoinTransaction'] = Relationship(back_populates="user")
 
     created_at: datetime = Field(default=datetime.utcnow(), nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow,
@@ -47,6 +48,7 @@ class Game(SQLModel, table=True):
     players: List[TGUser] = Relationship(back_populates="games", link_model=GamePlayer)
     results: List['GameResult'] = Relationship(back_populates="game")
     final_votings: List['FinalVoting'] = Relationship(back_populates="game")
+    coin_transactions: List['PidorCoinTransaction'] = Relationship(back_populates="game")
 
 
 class GameResult(SQLModel, table=True):
@@ -113,4 +115,21 @@ class KVItem(SQLModel, table=True):
 
     __table_args__ = (
         UniqueConstraint('chat_id', 'key', name='unique_kv_item'),
+    )
+
+
+class PidorCoinTransaction(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    user_id: int = Field(foreign_key="tguser.id", nullable=False)
+    amount: int = Field(nullable=False)
+    year: int = Field(nullable=False)
+    reason: str = Field(nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    game: Game = Relationship(back_populates="coin_transactions")
+    user: TGUser = Relationship(back_populates="coin_transactions")
+
+    __table_args__ = (
+        UniqueConstraint('game_id', 'user_id', 'year', name='idx_game_user_year'),
     )
