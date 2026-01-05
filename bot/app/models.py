@@ -129,7 +129,3 @@ class PidorCoinTransaction(SQLModel, table=True):
 
     game: Game = Relationship(back_populates="coin_transactions")
     user: TGUser = Relationship(back_populates="coin_transactions")
-
-    __table_args__ = (
-        UniqueConstraint('game_id', 'user_id', 'year', name='idx_game_user_year'),
-    )
