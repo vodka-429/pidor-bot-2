@@ -79,9 +79,9 @@ def test_get_balance_sums_all_transactions(mock_db_session):
     user_id = 1
     expected_balance = 7  # 1 + 3 + 3 = 7
 
-    # Mock exec result
+    # Mock exec result - func.sum() возвращает скалярное значение, а не кортеж
     mock_result = MagicMock()
-    mock_result.first.return_value = (expected_balance,)  # Возвращаем кортеж как в реальном запросе
+    mock_result.first.return_value = expected_balance
 
     mock_db_session.exec.return_value = mock_result
 
@@ -122,9 +122,9 @@ def test_get_balance_zero_when_none_sum(mock_db_session):
     game_id = 1
     user_id = 1
 
-    # Mock exec returning None in the first element
+    # Mock exec returning None (func.sum() возвращает None при отсутствии данных)
     mock_result = MagicMock()
-    mock_result.first.return_value = (None,)
+    mock_result.first.return_value = None
 
     mock_db_session.exec.return_value = mock_result
 
@@ -333,7 +333,7 @@ def test_get_balance_handles_negative_transactions(mock_db_session):
 
     # Mock exec returning balance after deductions
     mock_result = MagicMock()
-    mock_result.first.return_value = (expected_balance,)
+    mock_result.first.return_value = expected_balance
 
     mock_db_session.exec.return_value = mock_result
 
