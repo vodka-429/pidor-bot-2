@@ -205,14 +205,13 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         logger.debug("Creating new game result")
         winner: TGUser = random.choice(players)
         context.game.results.append(GameResult(game_id=context.game.id, year=cur_year, day=cur_day, winner=winner))
+        logger.debug("Committing game result and coins to DB")
+        context.db_session.commit()
+        logger.debug("Game result and coins committed to DB")
 
         # Начислить койны победителю
         add_coins(context.db_session, context.game.id, winner.id, COINS_PER_WIN, cur_year, "pidor_win")
         logger.debug(f"Awarded {COINS_PER_WIN} coins to winner {winner.id}")
-
-        logger.debug("Committing game result and coins to DB")
-        context.db_session.commit()
-        logger.debug("Game result and coins committed to DB")
 
         if last_day:
             logger.debug("Sending year results announcement")
@@ -233,7 +232,7 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         stage4_message = random.choice(stage4.phrases).format(
             username=winner.full_username(mention=True))
         # Добавить информацию о койнах
-        stage4_message += COIN_INFO.format(amount=COINS_PER_WIN, balance=balance + COINS_PER_WIN)
+        stage4_message += COIN_INFO.format(amount=COINS_PER_WIN, balance=balance)
         await update.effective_chat.send_message(stage4_message, parse_mode="HTML")
 
         # Проверка на tie-breaker в последний день года
@@ -253,7 +252,7 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
                 await run_tiebreaker(update, context, leaders, cur_year)
                 return  # Завершаем выполнение, tie-breaker уже объявил результат
             else:
-                logger.debug(f"Single leader detected, no tie-breaker needed")
+                logger.debug("Single leader detected, no tie-breaker needed")
 
 
 async def pidorules_cmd(update: Update, _context: CallbackContext):
@@ -277,7 +276,7 @@ async def pidorules_cmd(update: Update, _context: CallbackContext):
         "*Финальное голосование:* В конце года (29-30 декабря) можно запустить взвешенное голосование для распределения пропущенных дней. "
         "Финальное голосование с кастомными кнопками (поддерживает любое количество участников). Результаты скрыты до завершения. "
         "Вес каждого голоса равен количеству побед игрока в текущем году. "
-        "Голосование доступно только если пропущено менее 10 дней. Завершить голосование могут администраторы чата (список можно ограничить через переменную окружения ALLOWED\\_FINAL\\_VOTING\\_CLOSERS): */pidorfinalclose*\n"
+        "Голосование доступно только если пропущено менее 10 дней. Завершить голосование могут администраторы чата: */pidorfinalclose*\n"
         "\n"
         "Сброс розыгрыша происходит каждый день в 12 часов ночи по UTC+2 (примерно в два часа ночи по Москве).\n\n"
         "Поддержать бота можно по [ссылке](https://github.com/vodka-429/pidor-bot-2/):)",
@@ -1033,7 +1032,7 @@ async def pidorcoinsall_cmd(update: Update, context: GECallbackContext):
 
     if len(leaderboard) == 0:
         await update.effective_chat.send_message(
-            "📊 Пока нет пидор-койнов\\!",
+            "📊 Пока нет пидор\\-койнов\\!",
             parse_mode="MarkdownV2"
         )
         return

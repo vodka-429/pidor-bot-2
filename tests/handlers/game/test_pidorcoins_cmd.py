@@ -129,5 +129,5 @@ async def test_pidorcoinsall_cmd_empty(mock_update, mock_context, mock_db_sessio
     # Verify that send_message was called with the empty message
     mock_update.effective_chat.send_message.assert_called_once()
     call_args = mock_update.effective_chat.send_message.call_args
-    assert "нет пидор-койнов" in call_args[0][0]  # Check that empty message is shown
+    assert "нет пидор\\-койнов" in call_args[0][0]  # Check that empty message is shown
     assert "MarkdownV2" in call_args[1]["parse_mode"]
