@@ -27,6 +27,7 @@ commands = [
     ('pidorfinalclose', 'close final voting (admins only)'),
     ('pidorcoinsme', 'show your pidorcoin balance'),
     ('pidorcoinsstats', 'show pidorcoin stats for current year'),
+    ('pidorshop', 'open pidorcoin shop'),
     # ('meme', 'get some random meme'),
     # ('memeru', 'get some random russian meme'),
     # ('ttvideo', 'get video from tiktok'),

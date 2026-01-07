@@ -129,3 +129,42 @@ class PidorCoinTransaction(SQLModel, table=True):
 
     game: Game = Relationship(back_populates="coin_transactions")
     user: TGUser = Relationship(back_populates="coin_transactions")
+
+
+class GamePlayerEffect(SQLModel, table=True):
+    """Эффекты игрока в конкретной игре (магазин пидор-койнов)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    user_id: int = Field(foreign_key="tguser.id", nullable=False)
+    immunity_until: Optional[datetime] = Field(default=None)  # Дата окончания защиты от пидора
+    immunity_last_used: Optional[datetime] = Field(default=None)  # Дата последнего использования защиты
+    double_chance_until: Optional[datetime] = Field(default=None)  # Дата действия двойного шанса
+    double_chance_bought_by: Optional[int] = Field(default=None)  # ID пользователя, который купил двойной шанс
+    next_win_multiplier: int = Field(default=1)  # Множитель для следующей победы
+
+    game: Game = Relationship()
+    user: TGUser = Relationship()
+
+    __table_args__ = (
+        UniqueConstraint('game_id', 'user_id', name='unique_game_player_effect'),
+    )
+
+
+class Prediction(SQLModel, table=True):
+    """Предсказания пидора дня (магазин пидор-койнов)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    user_id: int = Field(foreign_key="tguser.id", nullable=False)  # Кто предсказывает
+    predicted_user_id: int = Field(foreign_key="tguser.id", nullable=False)  # Кого предсказывают
+    year: int = Field(nullable=False)
+    day: int = Field(nullable=False)
+    is_correct: Optional[bool] = Field(default=None)  # Результат предсказания (None до проверки)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    game: Game = Relationship()
+    user: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[Prediction.user_id]"})
+    predicted_user: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[Prediction.predicted_user_id]"})
+
+    __table_args__ = (
+        UniqueConstraint('game_id', 'user_id', 'year', 'day', name='unique_prediction'),
+    )
