@@ -625,6 +625,9 @@ async def test_pidorfinalclose_cmd_success(mock_update, mock_context, mock_game,
     mock_update.effective_user.id = 999
     mock_update.effective_user.username = 'test_admin'
 
+    # Fix: Mock context.tg_user.full_username() to return 'test_admin' instead of '@testuser'
+    mock_context.tg_user.full_username.return_value = 'test_admin'
+
     # Mock get_allowed_final_voting_closers to return test_admin
     mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
@@ -694,6 +697,9 @@ async def test_pidorfinalclose_cmd_not_admin(mock_update, mock_context, mock_gam
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
     mock_update.effective_user.username = 'test_admin'
+
+    # Fix: Mock context.tg_user.full_username() to return 'test_admin' instead of '@testuser'
+    mock_context.tg_user.full_username.return_value = 'test_admin'
 
     # Mock get_allowed_final_voting_closers to return test_admin
     mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
@@ -784,6 +790,9 @@ async def test_pidorfinalclose_cmd_too_early(mock_update, mock_context, mock_gam
     mock_update.effective_user.username = 'test_admin'
     mock_update.effective_chat.id = -123456789  # Regular chat (not test chat)
 
+    # Fix: Mock context.tg_user.full_username() to return 'test_admin' instead of '@testuser'
+    mock_context.tg_user.full_username.return_value = 'test_admin'
+
     # Mock get_allowed_final_voting_closers to return test_admin
     mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
@@ -822,6 +831,9 @@ async def test_pidorfinalclose_cmd_test_chat_bypass_time_check(mock_update, mock
     mock_update.effective_user.username = 'test_admin'
     TEST_CHAT_ID = -4608252738
     mock_update.effective_chat.id = TEST_CHAT_ID  # Test chat
+
+    # Fix: Mock context.tg_user.full_username() to return 'test_admin' instead of '@testuser'
+    mock_context.tg_user.full_username.return_value = 'test_admin'
 
     # Mock is_test_chat to return True for this chat
     mocker.patch('bot.handlers.game.commands.is_test_chat', return_value=True)
@@ -1017,6 +1029,9 @@ async def test_final_voting_results_escaping(mock_update, mock_context, mock_gam
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
     mock_update.effective_user.username = 'test_admin'
+
+    # Mock context.tg_user.full_username() to return test_admin
+    mock_context.tg_user.full_username.return_value = 'test_admin'
 
     # Mock get_allowed_final_voting_closers to return test_admin
     mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
@@ -1387,6 +1402,9 @@ async def test_pidorfinalclose_escapes_special_chars(mock_update, mock_context, 
     mock_update.effective_user.id = 999
     mock_update.effective_user.username = 'test_admin'
 
+    # Fix: Mock context.tg_user.full_username() to return 'test_admin' instead of '@testuser'
+    mock_context.tg_user.full_username.return_value = 'test_admin'
+
     # Mock get_allowed_final_voting_closers to return test_admin
     mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
@@ -1538,6 +1556,9 @@ async def test_error_messages_escape_correctly(mock_update, mock_context, mock_g
     mock_update.effective_user.username = 'test_admin'
     mock_update.effective_chat.id = -123456789  # Regular chat (not test chat)
 
+    # Mock context.tg_user.full_username() to return test_admin
+    mock_context.tg_user.full_username.return_value = 'test_admin'
+
     # Mock get_allowed_final_voting_closers to return test_admin
     mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
@@ -1586,6 +1607,9 @@ async def test_pidorfinalclose_cmd_wrong_username(mock_update, mock_context, moc
     mock_update.effective_user.id = 999
     mock_update.effective_user.username = 'wrong_user'  # Not in allowed list
 
+    # Fix: Mock context.tg_user.full_username() to return 'wrong_user' instead of '@testuser'
+    mock_context.tg_user.full_username.return_value = 'wrong_user'
+
     # Mock get_allowed_final_voting_closers to return test_admin (not wrong_user)
     mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
@@ -1622,6 +1646,9 @@ async def test_pidorfinalclose_cmd_no_username(mock_update, mock_context, mock_g
     mock_context.game = mock_game
     mock_update.effective_user.id = 999
     mock_update.effective_user.username = None  # No username
+
+    # Fix: Mock context.tg_user.full_username() to return None instead of '@testuser'
+    mock_context.tg_user.full_username.return_value = None
 
     # Mock get_allowed_final_voting_closers to return test_admin
     mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])

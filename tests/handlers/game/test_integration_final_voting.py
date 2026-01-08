@@ -459,6 +459,9 @@ async def test_custom_voting_full_cycle(mock_update, mock_context, mock_game, sa
     mock_update.effective_user.id = 100000001
     mock_update.effective_user.username = 'test_admin'
 
+    # Mock context.tg_user.full_username() to return test_admin
+    mock_context.tg_user.full_username.return_value = 'test_admin'
+
     # Mock get_allowed_final_voting_closers to return test_admin
     mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])
 
@@ -905,6 +908,9 @@ async def test_final_voting_proportional_distribution_integration(mock_update, m
     mock_update.effective_user = MagicMock()
     mock_update.effective_user.id = 100000001
     mock_update.effective_user.username = 'test_admin'
+
+    # Mock context.tg_user.full_username() to return test_admin
+    mock_context.tg_user.full_username.return_value = 'test_admin'
 
     # Mock get_allowed_final_voting_closers to return test_admin
     mocker.patch('bot.handlers.game.commands.get_allowed_final_voting_closers', return_value=['test_admin'])

@@ -274,7 +274,7 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
             await update.effective_chat.send_message(
                 IMMUNITY_ACTIVATED_IN_GAME.format(
                     username=html_escape(winner.full_username()),
-                    username_plain=winner.username,
+                    username_plain=winner.full_username(),
                     amount=COINS_PER_WIN,
                     balance=protected_balance
                 ),
@@ -347,10 +347,10 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
             # Получить баланс койнов игрока, который запустил команду
             executor_balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
             stage4_message += COIN_INFO.format(
-                winner_username=winner.username,
+                winner_username=winner.full_username(),
                 amount=COINS_PER_WIN,
                 balance=winner_balance,
-                executor_username=update.effective_user.username,
+                executor_username=context.tg_user.full_username(),
                 executor_amount=COINS_PER_COMMAND,
                 executor_balance=executor_balance
             )
@@ -1004,7 +1004,7 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
 
     # Проверяем, что команду вызвал разрешенный пользователь
     allowed_closers = get_allowed_final_voting_closers()
-    user_username = update.effective_user.username
+    user_username = context.tg_user.full_username()
 
     # Если список разрешенных пользователей не пуст, проверяем username
     if allowed_closers and user_username not in allowed_closers:
