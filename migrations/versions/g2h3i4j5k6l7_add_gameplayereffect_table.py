@@ -1,7 +1,7 @@
 """add_gameplayereffect_table
 
 Revision ID: g2h3i4j5k6l7
-Revises: f1g2h3i4j5k6
+Revises: c4e61e34981a
 Create Date: 2026-01-07 19:55:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'g2h3i4j5k6l7'
-down_revision = 'f1g2h3i4j5k6'
+down_revision = 'c4e61e34981a'
 branch_labels = None
 depends_on = None
 
