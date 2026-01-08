@@ -1,7 +1,7 @@
 """add_gameplayereffect_table
 
 Revision ID: g2h3i4j5k6l7
-Revises: c4e61e34981a
+Revises: f1g2h3i4j5k6
 Create Date: 2026-01-07 19:55:00.000000
 
 """
