@@ -1183,8 +1183,9 @@ async def pidorshop_cmd(update: Update, context: GECallbackContext):
     logger.debug(f"User {context.tg_user.id} balance: {balance}")
 
     # Создаём клавиатуру магазина с owner_user_id для проверки прав
-    logger.info(f"Creating shop keyboard with owner_user_id: {context.tg_user.id}")
-    keyboard = create_shop_keyboard(owner_user_id=context.tg_user.id)
+    # ВАЖНО: используем tg_id (Telegram ID), а не id (внутренний ID БД)
+    logger.info(f"Creating shop keyboard with owner_user_id (tg_id): {context.tg_user.tg_id}")
+    keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id)
 
     # Форматируем сообщение с балансом, именем пользователя и списком товаров
     user_name = context.tg_user.full_username()
@@ -1229,7 +1230,10 @@ async def handle_shop_immunity_callback(update: Update, context: GECallbackConte
         logger.info(f"Callback data: {query.data}")
         logger.info(f"Query from user ID: {query.from_user.id}")
         logger.info(f"Owner user ID: {owner_user_id}")
+        logger.info(f"Context TGUser ID: {context.tg_user.id}")
+        logger.info(f"Context TGUser TG_ID: {context.tg_user.tg_id}")
         logger.info(f"Match check: {query.from_user.id} == {owner_user_id} -> {query.from_user.id == owner_user_id}")
+        logger.info(f"TGUser ID vs TG_ID: {context.tg_user.id} vs {context.tg_user.tg_id}")
     except ValueError as e:
         logger.error(f"Failed to parse callback_data: {e}")
         await query.answer("❌ Ошибка обработки запроса")
@@ -1286,7 +1290,7 @@ async def handle_shop_immunity_callback(update: Update, context: GECallbackConte
     try:
         from bot.handlers.game.shop_helpers import create_shop_keyboard, format_shop_menu_message
         balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
-        keyboard = create_shop_keyboard(owner_user_id=context.tg_user.id)
+        keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id)
         user_name = context.tg_user.full_username()
         message_text = format_shop_menu_message(balance, user_name)
 
@@ -1343,7 +1347,7 @@ async def handle_shop_double_callback(update: Update, context: GECallbackContext
         return
 
     # Создаём клавиатуру с игроками
-    keyboard = create_double_chance_keyboard(players, owner_user_id=context.tg_user.id)
+    keyboard = create_double_chance_keyboard(players, owner_user_id=context.tg_user.tg_id)
 
     # Отправляем сообщение с выбором игрока
     try:
@@ -1403,7 +1407,7 @@ async def handle_shop_predict_callback(update: Update, context: GECallbackContex
         return
 
     # Создаём клавиатуру с игроками
-    keyboard = create_prediction_keyboard(players, owner_user_id=context.tg_user.id)
+    keyboard = create_prediction_keyboard(players, owner_user_id=context.tg_user.tg_id)
 
     # Отправляем сообщение с выбором игрока
     try:
