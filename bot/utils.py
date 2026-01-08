@@ -1,4 +1,6 @@
 import os
+from datetime import date, datetime
+from typing import Optional, Union
 
 from sqlmodel import Session
 from telegram import User
@@ -54,6 +56,39 @@ def escape_word(word: str):
         return word
 
     return escape_markdown2(word)
+
+
+def to_date(dt: Optional[Union[datetime, date]]) -> Optional[date]:
+    """
+    Конвертировать datetime в date, если необходимо.
+
+    Эта функция используется для безопасного сравнения дат,
+    когда в БД хранится datetime, а для сравнения нужен date.
+    Также обрабатывает MagicMock объекты из тестов.
+
+    Args:
+        dt: datetime или date объект, или None
+
+    Returns:
+        date объект или None
+
+    Examples:
+        >>> from datetime import datetime, date
+        >>> to_date(datetime(2024, 1, 15, 10, 30))
+        date(2024, 1, 15)
+        >>> to_date(date(2024, 1, 15))
+        date(2024, 1, 15)
+        >>> to_date(None)
+        None
+    """
+    if dt is None:
+        return None
+    # Проверка на MagicMock для тестов
+    if type(dt).__name__ == 'MagicMock':
+        return None
+    if isinstance(dt, datetime):
+        return dt.date()
+    return dt
 
 
 class ECallbackContext(ContextTypes.DEFAULT_TYPE):

@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 from sqlmodel import select
 
 from bot.app.models import GamePlayerEffect, Prediction, PidorCoinTransaction
+from bot.utils import to_date
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
@@ -168,12 +169,16 @@ def buy_immunity(db_session, game_id: int, user_id: int, year: int, current_date
     effect = get_or_create_player_effects(db_session, game_id, user_id)
 
     # Проверяем, не активна ли уже защита
-    if effect.immunity_until and effect.immunity_until >= current_date:
+    immunity_date = to_date(effect.immunity_until)
+    if immunity_date and immunity_date >= current_date:
+        logger.debug(f"Immunity already active until {immunity_date}")
         return False, "already_active"
 
     # Проверяем кулдаун (7 дней с последнего использования)
-    if effect.immunity_last_used:
-        cooldown_end = effect.immunity_last_used + timedelta(days=IMMUNITY_COOLDOWN_DAYS)
+    last_used_date = to_date(effect.immunity_last_used)
+    if last_used_date:
+        cooldown_end = last_used_date + timedelta(days=IMMUNITY_COOLDOWN_DAYS)
+        logger.debug(f"Checking cooldown: last_used={last_used_date}, cooldown_end={cooldown_end}, current={current_date}")
         if current_date < cooldown_end:
             return False, f"cooldown:{cooldown_end.isoformat()}"
 
