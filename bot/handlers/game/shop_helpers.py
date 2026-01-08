@@ -32,6 +32,7 @@ def parse_shop_callback_data(callback_data: str) -> Tuple[str, int]:
 
     Args:
         callback_data: Строка callback_data в формате 'shop_{item_type}_{owner_user_id}'
+                      или 'shop_{item_type}_confirm_{target_user_id}_{owner_user_id}'
 
     Returns:
         Кортеж (item_type, owner_user_id)
@@ -39,6 +40,8 @@ def parse_shop_callback_data(callback_data: str) -> Tuple[str, int]:
     Raises:
         ValueError: Если формат callback_data некорректен
     """
+    logger.info(f"Parsing shop callback_data: {callback_data}")
+
     if not callback_data.startswith(SHOP_CALLBACK_PREFIX):
         raise ValueError(f"Invalid callback_data format: {callback_data}")
 
@@ -46,16 +49,30 @@ def parse_shop_callback_data(callback_data: str) -> Tuple[str, int]:
     data = callback_data[len(SHOP_CALLBACK_PREFIX):]
     parts = data.split('_')
 
-    if len(parts) != 2:
+    logger.info(f"Callback data parts: {parts} (count: {len(parts)})")
+
+    # Обрабатываем разные форматы callback_data
+    if len(parts) == 2:
+        # Формат: shop_{item_type}_{owner_user_id}
+        try:
+            item_type = parts[0]
+            owner_user_id = int(parts[1])
+            logger.info(f"Parsed as basic format: item_type={item_type}, owner_user_id={owner_user_id}")
+            return item_type, owner_user_id
+        except ValueError as e:
+            raise ValueError(f"Invalid callback_data format: {callback_data}") from e
+
+    elif len(parts) == 4 and parts[1] == 'confirm':
+        # Формат: shop_{item_type}_confirm_{target_user_id}_{owner_user_id}
+        try:
+            item_type = parts[0]
+            owner_user_id = int(parts[3])
+            logger.info(f"Parsed as confirm format: item_type={item_type}, owner_user_id={owner_user_id}")
+            return item_type, owner_user_id
+        except ValueError as e:
+            raise ValueError(f"Invalid callback_data format: {callback_data}") from e
+    else:
         raise ValueError(f"Invalid callback_data format: {callback_data}")
-
-    try:
-        item_type = parts[0]
-        owner_user_id = int(parts[1])
-    except ValueError as e:
-        raise ValueError(f"Invalid callback_data format: {callback_data}") from e
-
-    return item_type, owner_user_id
 
 
 def create_shop_keyboard(owner_user_id: int) -> InlineKeyboardMarkup:
@@ -73,12 +90,16 @@ def create_shop_keyboard(owner_user_id: int) -> InlineKeyboardMarkup:
     items = get_shop_items()
     keyboard = []
 
+    logger.info(f"Creating shop keyboard for owner_user_id: {owner_user_id}")
+
     for item in items:
         # Формируем текст кнопки с названием и ценой
         button_text = f"{item['name']} - {item['price']} 🪙"
 
         # Создаём callback_data с типом товара и ID владельца
         callback_data = format_shop_callback_data(item['callback_data'].replace('shop_', ''), owner_user_id)
+
+        logger.info(f"Created callback_data for {item['name']}: {callback_data}")
 
         button = InlineKeyboardButton(
             text=button_text,
@@ -175,12 +196,13 @@ def create_double_chance_keyboard(players: List[TGUser], owner_user_id: int) -> 
     return InlineKeyboardMarkup(keyboard)
 
 
-def format_shop_menu_message(balance: int) -> str:
+def format_shop_menu_message(balance: int, user_name: str = None) -> str:
     """
     Форматирует сообщение меню магазина с балансом и списком товаров.
 
     Args:
         balance: Текущий баланс пользователя
+        user_name: Имя пользователя, чей это магазин (опционально)
 
     Returns:
         Отформатированное сообщение в формате Markdown V2
@@ -188,9 +210,14 @@ def format_shop_menu_message(balance: int) -> str:
     from bot.utils import escape_markdown2, format_number
     from bot.handlers.game.shop_service import get_shop_items
 
-    # Формируем заголовок с балансом
+    # Формируем заголовок с балансом и именем пользователя
     balance_str = format_number(balance)
-    header = f"🏪 *Магазин пидор\\-койнов*\n\n💰 Ваш баланс: *{balance_str}* 🪙\n\n"
+
+    if user_name:
+        user_name_escaped = escape_markdown2(user_name)
+        header = f"🏪 *Магазин пидор\\-койнов*\n👤 Владелец: *{user_name_escaped}*\n\n💰 Баланс: *{balance_str}* 🪙\n\n"
+    else:
+        header = f"🏪 *Магазин пидор\\-койнов*\n\n💰 Ваш баланс: *{balance_str}* 🪙\n\n"
 
     # Формируем список товаров
     items = get_shop_items()

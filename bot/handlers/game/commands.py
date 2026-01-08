@@ -1183,10 +1183,12 @@ async def pidorshop_cmd(update: Update, context: GECallbackContext):
     logger.debug(f"User {context.tg_user.id} balance: {balance}")
 
     # Создаём клавиатуру магазина с owner_user_id для проверки прав
+    logger.info(f"Creating shop keyboard with owner_user_id: {context.tg_user.id}")
     keyboard = create_shop_keyboard(owner_user_id=context.tg_user.id)
 
-    # Форматируем сообщение с балансом и списком товаров
-    message_text = format_shop_menu_message(balance)
+    # Форматируем сообщение с балансом, именем пользователя и списком товаров
+    user_name = context.tg_user.full_username()
+    message_text = format_shop_menu_message(balance, user_name)
 
     # Отправляем сообщение с inline-кнопками
     await update.effective_chat.send_message(
@@ -1224,6 +1226,10 @@ async def handle_shop_immunity_callback(update: Update, context: GECallbackConte
         # Парсим callback_data для получения item_type и owner_user_id
         item_type, owner_user_id = parse_shop_callback_data(query.data)
         logger.info(f"Parsed callback: item_type={item_type}, owner_user_id={owner_user_id}")
+        logger.info(f"Callback data: {query.data}")
+        logger.info(f"Query from user ID: {query.from_user.id}")
+        logger.info(f"Owner user ID: {owner_user_id}")
+        logger.info(f"Match check: {query.from_user.id} == {owner_user_id} -> {query.from_user.id == owner_user_id}")
     except ValueError as e:
         logger.error(f"Failed to parse callback_data: {e}")
         await query.answer("❌ Ошибка обработки запроса")
@@ -1231,8 +1237,9 @@ async def handle_shop_immunity_callback(update: Update, context: GECallbackConte
 
     # ВАЖНО: Проверяем, что нажавший кнопку - это владелец магазина
     if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        logger.warning(f"Callback data was: {query.data}")
         await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
-        logger.warning(f"User {query.from_user.id} tried to use shop of user {owner_user_id}")
         return
 
     # Получаем текущую дату
@@ -1280,7 +1287,8 @@ async def handle_shop_immunity_callback(update: Update, context: GECallbackConte
         from bot.handlers.game.shop_helpers import create_shop_keyboard, format_shop_menu_message
         balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
         keyboard = create_shop_keyboard(owner_user_id=context.tg_user.id)
-        message_text = format_shop_menu_message(balance)
+        user_name = context.tg_user.full_username()
+        message_text = format_shop_menu_message(balance, user_name)
 
         await query.edit_message_text(
             text=message_text,
@@ -1310,6 +1318,10 @@ async def handle_shop_double_callback(update: Update, context: GECallbackContext
         # Парсим callback_data для получения item_type и owner_user_id
         item_type, owner_user_id = parse_shop_callback_data(query.data)
         logger.info(f"Parsed callback: item_type={item_type}, owner_user_id={owner_user_id}")
+        logger.info(f"Callback data: {query.data}")
+        logger.info(f"Query from user ID: {query.from_user.id}")
+        logger.info(f"Owner user ID: {owner_user_id}")
+        logger.info(f"Match check: {query.from_user.id} == {owner_user_id} -> {query.from_user.id == owner_user_id}")
     except ValueError as e:
         logger.error(f"Failed to parse callback_data: {e}")
         await query.answer("❌ Ошибка обработки запроса")
@@ -1317,8 +1329,9 @@ async def handle_shop_double_callback(update: Update, context: GECallbackContext
 
     # ВАЖНО: Проверяем, что нажавший кнопку - это владелец магазина
     if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        logger.warning(f"Callback data was: {query.data}")
         await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
-        logger.warning(f"User {query.from_user.id} tried to use shop of user {owner_user_id}")
         return
 
     # Получаем список игроков из игры
@@ -1365,6 +1378,10 @@ async def handle_shop_predict_callback(update: Update, context: GECallbackContex
         # Парсим callback_data для получения item_type и owner_user_id
         item_type, owner_user_id = parse_shop_callback_data(query.data)
         logger.info(f"Parsed callback: item_type={item_type}, owner_user_id={owner_user_id}")
+        logger.info(f"Callback data: {query.data}")
+        logger.info(f"Query from user ID: {query.from_user.id}")
+        logger.info(f"Owner user ID: {owner_user_id}")
+        logger.info(f"Match check: {query.from_user.id} == {owner_user_id} -> {query.from_user.id == owner_user_id}")
     except ValueError as e:
         logger.error(f"Failed to parse callback_data: {e}")
         await query.answer("❌ Ошибка обработки запроса")
@@ -1372,8 +1389,9 @@ async def handle_shop_predict_callback(update: Update, context: GECallbackContex
 
     # ВАЖНО: Проверяем, что нажавший кнопку - это владелец магазина
     if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        logger.warning(f"Callback data was: {query.data}")
         await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
-        logger.warning(f"User {query.from_user.id} tried to use shop of user {owner_user_id}")
         return
 
     # Получаем список игроков из игры
@@ -1404,6 +1422,7 @@ async def handle_shop_predict_callback(update: Update, context: GECallbackContex
 @ensure_game
 async def handle_shop_predict_confirm_callback(update: Update, context: GECallbackContext):
     """Обработчик подтверждения предсказания"""
+    from bot.handlers.game.shop_helpers import parse_shop_callback_data
     from bot.handlers.game.shop_service import create_prediction
     from bot.handlers.game.text_static import (
         SHOP_ERROR_NOT_YOUR_SHOP,
@@ -1422,17 +1441,25 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
     logger.info(f"Shop predict confirm callback from user {query.from_user.id} in chat {update.effective_chat.id}")
     logger.info(f"Callback data: {query.data}")
 
-    # Парсим callback_data в формате shop_predict_confirm_{predicted_user_id}_{owner_user_id}
+    # Парсим callback_data с помощью единой функции парсинга
     try:
+        # Формат: shop_predict_confirm_{predicted_user_id}_{owner_user_id}
         if not query.data.startswith('shop_predict_confirm_'):
             raise ValueError(f"Invalid callback_data format: {query.data}")
 
-        parts = query.data.replace('shop_predict_confirm_', '').split('_')
-        if len(parts) != 2:
+        # Используем единую функцию парсинга для извлечения owner_user_id
+        # Функция parse_shop_callback_data ожидает формат shop_{item_type}_{owner_user_id}
+        # Для этого формата мы можем извлечь owner_user_id из последней части
+        parts = query.data.split('_')
+        if len(parts) < 4:
             raise ValueError(f"Invalid callback_data format: {query.data}")
 
-        predicted_user_id = int(parts[0])
-        owner_user_id = int(parts[1])
+        # Последняя часть - это owner_user_id
+        owner_user_id = int(parts[-1])
+
+        # Предсказанный пользователь - это предпоследняя часть
+        predicted_user_id = int(parts[-2])
+
         logger.info(f"Parsed callback: predicted_user_id={predicted_user_id}, owner_user_id={owner_user_id}")
     except (ValueError, IndexError) as e:
         logger.error(f"Failed to parse callback_data: {e}")
@@ -1440,9 +1467,14 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
         return
 
     # ВАЖНО: Проверяем, что нажавший кнопку - это владелец магазина
+    logger.info(f"Shop confirm callback - Query from user ID: {query.from_user.id}")
+    logger.info(f"Shop confirm callback - Owner user ID: {owner_user_id}")
+    logger.info(f"Shop confirm callback - Match check: {query.from_user.id} == {owner_user_id} -> {query.from_user.id == owner_user_id}")
+
     if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch in confirm: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        logger.warning(f"Callback data was: {query.data}")
         await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
-        logger.warning(f"User {query.from_user.id} tried to use shop of user {owner_user_id}")
         return
 
     # Получаем текущую дату
@@ -1505,6 +1537,7 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
 @ensure_game
 async def handle_shop_double_confirm_callback(update: Update, context: GECallbackContext):
     """Обработчик подтверждения покупки двойного шанса"""
+    from bot.handlers.game.shop_helpers import parse_shop_callback_data
     from bot.handlers.game.shop_service import buy_double_chance
     from bot.handlers.game.text_static import (
         SHOP_ERROR_NOT_YOUR_SHOP,
@@ -1523,17 +1556,25 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
     logger.info(f"Shop double confirm callback from user {query.from_user.id} in chat {update.effective_chat.id}")
     logger.info(f"Callback data: {query.data}")
 
-    # Парсим callback_data в формате shop_double_confirm_{target_user_id}_{owner_user_id}
+    # Парсим callback_data с помощью единой функции парсинга
     try:
+        # Формат: shop_double_confirm_{target_user_id}_{owner_user_id}
         if not query.data.startswith('shop_double_confirm_'):
             raise ValueError(f"Invalid callback_data format: {query.data}")
 
-        parts = query.data.replace('shop_double_confirm_', '').split('_')
-        if len(parts) != 2:
+        # Используем единую функцию парсинга для извлечения owner_user_id
+        # Функция parse_shop_callback_data ожидает формат shop_{item_type}_{owner_user_id}
+        # Для этого формата мы можем извлечь owner_user_id из последней части
+        parts = query.data.split('_')
+        if len(parts) < 4:
             raise ValueError(f"Invalid callback_data format: {query.data}")
 
-        target_user_id = int(parts[0])
-        owner_user_id = int(parts[1])
+        # Последняя часть - это owner_user_id
+        owner_user_id = int(parts[-1])
+
+        # Целевой пользователь - это предпоследняя часть
+        target_user_id = int(parts[-2])
+
         logger.info(f"Parsed callback: target_user_id={target_user_id}, owner_user_id={owner_user_id}")
     except (ValueError, IndexError) as e:
         logger.error(f"Failed to parse callback_data: {e}")
@@ -1541,9 +1582,14 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
         return
 
     # ВАЖНО: Проверяем, что нажавший кнопку - это владелец магазина
+    logger.info(f"Shop double confirm callback - Query from user ID: {query.from_user.id}")
+    logger.info(f"Shop double confirm callback - Owner user ID: {owner_user_id}")
+    logger.info(f"Shop double confirm callback - Match check: {query.from_user.id} == {owner_user_id} -> {query.from_user.id == owner_user_id}")
+
     if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch in double confirm: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        logger.warning(f"Callback data was: {query.data}")
         await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
-        logger.warning(f"User {query.from_user.id} tried to use shop of user {owner_user_id}")
         return
 
     # Получаем текущую дату
