@@ -240,15 +240,9 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
                 logger.warning(f"All players are protected in game {context.game.id}")
                 return
 
-            # Создаём пул выбора из незащищённых игроков
-            players_to_select = unprotected_players
-        else:
-            # Если защита выключена, используем всех игроков
-            players_to_select = players
-
         # Создаём пул выбора с учётом двойного шанса
         selection_pool, players_with_double_chance = build_selection_pool(
-            context.db_session, context.game.id, players_to_select, current_date
+            context.db_session, context.game.id, players, current_date
         )
 
         # Выбираем победителя из пула
