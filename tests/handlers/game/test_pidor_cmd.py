@@ -703,6 +703,8 @@ async def test_pidor_cmd_awards_coins_to_winner_and_executor(mock_update, mock_c
     # Setup usernames for winner and executor (different users to avoid self-pidor case)
     sample_players[0].username = "winner_user"
     mock_context.tg_user.id = 999  # Different ID from winner
+    mock_context.tg_user.username = "executor_user"  # This will be used by full_username()
+    mock_context.tg_user.full_username.return_value = "executor_user"  # Override the default @testuser
     mock_update.effective_user.username = "executor_user"
 
     # Mock the query chain
