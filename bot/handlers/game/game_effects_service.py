@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from bot.app.models import TGUser, GamePlayerEffect
 from bot.handlers.game.shop_service import get_or_create_player_effects
+from bot.utils import to_date
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
@@ -34,7 +35,8 @@ def filter_protected_players(
 
     for player in players:
         effect = get_or_create_player_effects(db_session, game_id, player.id)
-        if effect.immunity_until and not isinstance(effect.immunity_until, MagicMock) and effect.immunity_until >= current_date:
+        immunity_date = to_date(effect.immunity_until)
+        if immunity_date and immunity_date >= current_date:
             protected_players.append(player)
             logger.debug(f"Player {player.id} ({player.full_username()}) is protected until {effect.immunity_until}")
         else:
@@ -73,7 +75,8 @@ def build_selection_pool(
         effect = get_or_create_player_effects(db_session, game_id, player.id)
 
         # Проверяем активность двойного шанса
-        if effect.double_chance_until and not isinstance(effect.double_chance_until, MagicMock) and effect.double_chance_until >= current_date:
+        double_chance_date = to_date(effect.double_chance_until)
+        if double_chance_date and double_chance_date >= current_date:
             # Добавляем игрока дважды (двойной шанс)
             selection_pool.append(player)
             selection_pool.append(player)
@@ -108,7 +111,8 @@ def check_winner_immunity(
     """
     winner_effect = get_or_create_player_effects(db_session, game_id, winner.id)
 
-    if winner_effect.immunity_until and not isinstance(winner_effect.immunity_until, MagicMock) and winner_effect.immunity_until >= current_date:
+    immunity_date = to_date(winner_effect.immunity_until)
+    if immunity_date and immunity_date >= current_date:
         logger.info(f"Winner {winner.id} ({winner.full_username()}) is protected until {winner_effect.immunity_until}")
         db_session.add(winner_effect)  # Добавляем эффект в сессию
         return True
@@ -134,7 +138,8 @@ def reset_double_chance(
     """
     effect = get_or_create_player_effects(db_session, game_id, user_id)
 
-    if effect.double_chance_until and not isinstance(effect.double_chance_until, MagicMock) and effect.double_chance_until >= current_date:
+    double_chance_date = to_date(effect.double_chance_until)
+    if double_chance_date and double_chance_date >= current_date:
         logger.info(f"Resetting double chance for user {user_id}")
         effect.double_chance_until = None
         db_session.add(effect)  # Явно добавляем изменённый объект в сессию
