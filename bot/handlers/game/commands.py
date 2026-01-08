@@ -193,6 +193,7 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
 
     current_dt = current_datetime()
     cur_year, cur_day = current_dt.year, current_dt.timetuple().tm_yday
+    current_date = current_dt.date()
     last_day = current_dt.month == 12 and current_dt.day >= 31
 
     # Проверка пропущенных дней
@@ -210,7 +211,84 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
                 username=escape_markdown2(game_result.winner.full_username())))
     else:
         logger.debug("Creating new game result")
-        winner: TGUser = random.choice(players)
+
+        # Импорты для работы с эффектами и предсказаниями
+        from bot.handlers.game.game_effects_service import (
+            filter_protected_players, build_selection_pool, check_winner_immunity,
+            reset_double_chance, is_immunity_enabled
+        )
+        from bot.handlers.game.prediction_service import (
+            process_predictions, format_predictions_summary, award_correct_predictions
+        )
+        from bot.handlers.game.text_static import IMMUNITY_ACTIVATED_IN_GAME, DOUBLE_CHANCE_ACTIVATED_IN_GAME
+
+        # Проверяем, включена ли защита (не последний день года)
+        immunity_enabled = is_immunity_enabled(current_dt)
+
+        # Если защита включена, фильтруем защищённых игроков
+        if immunity_enabled:
+            unprotected_players, protected_players = filter_protected_players(
+                context.db_session, context.game.id, players, current_date
+            )
+
+            # Если все игроки защищены - отправляем специальное сообщение
+            if len(unprotected_players) == 0:
+                await update.effective_chat.send_message(
+                    "🛡️ *Невероятно\\!* Все игроки защищены\\! Сегодня пидора дня не будет\\. Наслаждайтесь свободой\\! 🎉",
+                    parse_mode="MarkdownV2"
+                )
+                logger.warning(f"All players are protected in game {context.game.id}")
+                return
+
+            # Создаём пул выбора из незащищённых игроков
+            players_to_select = unprotected_players
+        else:
+            # Если защита выключена, используем всех игроков
+            players_to_select = players
+
+        # Создаём пул выбора с учётом двойного шанса
+        selection_pool, players_with_double_chance = build_selection_pool(
+            context.db_session, context.game.id, players_to_select, current_date
+        )
+
+        # Выбираем победителя из пула
+        winner: TGUser = random.choice(selection_pool)
+        logger.info(f"Winner selected: {winner.full_username()}")
+
+        # Запоминаем, был ли у победителя двойной шанс
+        winner_had_double_chance = winner.id in players_with_double_chance
+
+        # Проверяем защиту победителя только если она включена
+        if immunity_enabled and check_winner_immunity(context.db_session, context.game.id, winner, current_date):
+            logger.info(f"Winner {winner.id} ({winner.full_username()}) is protected, reselecting")
+
+            # Начисляем койны защищенному игроку за то, что его выбрали
+            add_coins(context.db_session, context.game.id, winner.id, COINS_PER_WIN, cur_year, "immunity_save", auto_commit=False)
+            logger.debug(f"Awarded {COINS_PER_WIN} coins to protected player {winner.id}")
+
+            # Получаем новый баланс защищенного игрока
+            protected_balance = get_balance(context.db_session, context.game.id, winner.id)
+
+            # Показываем сообщение о срабатывании защиты с информацией о койнах
+            from html import escape as html_escape
+            await update.effective_chat.send_message(
+                IMMUNITY_ACTIVATED_IN_GAME.format(
+                    username=html_escape(winner.full_username()),
+                    username_plain=winner.username,
+                    amount=COINS_PER_WIN,
+                    balance=protected_balance
+                ),
+                parse_mode="HTML"
+            )
+            await asyncio.sleep(GAME_RESULT_TIME_DELAY)
+
+            # Перевыбираем из незащищенных игроков
+            winner = random.choice(unprotected_players)
+            logger.info(f"Reselected winner after immunity: {winner.full_username()}")
+
+        # Сбрасываем двойной шанс у победителя (если был активен)
+        reset_double_chance(context.db_session, context.game.id, winner.id, current_date)
+
         context.game.results.append(GameResult(game_id=context.game.id, year=cur_year, day=cur_day, winner=winner))
 
         # Проверяем, является ли победитель тем же, кто запустил команду
@@ -229,6 +307,14 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
             # Начислить койны игроку, который запустил команду (без коммита)
             add_coins(context.db_session, context.game.id, context.tg_user.id, COINS_PER_COMMAND, cur_year, "command_execution", auto_commit=False)
             logger.debug(f"Awarded {COINS_PER_COMMAND} coin to command executor {context.tg_user.id}")
+
+        # Обрабатываем предсказания на текущий день
+        predictions_results = process_predictions(
+            context.db_session, context.game.id, cur_year, cur_day, winner.id
+        )
+
+        # Начисляем койны за правильные предсказания
+        award_correct_predictions(context.db_session, context.game.id, cur_year, predictions_results)
 
         # Коммит всех изменений одним запросом
         context.db_session.commit()
@@ -270,6 +356,27 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
             )
         await update.effective_chat.send_message(stage4_message, parse_mode="HTML")
 
+        # Если победитель использовал двойной шанс - показываем сообщение
+        if winner_had_double_chance:
+            from html import escape as html_escape
+            await update.effective_chat.send_message(
+                DOUBLE_CHANCE_ACTIVATED_IN_GAME.format(
+                    username=html_escape(winner.full_username())
+                ),
+                parse_mode="HTML"
+            )
+            logger.info(f"Double chance was used by winner {winner.id} ({winner.full_username()})")
+
+        # Отправляем объединённое сообщение о результатах предсказаний
+        if predictions_results:
+            predictions_summary = format_predictions_summary(predictions_results, context.db_session)
+            if predictions_summary:
+                await update.effective_chat.send_message(
+                    predictions_summary,
+                    parse_mode="MarkdownV2"
+                )
+                logger.info(f"Sent predictions summary with {len(predictions_results)} predictions")
+
         # Проверка на tie-breaker в последний день года
         if last_day:
             logger.debug("Checking for tie-breaker situation")
@@ -307,6 +414,13 @@ async def pidorules_cmd(update: Update, _context: CallbackContext):
         "Удалить же игрока можно по команде (используйте идентификатор пользователя - цифры из списка пользователей): */pidormin* del 123456\n"
         "\n"
         "*Важно*, розыгрыш проходит только *раз в день*, повторная команда выведет *результат* игры.\n"
+        "\n"
+        "*Пидор\\-койны:* За участие в игре начисляются пидор\\-койны\\! Победитель получает 4 койна, запустивший команду \\- 1 койн\\. "
+        "Если ты сам стал пидором дня \\- получаешь 8 койнов\\! Потратить койны можно в магазине: */pidorshop*\n"
+        "• *Защита от пидора* \\(10 койнов\\) \\- защита на следующий день, если тебя выберут \\- перевыбор\\. Кулдаун 7 дней\\.\n"
+        "• *Двойной шанс* \\(5 койнов\\) \\- удваивает шанс стать пидором дня на следующий розыгрыш\\. Можно купить для любого игрока\\!\n"
+        "• *Предсказание* \\(15 койнов\\) \\- угадай пидора дня и получи 30 койнов\\!\n"
+        "Баланс койнов: */pidorcoinsme*, топ по койнам: */pidorcoinsstats*\n"
         "\n"
         "*Финальное голосование:* В конце года (29-30 декабря) можно запустить взвешенное голосование для распределения пропущенных дней. "
         "Финальное голосование с кастомными кнопками (поддерживает любое количество участников). Результаты скрыты до завершения. "
@@ -1055,5 +1169,448 @@ async def pidorcoinsstats_cmd(update: Update, context: GECallbackContext):
                                        player_count=len(context.game.players))
     await update.effective_chat.send_message(answer, parse_mode="MarkdownV2")
     logger.info(f"Showed coin stats for year {cur_year}, {len(leaderboard)} players")
+
+
+@ensure_game
+async def pidorshop_cmd(update: Update, context: GECallbackContext):
+    """Открыть магазин пидор-койнов с интерактивным меню"""
+    from bot.handlers.game.shop_helpers import create_shop_keyboard, format_shop_menu_message
+
+    logger.info(f"pidorshop_cmd started for chat {update.effective_chat.id}, user {context.tg_user.id}")
+
+    # Получаем баланс текущего пользователя
+    balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+    logger.debug(f"User {context.tg_user.id} balance: {balance}")
+
+    # Создаём клавиатуру магазина с owner_user_id для проверки прав
+    keyboard = create_shop_keyboard(owner_user_id=context.tg_user.id)
+
+    # Форматируем сообщение с балансом и списком товаров
+    message_text = format_shop_menu_message(balance)
+
+    # Отправляем сообщение с inline-кнопками
+    await update.effective_chat.send_message(
+        text=message_text,
+        parse_mode="MarkdownV2",
+        reply_markup=keyboard
+    )
+
+    logger.info(f"Shop menu sent to user {context.tg_user.id} with balance {balance}")
+
+
+@ensure_game
+async def handle_shop_immunity_callback(update: Update, context: GECallbackContext):
+    """Обработчик покупки защиты от пидора"""
+    from bot.handlers.game.shop_helpers import parse_shop_callback_data
+    from bot.handlers.game.shop_service import buy_immunity
+    from bot.handlers.game.text_static import (
+        SHOP_ERROR_NOT_YOUR_SHOP,
+        IMMUNITY_PURCHASE_SUCCESS,
+        IMMUNITY_ERROR_INSUFFICIENT_FUNDS,
+        IMMUNITY_ERROR_ALREADY_ACTIVE,
+        IMMUNITY_ERROR_COOLDOWN
+    )
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop immunity callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    try:
+        # Парсим callback_data для получения item_type и owner_user_id
+        item_type, owner_user_id = parse_shop_callback_data(query.data)
+        logger.info(f"Parsed callback: item_type={item_type}, owner_user_id={owner_user_id}")
+    except ValueError as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # ВАЖНО: Проверяем, что нажавший кнопку - это владелец магазина
+    if query.from_user.id != owner_user_id:
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        logger.warning(f"User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        return
+
+    # Получаем текущую дату
+    current_dt = current_datetime()
+    current_date = current_dt.date()
+    cur_year = current_dt.year
+
+    # Вызываем функцию покупки защиты
+    success, message = buy_immunity(
+        context.db_session,
+        context.game.id,
+        context.tg_user.id,
+        cur_year,
+        current_date
+    )
+
+    if success:
+        # Получаем новый баланс
+        balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+        response_text = IMMUNITY_PURCHASE_SUCCESS.format(balance=format_number(balance))
+        await query.answer("✅ Защита куплена!", show_alert=True)
+        logger.info(f"User {context.tg_user.id} bought immunity in game {context.game.id}")
+    else:
+        # Обрабатываем ошибки
+        if message == "insufficient_funds":
+            balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+            response_text = IMMUNITY_ERROR_INSUFFICIENT_FUNDS.format(balance=format_number(balance))
+        elif message == "already_active":
+            from bot.handlers.game.shop_service import get_or_create_player_effects
+            effect = get_or_create_player_effects(context.db_session, context.game.id, context.tg_user.id)
+            date_str = escape_markdown2(effect.immunity_until.isoformat())
+            response_text = IMMUNITY_ERROR_ALREADY_ACTIVE.format(date=date_str)
+        elif message.startswith("cooldown:"):
+            cooldown_date = message.split(":")[1]
+            date_str = escape_markdown2(cooldown_date)
+            response_text = IMMUNITY_ERROR_COOLDOWN.format(date=date_str)
+        else:
+            response_text = "❌ Произошла ошибка при покупке"
+
+        await query.answer("❌ Не удалось купить", show_alert=True)
+        logger.warning(f"User {context.tg_user.id} failed to buy immunity: {message}")
+
+    # Обновляем сообщение магазина с новым балансом
+    try:
+        from bot.handlers.game.shop_helpers import create_shop_keyboard, format_shop_menu_message
+        balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+        keyboard = create_shop_keyboard(owner_user_id=context.tg_user.id)
+        message_text = format_shop_menu_message(balance)
+
+        await query.edit_message_text(
+            text=message_text,
+            parse_mode="MarkdownV2",
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        logger.error(f"Failed to update shop message: {e}")
+
+
+@ensure_game
+async def handle_shop_double_callback(update: Update, context: GECallbackContext):
+    """Обработчик выбора игрока для двойного шанса"""
+    from bot.handlers.game.shop_helpers import parse_shop_callback_data, create_double_chance_keyboard
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP, DOUBLE_CHANCE_SELECT_PLAYER
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop double chance callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    try:
+        # Парсим callback_data для получения item_type и owner_user_id
+        item_type, owner_user_id = parse_shop_callback_data(query.data)
+        logger.info(f"Parsed callback: item_type={item_type}, owner_user_id={owner_user_id}")
+    except ValueError as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # ВАЖНО: Проверяем, что нажавший кнопку - это владелец магазина
+    if query.from_user.id != owner_user_id:
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        logger.warning(f"User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        return
+
+    # Получаем список игроков из игры
+    players = context.game.players
+
+    if len(players) < 2:
+        await query.answer("❌ Недостаточно игроков для двойного шанса", show_alert=True)
+        logger.warning(f"Not enough players for double chance in game {context.game.id}")
+        return
+
+    # Создаём клавиатуру с игроками
+    keyboard = create_double_chance_keyboard(players, owner_user_id=context.tg_user.id)
+
+    # Отправляем сообщение с выбором игрока
+    try:
+        await query.edit_message_text(
+            text=DOUBLE_CHANCE_SELECT_PLAYER,
+            parse_mode="MarkdownV2",
+            reply_markup=keyboard
+        )
+        await query.answer()
+        logger.info(f"Showed double chance player selection for user {context.tg_user.id}")
+    except Exception as e:
+        logger.error(f"Failed to show double chance selection: {e}")
+        await query.answer("❌ Ошибка при отображении списка игроков")
+
+
+@ensure_game
+async def handle_shop_predict_callback(update: Update, context: GECallbackContext):
+    """Обработчик выбора игрока для предсказания"""
+    from bot.handlers.game.shop_helpers import parse_shop_callback_data, create_prediction_keyboard
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP, PREDICTION_SELECT_PLAYER
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop predict callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    try:
+        # Парсим callback_data для получения item_type и owner_user_id
+        item_type, owner_user_id = parse_shop_callback_data(query.data)
+        logger.info(f"Parsed callback: item_type={item_type}, owner_user_id={owner_user_id}")
+    except ValueError as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # ВАЖНО: Проверяем, что нажавший кнопку - это владелец магазина
+    if query.from_user.id != owner_user_id:
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        logger.warning(f"User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        return
+
+    # Получаем список игроков из игры
+    players = context.game.players
+
+    if len(players) < 2:
+        await query.answer("❌ Недостаточно игроков для предсказания", show_alert=True)
+        logger.warning(f"Not enough players for prediction in game {context.game.id}")
+        return
+
+    # Создаём клавиатуру с игроками
+    keyboard = create_prediction_keyboard(players, owner_user_id=context.tg_user.id)
+
+    # Отправляем сообщение с выбором игрока
+    try:
+        await query.edit_message_text(
+            text=PREDICTION_SELECT_PLAYER,
+            parse_mode="MarkdownV2",
+            reply_markup=keyboard
+        )
+        await query.answer()
+        logger.info(f"Showed prediction player selection for user {context.tg_user.id}")
+    except Exception as e:
+        logger.error(f"Failed to show prediction selection: {e}")
+        await query.answer("❌ Ошибка при отображении списка игроков")
+
+
+@ensure_game
+async def handle_shop_predict_confirm_callback(update: Update, context: GECallbackContext):
+    """Обработчик подтверждения предсказания"""
+    from bot.handlers.game.shop_service import create_prediction
+    from bot.handlers.game.text_static import (
+        SHOP_ERROR_NOT_YOUR_SHOP,
+        PREDICTION_PURCHASE_SUCCESS,
+        PREDICTION_ERROR_INSUFFICIENT_FUNDS,
+        PREDICTION_ERROR_ALREADY_EXISTS,
+        PREDICTION_ERROR_SELF
+    )
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop predict confirm callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    # Парсим callback_data в формате shop_predict_confirm_{predicted_user_id}_{owner_user_id}
+    try:
+        if not query.data.startswith('shop_predict_confirm_'):
+            raise ValueError(f"Invalid callback_data format: {query.data}")
+
+        parts = query.data.replace('shop_predict_confirm_', '').split('_')
+        if len(parts) != 2:
+            raise ValueError(f"Invalid callback_data format: {query.data}")
+
+        predicted_user_id = int(parts[0])
+        owner_user_id = int(parts[1])
+        logger.info(f"Parsed callback: predicted_user_id={predicted_user_id}, owner_user_id={owner_user_id}")
+    except (ValueError, IndexError) as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # ВАЖНО: Проверяем, что нажавший кнопку - это владелец магазина
+    if query.from_user.id != owner_user_id:
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        logger.warning(f"User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        return
+
+    # Получаем текущую дату
+    current_dt = current_datetime()
+    cur_year = current_dt.year
+    cur_day = current_dt.timetuple().tm_yday
+
+    # Вызываем функцию создания предсказания
+    success, message = create_prediction(
+        context.db_session,
+        context.game.id,
+        context.tg_user.id,
+        predicted_user_id,
+        cur_year,
+        cur_day
+    )
+
+    if success:
+        # Получаем новый баланс и имя предсказанного игрока
+        balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+        predicted_user = context.db_session.query(TGUser).filter_by(id=predicted_user_id).one()
+        predicted_username = escape_markdown2(predicted_user.full_username())
+        response_text = PREDICTION_PURCHASE_SUCCESS.format(
+            predicted_username=predicted_username,
+            balance=format_number(balance)
+        )
+        await query.answer("✅ Предсказание создано!", show_alert=True)
+        logger.info(f"User {context.tg_user.id} created prediction for user {predicted_user_id} in game {context.game.id}")
+
+        # Отправляем сообщение с результатом
+        await query.edit_message_text(
+            text=response_text,
+            parse_mode="MarkdownV2"
+        )
+    else:
+        # Обрабатываем ошибки
+        if message == "insufficient_funds":
+            balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+            response_text = PREDICTION_ERROR_INSUFFICIENT_FUNDS.format(balance=format_number(balance))
+        elif message == "already_exists":
+            response_text = PREDICTION_ERROR_ALREADY_EXISTS
+        elif message == "self_prediction":
+            response_text = PREDICTION_ERROR_SELF
+        else:
+            response_text = "❌ Произошла ошибка при создании предсказания"
+
+        await query.answer("❌ Не удалось создать предсказание", show_alert=True)
+        logger.warning(f"User {context.tg_user.id} failed to create prediction: {message}")
+
+        # Отправляем сообщение с ошибкой
+        try:
+            await query.edit_message_text(
+                text=response_text,
+                parse_mode="MarkdownV2"
+            )
+        except Exception as e:
+            logger.error(f"Failed to update message with error: {e}")
+
+
+@ensure_game
+async def handle_shop_double_confirm_callback(update: Update, context: GECallbackContext):
+    """Обработчик подтверждения покупки двойного шанса"""
+    from bot.handlers.game.shop_service import buy_double_chance
+    from bot.handlers.game.text_static import (
+        SHOP_ERROR_NOT_YOUR_SHOP,
+        DOUBLE_CHANCE_PURCHASE_SUCCESS,
+        DOUBLE_CHANCE_PURCHASE_SUCCESS_FOR_OTHER,
+        DOUBLE_CHANCE_ERROR_INSUFFICIENT_FUNDS,
+        DOUBLE_CHANCE_ERROR_ALREADY_ACTIVE
+    )
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop double confirm callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    # Парсим callback_data в формате shop_double_confirm_{target_user_id}_{owner_user_id}
+    try:
+        if not query.data.startswith('shop_double_confirm_'):
+            raise ValueError(f"Invalid callback_data format: {query.data}")
+
+        parts = query.data.replace('shop_double_confirm_', '').split('_')
+        if len(parts) != 2:
+            raise ValueError(f"Invalid callback_data format: {query.data}")
+
+        target_user_id = int(parts[0])
+        owner_user_id = int(parts[1])
+        logger.info(f"Parsed callback: target_user_id={target_user_id}, owner_user_id={owner_user_id}")
+    except (ValueError, IndexError) as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # ВАЖНО: Проверяем, что нажавший кнопку - это владелец магазина
+    if query.from_user.id != owner_user_id:
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        logger.warning(f"User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        return
+
+    # Получаем текущую дату
+    current_dt = current_datetime()
+    current_date = current_dt.date()
+    cur_year = current_dt.year
+
+    # Вызываем функцию покупки двойного шанса с target_user_id
+    success, message = buy_double_chance(
+        context.db_session,
+        context.game.id,
+        context.tg_user.id,
+        target_user_id,
+        cur_year,
+        current_date
+    )
+
+    if success:
+        # Получаем новый баланс покупателя
+        balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+
+        # Проверяем, купил ли игрок для себя или для другого
+        if target_user_id == context.tg_user.id:
+            response_text = DOUBLE_CHANCE_PURCHASE_SUCCESS.format(balance=format_number(balance))
+            await query.answer("✅ Двойной шанс куплен!", show_alert=True)
+        else:
+            # Получаем имя целевого игрока
+            target_user = context.db_session.query(TGUser).filter_by(id=target_user_id).one()
+            target_username = escape_markdown2(target_user.full_username())
+            response_text = DOUBLE_CHANCE_PURCHASE_SUCCESS_FOR_OTHER.format(
+                target_username=target_username,
+                balance=format_number(balance)
+            )
+            await query.answer("✅ Двойной шанс подарен!", show_alert=True)
+
+        logger.info(f"User {context.tg_user.id} bought double chance for user {target_user_id} in game {context.game.id}")
+
+        # Отправляем сообщение с результатом
+        await query.edit_message_text(
+            text=response_text,
+            parse_mode="MarkdownV2"
+        )
+    else:
+        # Обрабатываем ошибки
+        if message == "insufficient_funds":
+            balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+            response_text = DOUBLE_CHANCE_ERROR_INSUFFICIENT_FUNDS.format(balance=format_number(balance))
+        elif message.startswith("already_active:"):
+            # Формат: "already_active:target_user_id"
+            target_id = int(message.split(":")[1])
+            from bot.handlers.game.shop_service import get_or_create_player_effects
+            effect = get_or_create_player_effects(context.db_session, context.game.id, target_id)
+            date_str = escape_markdown2(effect.double_chance_until.isoformat())
+            response_text = DOUBLE_CHANCE_ERROR_ALREADY_ACTIVE.format(date=date_str)
+        else:
+            response_text = "❌ Произошла ошибка при покупке"
+
+        await query.answer("❌ Не удалось купить", show_alert=True)
+        logger.warning(f"User {context.tg_user.id} failed to buy double chance for user {target_user_id}: {message}")
+
+        # Отправляем сообщение с ошибкой
+        try:
+            await query.edit_message_text(
+                text=response_text,
+                parse_mode="MarkdownV2"
+            )
+        except Exception as e:
+            logger.error(f"Failed to update message with error: {e}")
 
 

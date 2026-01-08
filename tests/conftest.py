@@ -83,14 +83,34 @@ def mock_context(mock_db_session, mock_tg_user):
 @pytest.fixture
 def sample_players():
     """Список тестовых игроков"""
+    from bot.app.models import TGUser
     players = []
     for i in range(1, 4):
-        player = MagicMock()
-        player.id = i
-        player.tg_id = 100000000 + i
-        player.username = f"player{i}"
-        player.first_name = f"Player"
-        player.last_name = f"Number{i}"
-        player.full_username = MagicMock(return_value=f"@player{i}")
+        # Создаём реальные объекты TGUser вместо MagicMock
+        # чтобы full_username() возвращал строку
+        player = TGUser(
+            id=i,
+            tg_id=100000000 + i,
+            username=f"player{i}",
+            first_name="Player",
+            last_name=f"Number{i}"
+        )
         players.append(player)
     return players
+
+
+@pytest.fixture(autouse=True)
+def mock_shop_effects(request, mocker):
+    """Автоматически мокирует get_or_create_player_effects для всех тестов, кроме test_shop_service.py и test_shop_integration.py и test_game_effects_service.py"""
+    # Пропускаем автоматический мок для тестов, которые тестируют эту функцию или требуют кастомных моков
+    skip_tests = ['test_shop_service', 'test_shop_integration', 'test_game_effects_service']
+    if any(test_name in request.node.nodeid for test_name in skip_tests):
+        return None
+
+    mock_effect = MagicMock()
+    mock_effect.immunity_until = None
+    mock_effect.double_chance_until = None
+    # Патчим в обоих местах - в shop_service и в game_effects_service
+    mocker.patch('bot.handlers.game.shop_service.get_or_create_player_effects', return_value=mock_effect)
+    mocker.patch('bot.handlers.game.game_effects_service.get_or_create_player_effects', return_value=mock_effect)
+    return mock_effect

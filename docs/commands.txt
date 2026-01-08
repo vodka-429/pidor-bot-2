@@ -17,5 +17,8 @@ pidormissed - show missed days in current year
 pidorfinal - start final voting for missed days (Dec 29-30)
 pidorfinalstatus - show final voting status
 pidorfinalclose - close final voting (admins only)
+pidorcoinsme - show your pidorcoin balance
+pidorcoinsstats - pidorcoin leaderboard for current year
+pidorshop - open pidorcoin shop (buy immunity, double chance for any player, predictions)
 credits - report issue to github repo
 meme - get some random meme
