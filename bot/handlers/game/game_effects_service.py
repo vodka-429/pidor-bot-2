@@ -4,6 +4,8 @@ from datetime import date, datetime
 from typing import List, Set, Tuple
 from unittest.mock import MagicMock
 
+from sqlmodel import select
+
 from bot.app.models import TGUser, GamePlayerEffect
 from bot.handlers.game.shop_service import get_or_create_player_effects
 from bot.utils import to_date
@@ -18,30 +20,26 @@ def filter_protected_players(
     players: List[TGUser],
     current_date: date
 ) -> Tuple[List[TGUser], List[TGUser]]:
-    """
-    Разделить игроков на защищённых и незащищённых.
-
-    Args:
-        db_session: Сессия базы данных
-        game_id: ID игры (чата)
-        players: Список всех игроков
-        current_date: Текущая дата
-
-    Returns:
-        Кортеж (незащищённые игроки, защищённые игроки)
-    """
+    """Разделить игроков на защищённых и незащищённых."""
     protected_players = []
     unprotected_players = []
 
+    current_year = current_date.year
+    current_day = current_date.timetuple().tm_yday
+
     for player in players:
         effect = get_or_create_player_effects(db_session, game_id, player.id)
-        immunity_date = to_date(effect.immunity_until)
-        if immunity_date and immunity_date >= current_date:
+
+        # Проверяем защиту: активна если год и день совпадают с текущими
+        is_protected = (effect.immunity_year == current_year and effect.immunity_day == current_day)
+
+        if is_protected:
             protected_players.append(player)
-            logger.debug(f"Player {player.id} ({player.full_username()}) is protected until {effect.immunity_until}")
+            logger.debug(f"Player {player.id} is protected on {current_year}-{current_day}")
         else:
             unprotected_players.append(player)
-        db_session.add(effect)  # Добавляем эффект в сессию
+
+        db_session.add(effect)
 
     logger.info(f"Filtered players: {len(unprotected_players)} unprotected, {len(protected_players)} protected")
     return unprotected_players, protected_players
@@ -56,36 +54,38 @@ def build_selection_pool(
     """
     Создать пул выбора с учётом двойного шанса.
 
-    Игроки с активным двойным шансом добавляются в пул дважды,
-    что удваивает их шанс быть выбранными.
-
-    Args:
-        db_session: Сессия базы данных
-        game_id: ID игры (чата)
-        players: Список игроков для пула
-        current_date: Текущая дата
-
-    Returns:
-        Кортеж (пул выбора, set ID игроков с двойным шансом)
+    Игроки с активным двойным шансом добавляются в пул дважды.
     """
+    from bot.app.models import DoubleChancePurchase
+
     selection_pool = []
     players_with_double_chance = set()
 
-    for player in players:
-        effect = get_or_create_player_effects(db_session, game_id, player.id)
+    current_year = current_date.year
+    current_day = current_date.timetuple().tm_yday
 
-        # Проверяем активность двойного шанса
-        double_chance_date = to_date(effect.double_chance_until)
-        if double_chance_date and double_chance_date >= current_date:
+    # Получаем все активные покупки двойного шанса на сегодня
+    stmt = select(DoubleChancePurchase).where(
+        DoubleChancePurchase.game_id == game_id,
+        DoubleChancePurchase.year == current_year,
+        DoubleChancePurchase.day == current_day,
+        DoubleChancePurchase.is_used == False
+    )
+    active_purchases = db_session.exec(stmt).all()
+
+    # Собираем ID игроков с двойным шансом
+    targets_with_double_chance = {p.target_id for p in active_purchases}
+
+    for player in players:
+        if player.id in targets_with_double_chance:
             # Добавляем игрока дважды (двойной шанс)
             selection_pool.append(player)
             selection_pool.append(player)
             players_with_double_chance.add(player.id)
-            logger.debug(f"Player {player.id} ({player.full_username()}) has double chance until {effect.double_chance_until}")
+            logger.debug(f"Player {player.id} ({player.full_username()}) has double chance")
         else:
             # Добавляем игрока один раз
             selection_pool.append(player)
-        db_session.add(effect)  # Добавляем эффект в сессию
 
     logger.info(f"Built selection pool: {len(selection_pool)} entries, {len(players_with_double_chance)} players with double chance")
     return selection_pool, players_with_double_chance
@@ -97,28 +97,19 @@ def check_winner_immunity(
     winner: TGUser,
     current_date: date
 ) -> bool:
-    """
-    Проверить, защищён ли победитель.
-
-    Args:
-        db_session: Сессия базы данных
-        game_id: ID игры (чата)
-        winner: Победитель для проверки
-        current_date: Текущая дата
-
-    Returns:
-        True если победитель защищён, False иначе
-    """
+    """Проверить, защищён ли победитель."""
     winner_effect = get_or_create_player_effects(db_session, game_id, winner.id)
 
-    immunity_date = to_date(winner_effect.immunity_until)
-    if immunity_date and immunity_date >= current_date:
-        logger.info(f"Winner {winner.id} ({winner.full_username()}) is protected until {winner_effect.immunity_until}")
-        db_session.add(winner_effect)  # Добавляем эффект в сессию
-        return True
+    current_year = current_date.year
+    current_day = current_date.timetuple().tm_yday
 
-    db_session.add(winner_effect)  # Добавляем эффект в сессию
-    return False
+    is_protected = (winner_effect.immunity_year == current_year and winner_effect.immunity_day == current_day)
+
+    if is_protected:
+        logger.info(f"Winner {winner.id} ({winner.full_username()}) is protected on {current_year}-{current_day}")
+
+    db_session.add(winner_effect)
+    return is_protected
 
 
 def reset_double_chance(
@@ -130,20 +121,27 @@ def reset_double_chance(
     """
     Сбросить двойной шанс после победы.
 
-    Args:
-        db_session: Сессия базы данных
-        game_id: ID игры (чата)
-        user_id: ID пользователя
-        current_date: Текущая дата
+    Помечает все активные покупки двойного шанса для этого игрока как использованные.
     """
-    effect = get_or_create_player_effects(db_session, game_id, user_id)
+    from bot.app.models import DoubleChancePurchase
 
-    double_chance_date = to_date(effect.double_chance_until)
-    if double_chance_date and double_chance_date >= current_date:
-        logger.info(f"Resetting double chance for user {user_id}")
-        effect.double_chance_until = None
-        db_session.add(effect)  # Явно добавляем изменённый объект в сессию
-        # Коммит будет выполнен позже вместе с остальными изменениями
+    current_year = current_date.year
+    current_day = current_date.timetuple().tm_yday
+
+    # Находим все активные покупки двойного шанса для этого игрока на сегодня
+    stmt = select(DoubleChancePurchase).where(
+        DoubleChancePurchase.game_id == game_id,
+        DoubleChancePurchase.target_id == user_id,
+        DoubleChancePurchase.year == current_year,
+        DoubleChancePurchase.day == current_day,
+        DoubleChancePurchase.is_used == False
+    )
+    purchases = db_session.exec(stmt).all()
+
+    for purchase in purchases:
+        logger.info(f"Marking double chance purchase {purchase.id} as used for user {user_id}")
+        purchase.is_used = True
+        db_session.add(purchase)
 
 
 def is_immunity_enabled(current_datetime: datetime) -> bool:

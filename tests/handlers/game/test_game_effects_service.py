@@ -16,9 +16,13 @@ from bot.app.models import TGUser, GamePlayerEffect
 @pytest.mark.unit
 def test_filter_protected_players_separates_correctly(mock_db_session):
     """Test filter_protected_players correctly separates protected and unprotected players."""
+    from bot.handlers.game.shop_service import get_or_create_player_effects
+
     # Setup
     game_id = 1
-    current_date = date(2024, 6, 15)
+    current_date = date(2024, 6, 15)  # Day 167
+    current_year = 2024
+    current_day = 167
 
     # Create test players
     player1 = TGUser(id=1, tg_id=101, first_name="Player1", username="player1")
@@ -26,41 +30,55 @@ def test_filter_protected_players_separates_correctly(mock_db_session):
     player3 = TGUser(id=3, tg_id=103, first_name="Player3", username="player3")
     players = [player1, player2, player3]
 
-    # Mock effects: player1 protected, player2 and player3 not protected
-    effect1 = MagicMock()
-    effect1.immunity_until = date(2024, 6, 16)  # Protected until tomorrow
+    # Mock effects: player1 protected today, player2 and player3 not protected
+    effect1 = GamePlayerEffect(
+        game_id=game_id,
+        user_id=player1.id,
+        immunity_year=current_year,
+        immunity_day=current_day  # Protected today
+    )
 
-    effect2 = MagicMock()
-    effect2.immunity_until = None  # Not protected
+    effect2 = GamePlayerEffect(
+        game_id=game_id,
+        user_id=player2.id,
+        immunity_year=None,
+        immunity_day=None  # Not protected
+    )
 
-    effect3 = MagicMock()
-    effect3.immunity_until = date(2024, 6, 14)  # Protection expired
+    effect3 = GamePlayerEffect(
+        game_id=game_id,
+        user_id=player3.id,
+        immunity_year=2024,
+        immunity_day=166  # Protection expired yesterday
+    )
 
-    # Configure exec to return different effects
-    call_count = 0
-    def exec_side_effect(stmt):
-        nonlocal call_count
-        call_count += 1
-        mock_result = MagicMock()
-        if call_count == 1:
-            mock_result.first.return_value = effect1
-        elif call_count == 2:
-            mock_result.first.return_value = effect2
+    # Mock get_or_create_player_effects
+    def mock_get_effects(db_session, game_id, user_id):
+        if user_id == player1.id:
+            return effect1
+        elif user_id == player2.id:
+            return effect2
         else:
-            mock_result.first.return_value = effect3
-        return mock_result
+            return effect3
 
-    mock_db_session.exec.side_effect = exec_side_effect
+    # Patch the function in game_effects_service where it's used
+    import bot.handlers.game.game_effects_service as ges
+    original_get_effects = ges.get_or_create_player_effects
+    ges.get_or_create_player_effects = mock_get_effects
 
-    # Execute
-    unprotected, protected = filter_protected_players(mock_db_session, game_id, players, current_date)
+    try:
+        # Execute
+        unprotected, protected = filter_protected_players(mock_db_session, game_id, players, current_date)
 
-    # Verify
-    assert len(unprotected) == 2
-    assert len(protected) == 1
-    assert player1 in protected
-    assert player2 in unprotected
-    assert player3 in unprotected
+        # Verify
+        assert len(unprotected) == 2
+        assert len(protected) == 1
+        assert player1 in protected
+        assert player2 in unprotected
+        assert player3 in unprotected
+    finally:
+        # Restore original function
+        ges.get_or_create_player_effects = original_get_effects
 
 
 @pytest.mark.unit
@@ -68,26 +86,37 @@ def test_filter_protected_players_all_protected(mock_db_session):
     """Test filter_protected_players when all players are protected."""
     # Setup
     game_id = 1
-    current_date = date(2024, 6, 15)
+    current_date = date(2024, 6, 15)  # Day 167
+    current_year = 2024
+    current_day = 167
 
     player1 = TGUser(id=1, tg_id=101, first_name="Player1", username="player1")
     player2 = TGUser(id=2, tg_id=102, first_name="Player2", username="player2")
     players = [player1, player2]
 
-    # Mock all players protected
-    effect = MagicMock()
-    effect.immunity_until = date(2024, 6, 16)
+    # Mock all players protected today
+    def mock_get_effects(db_session, game_id, user_id):
+        return GamePlayerEffect(
+            game_id=game_id,
+            user_id=user_id,
+            immunity_year=current_year,
+            immunity_day=current_day
+        )
 
-    mock_result = MagicMock()
-    mock_result.first.return_value = effect
-    mock_db_session.exec.return_value = mock_result
+    # Patch the function
+    import bot.handlers.game.game_effects_service as ges
+    original_get_effects = ges.get_or_create_player_effects
+    ges.get_or_create_player_effects = mock_get_effects
 
-    # Execute
-    unprotected, protected = filter_protected_players(mock_db_session, game_id, players, current_date)
+    try:
+        # Execute
+        unprotected, protected = filter_protected_players(mock_db_session, game_id, players, current_date)
 
-    # Verify
-    assert len(unprotected) == 0
-    assert len(protected) == 2
+        # Verify
+        assert len(unprotected) == 0
+        assert len(protected) == 2
+    finally:
+        ges.get_or_create_player_effects = original_get_effects
 
 
 @pytest.mark.unit
@@ -102,8 +131,12 @@ def test_filter_protected_players_none_protected(mock_db_session):
     players = [player1, player2]
 
     # Mock no players protected
-    effect = MagicMock()
-    effect.immunity_until = None
+    effect = GamePlayerEffect(
+        game_id=game_id,
+        user_id=0,
+        immunity_year=None,
+        immunity_day=None
+    )
 
     mock_result = MagicMock()
     mock_result.first.return_value = effect
@@ -120,34 +153,31 @@ def test_filter_protected_players_none_protected(mock_db_session):
 @pytest.mark.unit
 def test_build_selection_pool_with_double_chance(mock_db_session):
     """Test build_selection_pool adds players with double chance twice."""
+    from bot.app.models import DoubleChancePurchase
+
     # Setup
     game_id = 1
-    current_date = date(2024, 6, 15)
+    current_date = date(2024, 6, 15)  # Day 166
+    current_year = 2024
+    current_day = 166
 
     player1 = TGUser(id=1, tg_id=101, first_name="Player1", username="player1")
     player2 = TGUser(id=2, tg_id=102, first_name="Player2", username="player2")
     players = [player1, player2]
 
-    # Mock effects: player1 has double chance, player2 doesn't
-    effect1 = MagicMock()
-    effect1.double_chance_until = date(2024, 6, 16)  # Active until tomorrow
+    # Mock double chance purchases: player1 has active purchase for today
+    purchase1 = DoubleChancePurchase(
+        game_id=game_id,
+        buyer_id=3,
+        target_id=player1.id,
+        year=current_year,
+        day=current_day,
+        is_used=False
+    )
 
-    effect2 = MagicMock()
-    effect2.double_chance_until = None
-
-    # Configure exec
-    call_count = 0
-    def exec_side_effect(stmt):
-        nonlocal call_count
-        call_count += 1
-        mock_result = MagicMock()
-        if call_count == 1:
-            mock_result.first.return_value = effect1
-        else:
-            mock_result.first.return_value = effect2
-        return mock_result
-
-    mock_db_session.exec.side_effect = exec_side_effect
+    mock_result = MagicMock()
+    mock_result.all.return_value = [purchase1]
+    mock_db_session.exec.return_value = mock_result
 
     # Execute
     pool, double_chance_players = build_selection_pool(mock_db_session, game_id, players, current_date)
@@ -163,40 +193,40 @@ def test_build_selection_pool_with_double_chance(mock_db_session):
 @pytest.mark.unit
 def test_build_selection_pool_multiple_double_chance(mock_db_session):
     """Test build_selection_pool with multiple players having double chance."""
+    from bot.app.models import DoubleChancePurchase
+
     # Setup
     game_id = 1
-    current_date = date(2024, 6, 15)
+    current_date = date(2024, 6, 15)  # Day 166
+    current_year = 2024
+    current_day = 166
 
     player1 = TGUser(id=1, tg_id=101, first_name="Player1", username="player1")
     player2 = TGUser(id=2, tg_id=102, first_name="Player2", username="player2")
     player3 = TGUser(id=3, tg_id=103, first_name="Player3", username="player3")
     players = [player1, player2, player3]
 
-    # Mock effects: player1 and player3 have double chance
-    effect1 = MagicMock()
-    effect1.double_chance_until = date(2024, 6, 16)
+    # Mock double chance purchases: player1 and player3 have active purchases
+    purchase1 = DoubleChancePurchase(
+        game_id=game_id,
+        buyer_id=4,
+        target_id=player1.id,
+        year=current_year,
+        day=current_day,
+        is_used=False
+    )
+    purchase3 = DoubleChancePurchase(
+        game_id=game_id,
+        buyer_id=5,
+        target_id=player3.id,
+        year=current_year,
+        day=current_day,
+        is_used=False
+    )
 
-    effect2 = MagicMock()
-    effect2.double_chance_until = None
-
-    effect3 = MagicMock()
-    effect3.double_chance_until = date(2024, 6, 16)
-
-    # Configure exec
-    call_count = 0
-    def exec_side_effect(stmt):
-        nonlocal call_count
-        call_count += 1
-        mock_result = MagicMock()
-        if call_count == 1:
-            mock_result.first.return_value = effect1
-        elif call_count == 2:
-            mock_result.first.return_value = effect2
-        else:
-            mock_result.first.return_value = effect3
-        return mock_result
-
-    mock_db_session.exec.side_effect = exec_side_effect
+    mock_result = MagicMock()
+    mock_result.all.return_value = [purchase1, purchase3]
+    mock_db_session.exec.return_value = mock_result
 
     # Execute
     pool, double_chance_players = build_selection_pool(mock_db_session, game_id, players, current_date)
@@ -216,22 +246,36 @@ def test_check_winner_immunity_active(mock_db_session):
     """Test check_winner_immunity returns True when winner is protected."""
     # Setup
     game_id = 1
-    current_date = date(2024, 6, 15)
+    current_date = date(2024, 6, 15)  # Day 167
+    current_year = 2024
+    current_day = 167
     winner = TGUser(id=1, tg_id=101, first_name="Winner", username="winner")
 
-    # Mock effect with active immunity
-    effect = MagicMock()
-    effect.immunity_until = date(2024, 6, 16)
+    # Mock effect with active immunity for today
+    effect = GamePlayerEffect(
+        game_id=game_id,
+        user_id=winner.id,
+        immunity_year=current_year,
+        immunity_day=current_day
+    )
 
-    mock_result = MagicMock()
-    mock_result.first.return_value = effect
-    mock_db_session.exec.return_value = mock_result
+    # Mock get_or_create_player_effects
+    def mock_get_effects(db_session, game_id, user_id):
+        return effect
 
-    # Execute
-    result = check_winner_immunity(mock_db_session, game_id, winner, current_date)
+    # Patch the function
+    import bot.handlers.game.game_effects_service as ges
+    original_get_effects = ges.get_or_create_player_effects
+    ges.get_or_create_player_effects = mock_get_effects
 
-    # Verify
-    assert result is True
+    try:
+        # Execute
+        result = check_winner_immunity(mock_db_session, game_id, winner, current_date)
+
+        # Verify
+        assert result is True
+    finally:
+        ges.get_or_create_player_effects = original_get_effects
 
 
 @pytest.mark.unit
@@ -239,12 +283,16 @@ def test_check_winner_immunity_expired(mock_db_session):
     """Test check_winner_immunity returns False when immunity is expired."""
     # Setup
     game_id = 1
-    current_date = date(2024, 6, 15)
+    current_date = date(2024, 6, 15)  # Day 166
     winner = TGUser(id=1, tg_id=101, first_name="Winner", username="winner")
 
-    # Mock effect with expired immunity
-    effect = MagicMock()
-    effect.immunity_until = date(2024, 6, 14)  # Expired yesterday
+    # Mock effect with expired immunity (yesterday)
+    effect = GamePlayerEffect(
+        game_id=game_id,
+        user_id=winner.id,
+        immunity_year=2024,
+        immunity_day=165  # Yesterday
+    )
 
     mock_result = MagicMock()
     mock_result.first.return_value = effect
@@ -259,25 +307,45 @@ def test_check_winner_immunity_expired(mock_db_session):
 
 @pytest.mark.unit
 def test_reset_double_chance(mock_db_session):
-    """Test reset_double_chance clears double chance for user."""
+    """Test reset_double_chance marks purchases as used."""
+    from bot.app.models import DoubleChancePurchase
+
     # Setup
     game_id = 1
     user_id = 1
-    current_date = date(2024, 6, 15)
+    current_date = date(2024, 6, 15)  # Day 166
+    current_year = 2024
+    current_day = 166
 
-    # Mock effect with active double chance
-    effect = MagicMock()
-    effect.double_chance_until = date(2024, 6, 16)
+    # Mock active double chance purchases for today
+    purchase1 = DoubleChancePurchase(
+        game_id=game_id,
+        buyer_id=2,
+        target_id=user_id,
+        year=current_year,
+        day=current_day,
+        is_used=False
+    )
+    purchase2 = DoubleChancePurchase(
+        game_id=game_id,
+        buyer_id=3,
+        target_id=user_id,
+        year=current_year,
+        day=current_day,
+        is_used=False
+    )
 
     mock_result = MagicMock()
-    mock_result.first.return_value = effect
+    mock_result.all.return_value = [purchase1, purchase2]
     mock_db_session.exec.return_value = mock_result
 
     # Execute
     reset_double_chance(mock_db_session, game_id, user_id, current_date)
 
-    # Verify
-    assert effect.double_chance_until is None
+    # Verify both purchases are marked as used
+    assert purchase1.is_used is True
+    assert purchase2.is_used is True
+    assert mock_db_session.add.call_count == 2
 
 
 @pytest.mark.unit

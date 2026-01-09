@@ -39,11 +39,12 @@ async def test_immunity_blocks_selection(mock_update, mock_context, mock_game, s
     mock_dt.timetuple.return_value.tm_yday = 167
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
 
-    # Create effect for first player with active immunity
+    # Create effect for first player with active immunity for today
     effect1 = GamePlayerEffect(
         game_id=mock_game.id,
         user_id=sample_players[0].id,
-        immunity_until=date(2024, 6, 16),  # Active until tomorrow
+        immunity_year=2024,
+        immunity_day=167,  # Today (June 15 = day 167)
         immunity_last_used=date(2024, 6, 14)
     )
 
@@ -137,11 +138,12 @@ async def test_immunity_reselection(mock_update, mock_context, mock_game, sample
     mock_dt.timetuple.return_value.tm_yday = 167
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
 
-    # Create effect for first player with active immunity
+    # Create effect for first player with active immunity for today
     effect1 = GamePlayerEffect(
         game_id=mock_game.id,
         user_id=sample_players[0].id,
-        immunity_until=date(2024, 6, 16),
+        immunity_year=2024,
+        immunity_day=167,  # Today (June 15 = day 167)
         immunity_last_used=date(2024, 6, 14)
     )
 
@@ -212,7 +214,8 @@ async def test_immunity_message_shown(mock_update, mock_context, mock_game, samp
     effect1 = GamePlayerEffect(
         game_id=mock_game.id,
         user_id=sample_players[0].id,
-        immunity_until=date(2024, 6, 16),
+        immunity_year=2024,
+        immunity_day=167,  # Today (June 15 = day 167)
         immunity_last_used=date(2024, 6, 14)
     )
 
@@ -277,19 +280,32 @@ async def test_double_chance_increases_probability(mock_update, mock_context, mo
     mock_dt.timetuple.return_value.tm_yday = 167
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
 
-    # First player has double chance
-    effect1 = GamePlayerEffect(
+    # First player has double chance for today
+    from bot.app.models import DoubleChancePurchase
+
+    purchase1 = DoubleChancePurchase(
         game_id=mock_game.id,
-        user_id=sample_players[0].id,
-        double_chance_until=date(2024, 6, 16)
+        buyer_id=sample_players[0].id,
+        target_id=sample_players[0].id,
+        year=2024,
+        day=167,  # Today
+        is_used=False
     )
 
-    def mock_get_effects(db_session, game_id, user_id):
-        if user_id == sample_players[0].id:
-            return effect1
-        return GamePlayerEffect(game_id=game_id, user_id=user_id)
+    # Mock exec to return the purchase
+    mock_purchase_result = MagicMock()
+    mock_purchase_result.all.return_value = [purchase1]
 
-    mocker.patch('bot.handlers.game.game_effects_service.get_or_create_player_effects', side_effect=mock_get_effects)
+    original_exec = mock_context.db_session.exec
+    def mock_exec_with_purchase(stmt):
+        stmt_str = str(stmt)
+        if 'doublechancepurchase' in stmt_str.lower():
+            return mock_purchase_result
+        return original_exec(stmt)
+
+    mock_context.db_session.exec = mock_exec_with_purchase
+
+    mocker.patch('bot.handlers.game.game_effects_service.get_or_create_player_effects', return_value=GamePlayerEffect(game_id=mock_game.id, user_id=0))
 
     # Capture the selection pool passed to random.choice
     selection_pools = []
@@ -323,10 +339,8 @@ async def test_double_chance_increases_probability(mock_update, mock_context, mo
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
-    # Verify that selection pool contains first player twice
-    # The pool should have 4 players: player[0], player[0], player[1], player[2]
-    # We can't directly check the pool, but we can verify double chance was reset
-    assert effect1.double_chance_until is None, "Double chance should be reset after use"
+    # Verify that double chance purchase was marked as used
+    assert purchase1.is_used is True, "Double chance should be marked as used after winning"
 
 
 @pytest.mark.asyncio
@@ -360,19 +374,32 @@ async def test_double_chance_resets_after_win(mock_update, mock_context, mock_ga
     mock_dt.timetuple.return_value.tm_yday = 167
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
 
-    # First player has double chance
-    effect1 = GamePlayerEffect(
+    # First player has double chance for today
+    from bot.app.models import DoubleChancePurchase
+
+    purchase1 = DoubleChancePurchase(
         game_id=mock_game.id,
-        user_id=sample_players[0].id,
-        double_chance_until=date(2024, 6, 16)
+        buyer_id=sample_players[0].id,
+        target_id=sample_players[0].id,
+        year=2024,
+        day=167,  # Today
+        is_used=False
     )
 
-    def mock_get_effects(db_session, game_id, user_id):
-        if user_id == sample_players[0].id:
-            return effect1
-        return GamePlayerEffect(game_id=game_id, user_id=user_id)
+    # Mock exec to return the purchase
+    mock_purchase_result = MagicMock()
+    mock_purchase_result.all.return_value = [purchase1]
 
-    mocker.patch('bot.handlers.game.game_effects_service.get_or_create_player_effects', side_effect=mock_get_effects)
+    original_exec = mock_context.db_session.exec
+    def mock_exec_with_purchase(stmt):
+        stmt_str = str(stmt)
+        if 'doublechancepurchase' in stmt_str.lower():
+            return mock_purchase_result
+        return original_exec(stmt)
+
+    mock_context.db_session.exec = mock_exec_with_purchase
+
+    mocker.patch('bot.handlers.game.game_effects_service.get_or_create_player_effects', return_value=GamePlayerEffect(game_id=mock_game.id, user_id=0))
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
         sample_players[0],  # Winner with double chance
         "Stage 1", "Stage 2", "Stage 3", "Stage 4: {username}",
@@ -384,8 +411,8 @@ async def test_double_chance_resets_after_win(mock_update, mock_context, mock_ga
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
-    # Verify double chance was reset
-    assert effect1.double_chance_until is None, "Double chance should be reset to None after winning"
+    # Verify double chance was marked as used
+    assert purchase1.is_used is True, "Double chance should be marked as used after winning"
 
 
 @pytest.mark.asyncio
@@ -652,23 +679,43 @@ async def test_combined_effects(mock_update, mock_context, mock_game, sample_pla
     mock_dt.timetuple.return_value.tm_yday = 167
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
 
+    # Player 0 has immunity for today
     effect0 = GamePlayerEffect(
         game_id=mock_game.id,
         user_id=sample_players[0].id,
-        immunity_until=date(2024, 6, 16)
+        immunity_year=2024,
+        immunity_day=167  # Today
     )
-    effect1 = GamePlayerEffect(
+
+    # Player 1 has double chance for today
+    from bot.app.models import DoubleChancePurchase
+
+    purchase1 = DoubleChancePurchase(
         game_id=mock_game.id,
-        user_id=sample_players[1].id,
-        double_chance_until=date(2024, 6, 16)
+        buyer_id=sample_players[1].id,
+        target_id=sample_players[1].id,
+        year=2024,
+        day=167,  # Today
+        is_used=False
     )
 
     def mock_get_effects(db_session, game_id, user_id):
         if user_id == sample_players[0].id:
             return effect0
-        elif user_id == sample_players[1].id:
-            return effect1
         return GamePlayerEffect(game_id=game_id, user_id=user_id)
+
+    # Mock exec to return the purchase
+    mock_purchase_result = MagicMock()
+    mock_purchase_result.all.return_value = [purchase1]
+
+    original_exec = mock_context.db_session.exec
+    def mock_exec_with_purchase(stmt):
+        stmt_str = str(stmt)
+        if 'doublechancepurchase' in stmt_str.lower():
+            return mock_purchase_result
+        return original_exec(stmt)
+
+    mock_context.db_session.exec = mock_exec_with_purchase
 
     mocker.patch('bot.handlers.game.game_effects_service.get_or_create_player_effects', side_effect=mock_get_effects)
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
@@ -687,8 +734,8 @@ async def test_combined_effects(mock_update, mock_context, mock_game, sample_pla
     game_result = mock_game.results.append.call_args[0][0]
     assert game_result.winner == sample_players[1], "Winner should be player with double chance after immunity reselection"
 
-    # Verify double chance was reset
-    assert effect1.double_chance_until is None, "Double chance should be reset after winning"
+    # Verify double chance was marked as used
+    assert purchase1.is_used is True, "Double chance should be marked as used after winning"
 
 
 @pytest.mark.asyncio
@@ -722,12 +769,13 @@ async def test_all_players_protected(mock_update, mock_context, mock_game, sampl
     mock_dt.timetuple.return_value.tm_yday = 167
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
 
-    # All players have immunity
+    # All players have immunity for today
     def mock_get_effects(db_session, game_id, user_id):
         return GamePlayerEffect(
             game_id=game_id,
             user_id=user_id,
-            immunity_until=date(2024, 6, 16)
+            immunity_year=2024,
+            immunity_day=167  # Today
         )
 
     mocker.patch('bot.handlers.game.game_effects_service.get_or_create_player_effects', side_effect=mock_get_effects)
@@ -763,11 +811,12 @@ async def test_effects_isolated_between_games(mock_update, mock_context, sample_
     game2 = Game(id=2, chat_id=200)
     game2.players = sample_players
 
-    # Setup effects for game1 - player 0 has immunity
+    # Setup effects for game1 - player 0 has immunity for today
     effect_game1_player0 = GamePlayerEffect(
         game_id=game1.id,
         user_id=sample_players[0].id,
-        immunity_until=date(2024, 6, 16)
+        immunity_year=2024,
+        immunity_day=167  # Today
     )
 
     # Mock get_or_create_player_effects to return different effects for different games
@@ -904,20 +953,32 @@ async def test_double_chance_for_other_player(mock_update, mock_context, mock_ga
     mock_dt.timetuple.return_value.tm_yday = 167
     mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
 
-    # Player 1 bought double chance for Player 0
-    effect0 = GamePlayerEffect(
+    # Player 1 bought double chance for Player 0 for today
+    from bot.app.models import DoubleChancePurchase
+
+    purchase0 = DoubleChancePurchase(
         game_id=mock_game.id,
-        user_id=sample_players[0].id,
-        double_chance_until=date(2024, 6, 16),
-        double_chance_bought_by=sample_players[1].id  # Bought by player 1
+        buyer_id=sample_players[1].id,  # Bought by player 1
+        target_id=sample_players[0].id,  # For player 0
+        year=2024,
+        day=167,  # Today
+        is_used=False
     )
 
-    def mock_get_effects(db_session, game_id, user_id):
-        if user_id == sample_players[0].id:
-            return effect0
-        return GamePlayerEffect(game_id=game_id, user_id=user_id)
+    # Mock exec to return the purchase
+    mock_purchase_result = MagicMock()
+    mock_purchase_result.all.return_value = [purchase0]
 
-    mocker.patch('bot.handlers.game.game_effects_service.get_or_create_player_effects', side_effect=mock_get_effects)
+    original_exec = mock_context.db_session.exec
+    def mock_exec_with_purchase(stmt):
+        stmt_str = str(stmt)
+        if 'doublechancepurchase' in stmt_str.lower():
+            return mock_purchase_result
+        return original_exec(stmt)
+
+    mock_context.db_session.exec = mock_exec_with_purchase
+
+    mocker.patch('bot.handlers.game.game_effects_service.get_or_create_player_effects', return_value=GamePlayerEffect(game_id=mock_game.id, user_id=0))
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
         sample_players[0],  # Winner with double chance bought by another player
         "Stage 1", "Stage 2", "Stage 3", "Stage 4: {username}",
@@ -929,8 +990,8 @@ async def test_double_chance_for_other_player(mock_update, mock_context, mock_ga
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
-    # Verify double chance was reset after use
-    assert effect0.double_chance_until is None, "Double chance should be reset after winning"
+    # Verify double chance was marked as used after winning
+    assert purchase0.is_used is True, "Double chance should be marked as used after winning"
 
     # Verify winner is player 0
     game_result = mock_game.results.append.call_args[0][0]
