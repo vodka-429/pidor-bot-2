@@ -7,4 +7,4 @@ replicaCount: 1
 image:
   pullPolicy: IfNotPresent
   repository: cr.yandex/crpr9jlf6k4254l80050/pidor_bot
-  version: 90-a78dd2e05ba48f1e01b5075e800406400b31017f
+  version: 91-07ea86737a1a07bf0779c7c7362a37056455bcc3
