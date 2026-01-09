@@ -22,14 +22,16 @@
 | Длительность | 1 день |
 | Ограничение | Не чаще 1 раза в неделю |
 
-**Статус:** ✅ **РЕАЛИЗОВАНО** (2026-01-08)
+**Статус:** ✅ **РЕАЛИЗОВАНО** (2026-01-08, улучшено 2026-01-09)
 
 **Реализация:**
-- ✅ Создана модель `GamePlayerEffect` с полями `immunity_until`, `immunity_last_used` (изолировано по играм через `game_id`)
+- ✅ Создана модель `GamePlayerEffect` с полями `immunity_year`, `immunity_day`, `immunity_last_used` (изолировано по играм через `game_id`)
+- ✅ Хранение на year+day вместо datetime для устранения багов с временем суток (v3)
 - ✅ Интегрировано в `pidor_cmd` - перевыбор при активной защите
 - ✅ Покупка через интерактивное меню `/pidorshop`
 - ✅ Начисление койнов защищенному игроку при срабатывании защиты
 - ✅ Специальное сообщение если все игроки защищены
+- ✅ Подсветка в магазине если защита активна (v3)
 
 ---
 
@@ -77,16 +79,20 @@
 | Применение | Следующий розыгрыш |
 | Назначение | Троллинг друзей или самоирония |
 | Покупка | Для себя или для другого игрока |
+| Ограничение | Один покупатель = одна покупка в день |
 
-**Статус:** ✅ **РЕАЛИЗОВАНО** (2026-01-08, улучшено 2026-01-08)
+**Статус:** ✅ **РЕАЛИЗОВАНО** (2026-01-08, улучшено 2026-01-09)
 
 **Реализация:**
-- ✅ Создана модель `GamePlayerEffect` с полями `double_chance_until`, `double_chance_bought_by` (изолировано по играм)
+- ✅ Создана отдельная таблица `DoubleChancePurchase` для отслеживания всех покупок (v3)
+- ✅ Хранение на year+day вместо datetime для консистентности (v3)
 - ✅ Интегрировано в `pidor_cmd` - игрок добавляется в пул выбора дважды
 - ✅ Покупка через интерактивное меню `/pidorshop` с выбором целевого игрока
-- ✅ Автоматический сброс эффекта после победы
+- ✅ Автоматический сброс эффекта после победы (пометка `is_used = True`)
 - ✅ Сообщение о срабатывании двойного шанса
 - ✅ Отслеживание покупателя (кто купил двойной шанс для кого)
+- ✅ Ограничение: один покупатель может купить только один двойной шанс в день (v3)
+- ✅ Множественные покупатели: несколько игроков могут купить двойной шанс одному игроку (v3)
 
 ---
 
@@ -134,15 +140,17 @@
 | Награда | +30 койнов за правильное предсказание |
 | Ограничение | 1 предсказание в день |
 
-**Статус:** ✅ **РЕАЛИЗОВАНО** (2026-01-08, улучшено 2026-01-08)
+**Статус:** ✅ **РЕАЛИЗОВАНО** (2026-01-08, улучшено 2026-01-09)
 
 **Реализация:**
 - ✅ Создана модель `Prediction` с полями: `game_id`, `user_id`, `predicted_user_id`, `year`, `day`, `is_correct`, `created_at`
+- ✅ Использует year+day для консистентности с другими эффектами
 - ✅ Интегрирована проверка результата в `pidor_cmd` (+30 койнов за правильное предсказание)
 - ✅ Покупка через интерактивное меню `/pidorshop` с двухэтапным выбором игрока
 - ✅ Объединённые уведомления о результатах всех предсказаний в одном сообщении
 - ✅ Ограничение: 1 предсказание в день на игру
 - ✅ Выделена логика в отдельный сервис `prediction_service.py`
+- ✅ Подсветка в магазине если предсказание создано (v3)
 
 ---
 
@@ -338,7 +346,7 @@ SHOP_PRICES = {
 
 #### MVP v1: Реализованная архитектура ✅
 
-**Статус:** ✅ **РЕАЛИЗОВАНО** (2026-01-08, улучшено 2026-01-08)
+**Статус:** ✅ **РЕАЛИЗОВАНО** (2026-01-08, улучшено 2026-01-09)
 
 ⚠️ **Критическое архитектурное решение:** Эффекты изолированы по играм через отдельную таблицу `GamePlayerEffect` с составным ключом `(game_id, user_id)`. Это позволяет пользователю участвовать в нескольких играх (чатах) с независимыми эффектами.
 
@@ -350,13 +358,31 @@ class GamePlayerEffect(Base):
     id: Optional[int]
     game_id: int  # Внешний ключ на game.id
     user_id: int  # Внешний ключ на tguser.id
-    immunity_until: Optional[date] = None
-    immunity_last_used: Optional[date] = None
-    double_chance_until: Optional[date] = None
-    double_chance_bought_by: Optional[int] = None  # Кто купил двойной шанс
+
+    # Защита от пидора (year+day) - v3 улучшение
+    immunity_year: Optional[int] = None
+    immunity_day: Optional[int] = None
+    immunity_last_used: Optional[datetime] = None  # Для кулдауна
+
+    # Двойной шанс теперь в отдельной таблице DoubleChancePurchase
     next_win_multiplier: int = 1
 
     # UniqueConstraint на (game_id, user_id)
+
+# Модель для покупок двойного шанса - v3 новая таблица
+class DoubleChancePurchase(Base):
+    __tablename__ = 'doublechancepurchase'
+
+    id: Optional[int]
+    game_id: int  # Внешний ключ на game.id
+    buyer_id: int  # Кто купил (внешний ключ на tguser.id)
+    target_id: int  # Для кого купил (внешний ключ на tguser.id)
+    year: int  # Год ДЕЙСТВИЯ (не покупки!)
+    day: int   # День ДЕЙСТВИЯ (не покупки!)
+    is_used: bool = False  # Использован ли (после победы)
+    created_at: datetime
+
+    # UniqueConstraint на (game_id, buyer_id, year, day) - один покупатель = одна покупка в день
 
 # Модель для предсказаний
 class Prediction(Base):
@@ -378,28 +404,33 @@ class Prediction(Base):
 
 ```python
 # bot/handlers/game/shop_service.py
+def is_leap_year(year: int) -> bool  # v3 новая функция
+def get_days_in_year(year: int) -> int  # v3 новая функция
+def calculate_next_day(current_date: date, year: int) -> tuple[int, int]  # v3 новая функция
 def get_or_create_player_effects(db_session, game_id, user_id)
 def spend_coins(db_session, game_id, user_id, amount, year, reason)
 def can_afford(db_session, game_id, user_id, price)
-def buy_immunity(db_session, game_id, user_id, year, current_date)
-def buy_double_chance(db_session, game_id, user_id, target_user_id, year, current_date)
+def buy_immunity(db_session, game_id, user_id, year, current_date)  # v3 обновлено для year+day
+def buy_double_chance(db_session, game_id, user_id, target_user_id, year, current_date)  # v3 обновлено для DoubleChancePurchase
 def create_prediction(db_session, game_id, user_id, predicted_user_id, year, day)
+def get_active_effects(db_session, game_id, user_id, current_date)  # v3 новая функция для UI
 
 # bot/handlers/game/shop_helpers.py
-def create_shop_keyboard(owner_user_id: int) -> InlineKeyboardMarkup
+def format_date_readable(year: int, day: int) -> str  # v3 новая функция
+def create_shop_keyboard(owner_user_id: int, active_effects: dict) -> InlineKeyboardMarkup  # v3 обновлено
 def create_prediction_keyboard(players: List[TGUser], owner_user_id: int)
 def create_double_chance_keyboard(players: List[TGUser], owner_user_id: int)
-def format_shop_menu_message(balance: int) -> str
+def format_shop_menu_message(balance: int, user_name: str, active_effects: dict) -> str  # v3 обновлено
 def parse_shop_callback_data(callback_data: str) -> Tuple[str, int]
 
-# bot/handlers/game/game_effects_service.py (новый сервис)
-def filter_protected_players(db_session, game_id, players, current_date)
-def build_selection_pool(db_session, game_id, players, current_date)
-def check_winner_immunity(db_session, game_id, winner, current_date)
-def reset_double_chance(db_session, game_id, user_id, current_date)
+# bot/handlers/game/game_effects_service.py (новый сервис v2, обновлён v3)
+def filter_protected_players(db_session, game_id, players, current_date)  # v3 обновлено для year+day
+def build_selection_pool(db_session, game_id, players, current_date)  # v3 обновлено для DoubleChancePurchase
+def check_winner_immunity(db_session, game_id, winner, current_date)  # v3 обновлено для year+day
+def reset_double_chance(db_session, game_id, user_id, current_date)  # v3 обновлено для DoubleChancePurchase
 def is_immunity_enabled(current_datetime)
 
-# bot/handlers/game/prediction_service.py (новый сервис)
+# bot/handlers/game/prediction_service.py (новый сервис v2)
 def get_predictions_for_day(db_session, game_id, year, day)
 def process_predictions(db_session, game_id, year, day, winner_id)
 def format_predictions_summary(predictions_results, db_session)
@@ -407,10 +438,11 @@ def award_correct_predictions(db_session, game_id, year, predictions_results)
 ```
 
 **Интеграция с игровой логикой:**
-- ✅ Защита: фильтрация защищенных игроков, перевыбор, начисление койнов
-- ✅ Двойной шанс: удвоение в пуле выбора, автосброс после победы, покупка для других игроков
+- ✅ Защита: фильтрация защищенных игроков, перевыбор, начисление койнов (v3: year+day вместо datetime)
+- ✅ Двойной шанс: удвоение в пуле выбора, автосброс после победы, покупка для других игроков (v3: отдельная таблица, множественные покупатели)
 - ✅ Предсказания: проверка после выбора пидора, начисление награды, объединённые уведомления
 - ✅ Рефакторинг: логика эффектов и предсказаний вынесена в отдельные сервисы
+- ✅ UI улучшения: подсветка активных товаров, понятные даты, имена пользователей (v3)
 
 #### Будущее расширение: Полная система магазина
 
@@ -543,6 +575,75 @@ class UserAchievement(Base):
 - [pidor-improvements-plan.md](./pidor-improvements-plan.md) - план улучшений v2
 - [pidor-improvements-plan-track.md](./pidor-improvements-plan-track.md) - трекинг выполнения
 
+### Обновление 2026-01-09 (v3): ✅ КРИТИЧЕСКИЕ ИСПРАВЛЕНИЯ АРХИТЕКТУРЫ
+
+**Завершён рефакторинг хранения эффектов магазина:**
+
+**Проблема:**
+- Защита и двойной шанс использовали `datetime` для хранения срока действия
+- Это создавало баги с временем суток: защита, купленная в 10:00, могла сработать в тот же день
+- Предсказания использовали `year+day`, что было несовместимо с остальными эффектами
+
+**Решение:**
+- ✅ **Унифицировано хранение на year+day** - все эффекты теперь используют одинаковый формат
+- ✅ **Двойной шанс в отдельной таблице** - создана таблица `DoubleChancePurchase` для отслеживания всех покупок
+- ✅ **Ограничение на покупки** - один игрок может купить только один двойной шанс в день
+- ✅ **Множественные покупатели** - несколько игроков могут купить двойной шанс одному игроку
+
+**Архитектурные изменения:**
+
+```python
+# БЫЛО (проблемное):
+class GamePlayerEffect(Base):
+    immunity_until: Optional[datetime]  # ❌ Баг с временем суток
+    double_chance_until: Optional[datetime]  # ❌ Несовместимо с предсказаниями
+    double_chance_bought_by: Optional[int]  # ❌ Только один покупатель
+
+# СТАЛО (исправленное):
+class GamePlayerEffect(Base):
+    immunity_year: Optional[int]  # ✅ Год действия защиты
+    immunity_day: Optional[int]   # ✅ День года действия (1-366)
+    immunity_last_used: Optional[datetime]  # ✅ Для кулдауна (работает корректно)
+    # Поля double_chance удалены - перенесены в отдельную таблицу
+
+class DoubleChancePurchase(Base):  # ✅ НОВАЯ ТАБЛИЦА
+    game_id: int
+    buyer_id: int      # Кто купил
+    target_id: int     # Для кого купил
+    year: int          # Год ДЕЙСТВИЯ (не покупки!)
+    day: int           # День ДЕЙСТВИЯ (не покупки!)
+    is_used: bool      # Использован ли (после победы)
+    created_at: datetime
+```
+
+**Преимущества year+day:**
+- ✅ Нет зависимости от времени суток
+- ✅ Простая логика: `day == current_day` для проверки активности
+- ✅ Консистентность с предсказаниями
+- ✅ Меньше багов
+
+**Улучшения UI:**
+- ✅ **Подсветка купленных товаров** - в магазине показывается ✅ перед активными эффектами
+- ✅ **Понятные даты** - "9 января" вместо "2026-01-09"
+- ✅ **Имена в сообщениях** - "Иван предсказал" вместо "Вы предсказали"
+
+**Обновлённые компоненты:**
+- `bot/app/models.py`: изменена модель `GamePlayerEffect`, добавлена `DoubleChancePurchase`
+- `bot/handlers/game/shop_service.py`: обновлены функции покупки и проверки
+- `bot/handlers/game/shop_helpers.py`: добавлена `format_date_readable()`, обновлены UI функции
+- `bot/handlers/game/game_effects_service.py`: обновлена логика проверки эффектов
+- `bot/handlers/game/text_static.py`: улучшены шаблоны сообщений
+- `migrations/versions/`: 2 новые миграции для изменения структуры
+
+**Тестовое покрытие:**
+- Обновлены все 48 тестов для работы с новой архитектурой
+- Добавлены новые тесты для проверки year+day логики
+- Все тесты прошли успешно (74 теста всего)
+
+**Связанные документы:**
+- [shop-fixes-plan.md](./shop-fixes-plan.md) - план исправлений v3
+- [shop-fixes-plan-track.md](./shop-fixes-plan-track.md) - трекинг выполнения
+
 ### Обновление 2026-01-08 (v1): ✅ MVP v1 РЕАЛИЗОВАН
 
 **Завершена полная реализация магазина пидор-койнов:**
@@ -594,4 +695,6 @@ class UserAchievement(Base):
 - [pidorcoins-shop-plan-track.md](./pidorcoins-shop-plan-track.md) - трекинг выполнения всех 22 этапов MVP v1
 - [pidor-improvements-plan.md](./pidor-improvements-plan.md) - ✅ план улучшений v2 - **ЗАВЕРШЕН**
 - [pidor-improvements-plan-track.md](./pidor-improvements-plan-track.md) - трекинг выполнения всех 16 этапов улучшений
+- [shop-fixes-plan.md](./shop-fixes-plan.md) - ✅ план исправления проблем магазина v2 - **ЗАВЕРШЕН**
+- [shop-fixes-plan-track.md](./shop-fixes-plan-track.md) - трекинг выполнения всех 6 этапов исправлений
 - [pidorcoins-achievements-plan.md](./pidorcoins-achievements-plan.md) - план системы достижений (Этап 2)

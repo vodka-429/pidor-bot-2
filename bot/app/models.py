@@ -136,17 +136,48 @@ class GamePlayerEffect(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     game_id: int = Field(foreign_key="game.id", nullable=False)
     user_id: int = Field(foreign_key="tguser.id", nullable=False)
-    immunity_until: Optional[datetime] = Field(default=None)  # Дата окончания защиты от пидора
-    immunity_last_used: Optional[datetime] = Field(default=None)  # Дата последнего использования защиты
-    double_chance_until: Optional[datetime] = Field(default=None)  # Дата действия двойного шанса
-    double_chance_bought_by: Optional[int] = Field(default=None)  # ID пользователя, который купил двойной шанс
-    next_win_multiplier: int = Field(default=1)  # Множитель для следующей победы
+
+    # Защита от пидора (year+day)
+    immunity_year: Optional[int] = Field(default=None)
+    immunity_day: Optional[int] = Field(default=None)
+    immunity_last_used: Optional[datetime] = Field(default=None)  # Для кулдауна
+
+    # Двойной шанс теперь хранится в отдельной таблице DoubleChancePurchase
+    # Поля double_chance_until и double_chance_bought_by УДАЛЕНЫ
+
+    next_win_multiplier: int = Field(default=1)
 
     game: Game = Relationship()
     user: TGUser = Relationship()
 
     __table_args__ = (
         UniqueConstraint('game_id', 'user_id', name='unique_game_player_effect'),
+    )
+
+
+class DoubleChancePurchase(SQLModel, table=True):
+    """
+    Покупки двойного шанса.
+
+    Хранит информацию о том, кто и для кого купил двойной шанс.
+    Двойной шанс действует на день, указанный в year+day (следующий день после покупки).
+    Один покупатель может купить только один двойной шанс в день.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    buyer_id: int = Field(foreign_key="tguser.id", nullable=False)  # Кто купил
+    target_id: int = Field(foreign_key="tguser.id", nullable=False)  # Для кого купил
+    year: int = Field(nullable=False)  # Год ДЕЙСТВИЯ (не покупки!)
+    day: int = Field(nullable=False)   # День ДЕЙСТВИЯ (не покупки!)
+    is_used: bool = Field(default=False)  # Использован ли (после победы)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    game: Game = Relationship()
+    buyer: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[DoubleChancePurchase.buyer_id]"})
+    target: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[DoubleChancePurchase.target_id]"})
+
+    __table_args__ = (
+        UniqueConstraint('game_id', 'buyer_id', 'year', 'day', name='unique_double_chance_purchase'),
     )
 
 

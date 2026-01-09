@@ -1169,6 +1169,7 @@ async def pidorcoinsstats_cmd(update: Update, context: GECallbackContext):
 async def pidorshop_cmd(update: Update, context: GECallbackContext):
     """Открыть магазин пидор-койнов с интерактивным меню"""
     from bot.handlers.game.shop_helpers import create_shop_keyboard, format_shop_menu_message
+    from bot.handlers.game.shop_service import get_active_effects
 
     logger.info(f"pidorshop_cmd started for chat {update.effective_chat.id}, user {context.tg_user.id}")
 
@@ -1176,14 +1177,23 @@ async def pidorshop_cmd(update: Update, context: GECallbackContext):
     balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
     logger.debug(f"User {context.tg_user.id} balance: {balance}")
 
-    # Создаём клавиатуру магазина с owner_user_id для проверки прав
+    # Получаем информацию об активных эффектах
+    current_dt = current_datetime()
+    current_date = current_dt.date()
+
+    active_effects = get_active_effects(
+        context.db_session, context.game.id, context.tg_user.id,
+        current_date
+    )
+
+    # Создаём клавиатуру магазина с owner_user_id для проверки прав и информацией об активных эффектах
     # ВАЖНО: используем tg_id (Telegram ID), а не id (внутренний ID БД)
     logger.info(f"Creating shop keyboard with owner_user_id (tg_id): {context.tg_user.tg_id}")
-    keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id)
+    keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id, active_effects=active_effects)
 
-    # Форматируем сообщение с балансом, именем пользователя и списком товаров
+    # Форматируем сообщение с балансом, именем пользователя, списком товаров и информацией об активных эффектах
     user_name = context.tg_user.full_username()
-    message_text = format_shop_menu_message(balance, user_name)
+    message_text = format_shop_menu_message(balance, user_name, active_effects)
 
     # Отправляем сообщение с inline-кнопками
     await update.effective_chat.send_message(
@@ -1257,7 +1267,14 @@ async def handle_shop_immunity_callback(update: Update, context: GECallbackConte
     if success:
         # Получаем новый баланс
         balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
-        response_text = IMMUNITY_PURCHASE_SUCCESS.format(balance=format_number(balance))
+
+        # Получаем информацию о дате действия защиты
+        from bot.handlers.game.shop_service import get_or_create_player_effects
+        from bot.handlers.game.shop_helpers import format_date_readable
+        effect = get_or_create_player_effects(context.db_session, context.game.id, context.tg_user.id)
+        date_str = escape_markdown2(format_date_readable(effect.immunity_year, effect.immunity_day))
+
+        response_text = IMMUNITY_PURCHASE_SUCCESS.format(date=date_str, balance=format_number(balance))
         await query.answer("✅ Защита куплена!", show_alert=True)
         logger.info(f"User {context.tg_user.id} bought immunity in game {context.game.id}")
     else:
@@ -1265,14 +1282,21 @@ async def handle_shop_immunity_callback(update: Update, context: GECallbackConte
         if message == "insufficient_funds":
             balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
             response_text = IMMUNITY_ERROR_INSUFFICIENT_FUNDS.format(balance=format_number(balance))
-        elif message == "already_active":
-            from bot.handlers.game.shop_service import get_or_create_player_effects
-            effect = get_or_create_player_effects(context.db_session, context.game.id, context.tg_user.id)
-            date_str = escape_markdown2(effect.immunity_until.isoformat())
+        elif message.startswith("already_active:"):
+            # Формат: "already_active:year:day"
+            parts = message.split(":")
+            year = int(parts[1])
+            day = int(parts[2])
+            from bot.handlers.game.shop_helpers import format_date_readable
+            date_str = escape_markdown2(format_date_readable(year, day))
             response_text = IMMUNITY_ERROR_ALREADY_ACTIVE.format(date=date_str)
         elif message.startswith("cooldown:"):
+            # Формат: "cooldown:YYYY-MM-DD"
             cooldown_date = message.split(":")[1]
-            date_str = escape_markdown2(cooldown_date)
+            from datetime import datetime
+            from bot.handlers.game.shop_helpers import format_date_readable
+            date_obj = datetime.fromisoformat(cooldown_date)
+            date_str = escape_markdown2(format_date_readable(date_obj.year, date_obj.timetuple().tm_yday))
             response_text = IMMUNITY_ERROR_COOLDOWN.format(date=date_str)
         else:
             response_text = "❌ Произошла ошибка при покупке"
@@ -1280,13 +1304,25 @@ async def handle_shop_immunity_callback(update: Update, context: GECallbackConte
         await query.answer("❌ Не удалось купить", show_alert=True)
         logger.warning(f"User {context.tg_user.id} failed to buy immunity: {message}")
 
-    # Обновляем сообщение магазина с новым балансом
+    # Обновляем сообщение магазина с новым балансом и активными эффектами
     try:
         from bot.handlers.game.shop_helpers import create_shop_keyboard, format_shop_menu_message
+        from bot.handlers.game.shop_service import get_active_effects
+
         balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
-        keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id)
+
+        # Получаем обновлённую информацию об активных эффектах
+        current_dt = current_datetime()
+        current_date = current_dt.date()
+
+        active_effects = get_active_effects(
+            context.db_session, context.game.id, context.tg_user.id,
+            current_date
+        )
+
+        keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id, active_effects=active_effects)
         user_name = context.tg_user.full_username()
-        message_text = format_shop_menu_message(balance, user_name)
+        message_text = format_shop_menu_message(balance, user_name, active_effects)
 
         await query.edit_message_text(
             text=message_text,
@@ -1495,8 +1531,20 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
         balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
         predicted_user = context.db_session.query(TGUser).filter_by(id=predicted_user_id).one()
         predicted_username = escape_markdown2(predicted_user.full_username())
+        buyer_username = escape_markdown2(context.tg_user.full_username())
+
+        # Вычисляем завтрашний день для отображения
+        from bot.handlers.game.shop_helpers import format_date_readable
+        from bot.handlers.game.shop_service import calculate_next_day
+        current_dt = current_datetime()
+        current_date = current_dt.date()
+        next_year, next_day = calculate_next_day(current_date, cur_year)
+        date_str = escape_markdown2(format_date_readable(next_year, next_day))
+
         response_text = PREDICTION_PURCHASE_SUCCESS.format(
+            buyer_username=buyer_username,
             predicted_username=predicted_username,
+            date=date_str,
             balance=format_number(balance)
         )
         await query.answer("✅ Предсказание создано!", show_alert=True)
@@ -1539,10 +1587,10 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
     from bot.handlers.game.shop_service import buy_double_chance
     from bot.handlers.game.text_static import (
         SHOP_ERROR_NOT_YOUR_SHOP,
-        DOUBLE_CHANCE_PURCHASE_SUCCESS,
-        DOUBLE_CHANCE_PURCHASE_SUCCESS_FOR_OTHER,
+        DOUBLE_CHANCE_PURCHASE_SUCCESS_SELF,
+        DOUBLE_CHANCE_PURCHASE_SUCCESS_OTHER,
         DOUBLE_CHANCE_ERROR_INSUFFICIENT_FUNDS,
-        DOUBLE_CHANCE_ERROR_ALREADY_ACTIVE
+        DOUBLE_CHANCE_ERROR_ALREADY_BOUGHT_TODAY
     )
 
     query = update.callback_query
@@ -1609,16 +1657,28 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
         # Получаем новый баланс покупателя
         balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
 
+        # Вычисляем завтрашний день для отображения
+        from bot.handlers.game.shop_helpers import format_date_readable
+        from bot.handlers.game.shop_service import calculate_next_day
+        next_year, next_day = calculate_next_day(current_date, cur_year)
+        date_str = escape_markdown2(format_date_readable(next_year, next_day))
+
         # Проверяем, купил ли игрок для себя или для другого
         if target_user_id == context.tg_user.id:
-            response_text = DOUBLE_CHANCE_PURCHASE_SUCCESS.format(balance=format_number(balance))
+            response_text = DOUBLE_CHANCE_PURCHASE_SUCCESS_SELF.format(
+                date=date_str,
+                balance=format_number(balance)
+            )
             await query.answer("✅ Двойной шанс куплен!", show_alert=True)
         else:
             # Получаем имя целевого игрока
             target_user = context.db_session.query(TGUser).filter_by(id=target_user_id).one()
             target_username = escape_markdown2(target_user.full_username())
-            response_text = DOUBLE_CHANCE_PURCHASE_SUCCESS_FOR_OTHER.format(
+            buyer_username = escape_markdown2(context.tg_user.full_username())
+            response_text = DOUBLE_CHANCE_PURCHASE_SUCCESS_OTHER.format(
+                buyer_username=buyer_username,
                 target_username=target_username,
+                date=date_str,
                 balance=format_number(balance)
             )
             await query.answer("✅ Двойной шанс подарен!", show_alert=True)
@@ -1635,13 +1695,9 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
         if message == "insufficient_funds":
             balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
             response_text = DOUBLE_CHANCE_ERROR_INSUFFICIENT_FUNDS.format(balance=format_number(balance))
-        elif message.startswith("already_active:"):
-            # Формат: "already_active:target_user_id"
-            target_id = int(message.split(":")[1])
-            from bot.handlers.game.shop_service import get_or_create_player_effects
-            effect = get_or_create_player_effects(context.db_session, context.game.id, target_id)
-            date_str = escape_markdown2(effect.double_chance_until.isoformat())
-            response_text = DOUBLE_CHANCE_ERROR_ALREADY_ACTIVE.format(date=date_str)
+        elif message == "already_bought_today":
+            from bot.handlers.game.text_static import DOUBLE_CHANCE_ERROR_ALREADY_BOUGHT_TODAY
+            response_text = DOUBLE_CHANCE_ERROR_ALREADY_BOUGHT_TODAY
         else:
             response_text = "❌ Произошла ошибка при покупке"
 

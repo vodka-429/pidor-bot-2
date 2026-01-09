@@ -1,6 +1,7 @@
 """Helper functions for shop functionality."""
 import logging
 from typing import List, Tuple
+from datetime import datetime, timedelta
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.app.models import TGUser
@@ -10,6 +11,33 @@ logger = logging.getLogger(__name__)
 
 # Константа для идентификации callback магазина
 SHOP_CALLBACK_PREFIX = 'shop_'
+
+
+def format_date_readable(year: int, day: int) -> str:
+    """
+    Форматировать year+day в читаемую дату.
+
+    Args:
+        year: Год
+        day: День года (1-366)
+
+    Returns:
+        Строка вида "9 января" или "1 января 2027"
+    """
+    # Создаём дату из года и дня
+    date_obj = datetime(year, 1, 1) + timedelta(days=day - 1)
+
+    # Форматируем
+    months_ru = [
+        'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+        'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+    ]
+
+    current_year = datetime.now().year
+    if year == current_year:
+        return f"{date_obj.day} {months_ru[date_obj.month - 1]}"
+    else:
+        return f"{date_obj.day} {months_ru[date_obj.month - 1]} {year}"
 
 
 def format_shop_callback_data(item_type: str, owner_user_id: int) -> str:
@@ -75,12 +103,13 @@ def parse_shop_callback_data(callback_data: str) -> Tuple[str, int]:
         raise ValueError(f"Invalid callback_data format: {callback_data}")
 
 
-def create_shop_keyboard(owner_user_id: int) -> InlineKeyboardMarkup:
+def create_shop_keyboard(owner_user_id: int, active_effects: dict = None) -> InlineKeyboardMarkup:
     """
     Создаёт клавиатуру магазина с кнопками товаров.
 
     Args:
         owner_user_id: ID владельца магазина (кто вызвал команду)
+        active_effects: Словарь с информацией об активных эффектах
 
     Returns:
         InlineKeyboardMarkup с кнопками товаров
@@ -93,8 +122,21 @@ def create_shop_keyboard(owner_user_id: int) -> InlineKeyboardMarkup:
     logger.info(f"Creating shop keyboard for owner_user_id: {owner_user_id}")
 
     for item in items:
-        # Формируем текст кнопки с названием и ценой
-        button_text = f"{item['name']} - {item['price']} 🪙"
+        # Определяем, активен ли товар
+        is_active = False
+        if active_effects:
+            if item['callback_data'] == 'shop_immunity' and active_effects.get('immunity_active'):
+                is_active = True
+            elif item['callback_data'] == 'shop_double' and active_effects.get('double_chance_bought_today'):
+                is_active = True
+            elif item['callback_data'] == 'shop_predict' and active_effects.get('prediction_exists'):
+                is_active = True
+
+        # Формируем текст кнопки с индикатором активности
+        if is_active:
+            button_text = f"✅ {item['name']} - {item['price']} 🪙"
+        else:
+            button_text = f"{item['name']} - {item['price']} 🪙"
 
         # Создаём callback_data с типом товара и ID владельца
         callback_data = format_shop_callback_data(item['callback_data'].replace('shop_', ''), owner_user_id)
@@ -196,13 +238,14 @@ def create_double_chance_keyboard(players: List[TGUser], owner_user_id: int) -> 
     return InlineKeyboardMarkup(keyboard)
 
 
-def format_shop_menu_message(balance: int, user_name: str = None) -> str:
+def format_shop_menu_message(balance: int, user_name: str = None, active_effects: dict = None) -> str:
     """
     Форматирует сообщение меню магазина с балансом и списком товаров.
 
     Args:
         balance: Текущий баланс пользователя
         user_name: Имя пользователя, чей это магазин (опционально)
+        active_effects: Информация об активных эффектах
 
     Returns:
         Отформатированное сообщение в формате Markdown V2
@@ -219,7 +262,7 @@ def format_shop_menu_message(balance: int, user_name: str = None) -> str:
     else:
         header = f"🏪 *Магазин пидор\\-койнов*\n\n💰 Ваш баланс: *{balance_str}* 🪙\n\n"
 
-    # Формируем список товаров
+    # Формируем список товаров с информацией об активности
     items = get_shop_items()
     items_list = []
 
@@ -227,7 +270,19 @@ def format_shop_menu_message(balance: int, user_name: str = None) -> str:
         price_str = format_number(item['price'])
         name_escaped = escape_markdown2(item['name'])
         desc_escaped = escape_markdown2(item['description'])
-        items_list.append(f"{name_escaped} \\- *{price_str}* 🪙\n_{desc_escaped}_")
+
+        # Добавляем информацию об активности
+        status_info = ""
+        if active_effects:
+            if item['callback_data'] == 'shop_immunity' and active_effects.get('immunity_active'):
+                date = active_effects.get('immunity_date', '')
+                status_info = f"\n✅ _Активна на {escape_markdown2(date)}_"
+            elif item['callback_data'] == 'shop_double' and active_effects.get('double_chance_bought_today'):
+                status_info = "\n✅ _Уже куплен на завтра_"
+            elif item['callback_data'] == 'shop_predict' and active_effects.get('prediction_exists'):
+                status_info = "\n✅ _Предсказание создано_"
+
+        items_list.append(f"{name_escaped} \\- *{price_str}* 🪙\n_{desc_escaped}_{status_info}")
 
     items_text = '\n\n'.join(items_list)
 
