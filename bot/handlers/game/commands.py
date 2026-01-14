@@ -1513,8 +1513,12 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
 
     # Получаем текущую дату
     current_dt = current_datetime()
+    current_date = current_dt.date()
     cur_year = current_dt.year
-    cur_day = current_dt.timetuple().tm_yday
+
+    # Вычисляем завтрашний день (день действия предсказания)
+    from bot.handlers.game.shop_service import calculate_next_day
+    target_year, target_day = calculate_next_day(current_date, cur_year)
 
     # Вызываем функцию создания предсказания
     success, message = create_prediction(
@@ -1522,8 +1526,8 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
         context.game.id,
         context.tg_user.id,
         predicted_user_id,
-        cur_year,
-        cur_day
+        target_year,
+        target_day
     )
 
     if success:
