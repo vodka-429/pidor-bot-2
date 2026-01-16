@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 # Цены товаров в магазине
 IMMUNITY_PRICE = 10
-DOUBLE_CHANCE_PRICE = 5
-PREDICTION_PRICE = 5
+DOUBLE_CHANCE_PRICE = 8
+PREDICTION_PRICE = 3
 
 # Награда за правильное предсказание
 PREDICTION_REWARD = 30

@@ -94,8 +94,8 @@ def test_create_shop_keyboard():
     assert any("🎲 Двойной шанс" in text for text in button_texts)
     assert any("🔮 Предсказание" in text for text in button_texts)
     assert any("10 🪙" in text for text in button_texts)
-    assert any("5 🪙" in text for text in button_texts)
-    assert any("5 🪙" in text for text in button_texts)
+    assert any("8 🪙" in text for text in button_texts)
+    assert any("3 🪙" in text for text in button_texts)
 
     # Verify callback_data contains owner_user_id
     callback_data_list = [row[0].callback_data for row in keyboard.inline_keyboard]
@@ -222,8 +222,8 @@ def test_format_shop_menu_message():
     assert "🎲 Двойной шанс" in result
     assert "🔮 Предсказание" in result
     assert "*10* 🪙" in result
-    assert "*5* 🪙" in result
-    assert "*5* 🪙" in result
+    assert "*8* 🪙" in result
+    assert "*3* 🪙" in result
     assert "_Выберите товар для покупки:_" in result
 
     # Test with positive balance
