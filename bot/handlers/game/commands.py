@@ -165,6 +165,60 @@ async def run_tiebreaker(update: Update, context: GECallbackContext, leaders: Li
     logger.info(f"Tie-breaker completed for year {year}, winner: {winner.full_username()}")
 
 
+async def send_result_with_reroll_button(
+    update: Update,
+    context: GECallbackContext,
+    stage4_message: str,
+    cur_year: int,
+    cur_day: int
+):
+    """
+    Отправить финальное сообщение с кнопкой перевыбора и запустить таймер на её удаление.
+
+    Args:
+        update: Telegram Update объект
+        context: Расширенный контекст с игрой
+        stage4_message: Текст финального сообщения
+        cur_year: Текущий год
+        cur_day: Текущий день года
+    """
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from bot.handlers.game.text_static import REROLL_BUTTON_TEXT
+    from bot.handlers.game.reroll_service import remove_reroll_button_after_timeout
+
+    # Создаём кнопку перевыбора
+    reroll_keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            REROLL_BUTTON_TEXT,
+            callback_data=f"reroll_{context.game.id}_{cur_year}_{cur_day}"
+        )]
+    ])
+
+    # Отправляем финальное сообщение с кнопкой перевыбора
+    result_message = await update.effective_chat.send_message(
+        stage4_message,
+        parse_mode="HTML",
+        reply_markup=reroll_keyboard
+    )
+
+    # Сохраняем ID сообщения для удаления кнопки по таймауту
+    game_result = context.db_session.query(GameResult).filter_by(
+        game_id=context.game.id, year=cur_year, day=cur_day
+    ).one()
+    game_result.reroll_message_id = result_message.message_id
+    context.db_session.commit()
+
+    # Запускаем таймер на удаление кнопки через 5 минут
+    asyncio.create_task(remove_reroll_button_after_timeout(
+        context.bot,
+        update.effective_chat.id,
+        result_message.message_id,
+        delay_minutes=5
+    ))
+
+    logger.info(f"Sent result message with reroll button, message_id: {result_message.message_id}")
+
+
 def ensure_game(func):
     @functools.wraps(func)
     async def wrapper(update: Update, context: ECallbackContext):
@@ -348,7 +402,9 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
                 executor_amount=COINS_PER_COMMAND,
                 executor_balance=executor_balance
             )
-        await update.effective_chat.send_message(stage4_message, parse_mode="HTML")
+
+        # Отправляем финальное сообщение с кнопкой перевыбора
+        await send_result_with_reroll_button(update, context, stage4_message, cur_year, cur_day)
 
         # Если победитель использовал двойной шанс - показываем сообщение
         if winner_had_double_chance:
@@ -1394,9 +1450,10 @@ async def handle_shop_double_callback(update: Update, context: GECallbackContext
 
 @ensure_game
 async def handle_shop_predict_callback(update: Update, context: GECallbackContext):
-    """Обработчик выбора игрока для предсказания"""
+    """Обработчик выбора кандидатов для предсказания"""
     from bot.handlers.game.shop_helpers import parse_shop_callback_data, create_prediction_keyboard
-    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP, PREDICTION_SELECT_PLAYER
+    from bot.handlers.game.prediction_service import calculate_candidates_count
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP
 
     query = update.callback_query
 
@@ -1411,10 +1468,6 @@ async def handle_shop_predict_callback(update: Update, context: GECallbackContex
         # Парсим callback_data для получения item_type и owner_user_id
         item_type, owner_user_id = parse_shop_callback_data(query.data)
         logger.info(f"Parsed callback: item_type={item_type}, owner_user_id={owner_user_id}")
-        logger.info(f"Callback data: {query.data}")
-        logger.info(f"Query from user ID: {query.from_user.id}")
-        logger.info(f"Owner user ID: {owner_user_id}")
-        logger.info(f"Match check: {query.from_user.id} == {owner_user_id} -> {query.from_user.id == owner_user_id}")
     except ValueError as e:
         logger.error(f"Failed to parse callback_data: {e}")
         await query.answer("❌ Ошибка обработки запроса")
@@ -1423,7 +1476,6 @@ async def handle_shop_predict_callback(update: Update, context: GECallbackContex
     # ВАЖНО: Проверяем, что нажавший кнопку - это владелец магазина
     if query.from_user.id != owner_user_id:
         logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
-        logger.warning(f"Callback data was: {query.data}")
         await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
         return
 
@@ -1435,31 +1487,131 @@ async def handle_shop_predict_callback(update: Update, context: GECallbackContex
         logger.warning(f"Not enough players for prediction in game {context.game.id}")
         return
 
-    # Создаём клавиатуру с игроками
-    keyboard = create_prediction_keyboard(players, owner_user_id=context.tg_user.tg_id)
+    # Рассчитываем количество кандидатов
+    candidates_count = calculate_candidates_count(len(players))
+    logger.info(f"Calculated {candidates_count} candidates for {len(players)} players")
 
-    # Отправляем сообщение с выбором игрока
+    # Создаём клавиатуру с игроками для множественного выбора
+    keyboard = create_prediction_keyboard(
+        players,
+        owner_user_id=context.tg_user.tg_id,
+        candidates_count=candidates_count,
+        selected_ids=[]
+    )
+
+    # Формируем сообщение
+    message_text = (
+        f"🔮 *Предсказание пидора дня*\n\n"
+        f"Выберите *{candidates_count}* кандидат{'а' if candidates_count < 5 else 'ов'} "
+        f"из {len(players)} игроков\\.\n\n"
+        f"Если любой из них станет пидором — вы получите *\\+30* 💰\\!"
+    )
+
+    # Отправляем сообщение с выбором кандидатов
     try:
         await query.edit_message_text(
-            text=PREDICTION_SELECT_PLAYER,
+            text=message_text,
             parse_mode="MarkdownV2",
             reply_markup=keyboard
         )
         await query.answer()
-        logger.info(f"Showed prediction player selection for user {context.tg_user.id}")
+        logger.info(f"Showed prediction candidates selection for user {context.tg_user.id}")
     except Exception as e:
         logger.error(f"Failed to show prediction selection: {e}")
         await query.answer("❌ Ошибка при отображении списка игроков")
 
 
 @ensure_game
+async def handle_shop_predict_select_callback(update: Update, context: GECallbackContext):
+    """Обработчик выбора кандидата для предсказания"""
+    from bot.handlers.game.shop_helpers import create_prediction_keyboard
+    from bot.handlers.game.prediction_service import calculate_candidates_count
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Predict select callback from user {query.from_user.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    # Парсим callback_data: shop_predict_select_{player_id}_{owner_user_id}
+    try:
+        parts = query.data.split('_')
+        if len(parts) < 4:
+            raise ValueError(f"Invalid callback_data format: {query.data}")
+
+        player_id = int(parts[3])
+        owner_user_id = int(parts[4])
+
+        logger.info(f"Parsed: player_id={player_id}, owner_user_id={owner_user_id}")
+    except (ValueError, IndexError) as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # Проверяем права
+    if query.from_user.id != owner_user_id:
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    # Получаем текущий выбор из context.user_data
+    if 'prediction_selection' not in context.user_data:
+        context.user_data['prediction_selection'] = []
+
+    selected = context.user_data['prediction_selection']
+
+    # Рассчитываем нужное количество кандидатов
+    players = context.game.players
+    candidates_count = calculate_candidates_count(len(players))
+
+    # Добавляем/убираем кандидата
+    if player_id in selected:
+        selected.remove(player_id)
+        await query.answer("❌ Кандидат убран")
+    elif len(selected) < candidates_count:
+        selected.append(player_id)
+        await query.answer(f"✅ Кандидат добавлен ({len(selected)}/{candidates_count})")
+    else:
+        await query.answer(f"❌ Уже выбрано {candidates_count} кандидатов", show_alert=True)
+        return
+
+    # Обновляем клавиатуру
+    keyboard = create_prediction_keyboard(
+        players,
+        owner_user_id=context.tg_user.tg_id,
+        candidates_count=candidates_count,
+        selected_ids=selected
+    )
+
+    # Формируем обновлённое сообщение
+    message_text = (
+        f"🔮 *Предсказание пидора дня*\n\n"
+        f"Выберите *{candidates_count}* кандидат{'а' if candidates_count < 5 else 'ов'} "
+        f"из {len(players)} игроков\\.\n\n"
+        f"Выбрано: *{len(selected)}/{candidates_count}*\n\n"
+        f"Если любой из них станет пидором — вы получите *\\+30* 💰\\!"
+    )
+
+    try:
+        await query.edit_message_text(
+            text=message_text,
+            parse_mode="MarkdownV2",
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        logger.error(f"Failed to update prediction selection: {e}")
+
+
+@ensure_game
 async def handle_shop_predict_confirm_callback(update: Update, context: GECallbackContext):
-    """Обработчик подтверждения предсказания"""
+    """Обработчик подтверждения предсказания с несколькими кандидатами"""
     from bot.handlers.game.shop_helpers import parse_shop_callback_data
     from bot.handlers.game.shop_service import create_prediction
     from bot.handlers.game.text_static import (
         SHOP_ERROR_NOT_YOUR_SHOP,
-        PREDICTION_PURCHASE_SUCCESS,
         PREDICTION_ERROR_INSUFFICIENT_FUNDS,
         PREDICTION_ERROR_ALREADY_EXISTS,
         PREDICTION_ERROR_SELF
@@ -1471,43 +1623,33 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
         logger.error("callback_query is None!")
         return
 
-    logger.info(f"Shop predict confirm callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Shop predict confirm callback from user {query.from_user.id}")
     logger.info(f"Callback data: {query.data}")
 
-    # Парсим callback_data с помощью единой функции парсинга
+    # Парсим callback_data: shop_predict_confirm_{owner_user_id}
     try:
-        # Формат: shop_predict_confirm_{predicted_user_id}_{owner_user_id}
-        if not query.data.startswith('shop_predict_confirm_'):
-            raise ValueError(f"Invalid callback_data format: {query.data}")
-
-        # Используем единую функцию парсинга для извлечения owner_user_id
-        # Функция parse_shop_callback_data ожидает формат shop_{item_type}_{owner_user_id}
-        # Для этого формата мы можем извлечь owner_user_id из последней части
         parts = query.data.split('_')
-        if len(parts) < 4:
+        if len(parts) < 3:
             raise ValueError(f"Invalid callback_data format: {query.data}")
 
-        # Последняя часть - это owner_user_id
         owner_user_id = int(parts[-1])
-
-        # Предсказанный пользователь - это предпоследняя часть
-        predicted_user_id = int(parts[-2])
-
-        logger.info(f"Parsed callback: predicted_user_id={predicted_user_id}, owner_user_id={owner_user_id}")
+        logger.info(f"Parsed callback: owner_user_id={owner_user_id}")
     except (ValueError, IndexError) as e:
         logger.error(f"Failed to parse callback_data: {e}")
         await query.answer("❌ Ошибка обработки запроса")
         return
 
-    # ВАЖНО: Проверяем, что нажавший кнопку - это владелец магазина
-    logger.info(f"Shop confirm callback - Query from user ID: {query.from_user.id}")
-    logger.info(f"Shop confirm callback - Owner user ID: {owner_user_id}")
-    logger.info(f"Shop confirm callback - Match check: {query.from_user.id} == {owner_user_id} -> {query.from_user.id == owner_user_id}")
-
+    # Проверяем права
     if query.from_user.id != owner_user_id:
-        logger.warning(f"Shop ownership mismatch in confirm: User {query.from_user.id} tried to use shop of user {owner_user_id}")
-        logger.warning(f"Callback data was: {query.data}")
+        logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
         await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    # Получаем выбранных кандидатов из context.user_data
+    selected = context.user_data.get('prediction_selection', [])
+
+    if not selected:
+        await query.answer("❌ Выберите кандидатов!", show_alert=True)
         return
 
     # Получаем текущую дату
@@ -1519,39 +1661,45 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
     from bot.handlers.game.shop_service import calculate_next_day
     target_year, target_day = calculate_next_day(current_date, cur_year)
 
-    # Вызываем функцию создания предсказания
+    # Вызываем функцию создания предсказания со списком кандидатов
     success, message = create_prediction(
         context.db_session,
         context.game.id,
         context.tg_user.id,
-        predicted_user_id,
+        selected,  # Передаём список ID кандидатов
         target_year,
         target_day
     )
 
     if success:
-        # Получаем новый баланс и имя предсказанного игрока
+        # Получаем новый баланс
         balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
-        predicted_user = context.db_session.query(TGUser).filter_by(id=predicted_user_id).one()
-        predicted_username = escape_markdown2(predicted_user.full_username())
-        buyer_username = escape_markdown2(context.tg_user.full_username())
+
+        # Получаем имена кандидатов
+        candidate_names = []
+        for player in context.game.players:
+            if player.id in selected:
+                candidate_names.append(escape_markdown2(player.full_username()))
 
         # Вычисляем завтрашний день для отображения
         from bot.handlers.game.shop_helpers import format_date_readable
-        from bot.handlers.game.shop_service import calculate_next_day
-        current_dt = current_datetime()
-        current_date = current_dt.date()
-        next_year, next_day = calculate_next_day(current_date, cur_year)
-        date_str = escape_markdown2(format_date_readable(next_year, next_day))
+        date_str = escape_markdown2(format_date_readable(target_year, target_day))
 
-        response_text = PREDICTION_PURCHASE_SUCCESS.format(
-            buyer_username=buyer_username,
-            predicted_username=predicted_username,
-            date=date_str,
-            balance=format_number(balance)
+        # Формируем сообщение
+        candidates_text = ', '.join(candidate_names)
+        response_text = (
+            f"🔮 *Предсказание создано\\!*\n\n"
+            f"Ваши кандидаты на {date_str}:\n"
+            + '\n'.join(f"• {name}" for name in candidate_names) +
+            f"\n\nЕсли любой из них станет пидором — вы получите *\\+30* 💰\\!\n\n"
+            f"💰 Ваш баланс: *{format_number(balance)}* 🪙"
         )
+
         await query.answer("✅ Предсказание создано!", show_alert=True)
-        logger.info(f"User {context.tg_user.id} created prediction for user {predicted_user_id} in game {context.game.id}")
+        logger.info(f"User {context.tg_user.id} created prediction for users {selected} in game {context.game.id}")
+
+        # Очищаем выбор
+        context.user_data['prediction_selection'] = []
 
         # Отправляем сообщение с результатом
         await query.edit_message_text(
@@ -1717,3 +1865,364 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
             logger.error(f"Failed to update message with error: {e}")
 
 
+@ensure_game
+async def handle_reroll_callback(update: Update, context: GECallbackContext):
+    """Обработчик нажатия кнопки перевыбора."""
+    from bot.handlers.game.reroll_service import can_reroll, execute_reroll, REROLL_PRICE
+    from bot.handlers.game.coin_service import can_afford, get_balance
+    from bot.handlers.game.text_static import (
+        REROLL_ERROR_ALREADY_USED,
+        REROLL_ERROR_INSUFFICIENT_FUNDS,
+        REROLL_SUCCESS_NOTIFICATION,
+        REROLL_ANNOUNCEMENT
+    )
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Reroll callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    # Парсим callback_data: reroll_{game_id}_{year}_{day}
+    parts = query.data.split('_')
+    if len(parts) != 4:
+        logger.error(f"Invalid callback_data format: {query.data}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    try:
+        game_id = int(parts[1])
+        year = int(parts[2])
+        day = int(parts[3])
+    except (ValueError, IndexError) as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # Проверяем, что перевыбор ещё доступен
+    if not can_reroll(context.db_session, game_id, year, day):
+        await query.answer(REROLL_ERROR_ALREADY_USED, show_alert=True)
+        logger.info(f"Reroll already used for game {game_id}, {year}-{day}")
+        return
+
+    # Проверяем баланс
+    if not can_afford(context.db_session, game_id, context.tg_user.id, REROLL_PRICE):
+        balance = get_balance(context.db_session, game_id, context.tg_user.id)
+        await query.answer(
+            REROLL_ERROR_INSUFFICIENT_FUNDS.format(balance=balance),
+            show_alert=True
+        )
+        logger.info(f"User {context.tg_user.id} has insufficient funds for reroll")
+        return
+
+    # Выполняем перевыбор
+    players = context.game.players
+    old_winner, new_winner = execute_reroll(
+        context.db_session, game_id, year, day,
+        context.tg_user.id, players
+    )
+
+    # Отправляем уведомление о перевыборе
+    await query.answer(REROLL_SUCCESS_NOTIFICATION, show_alert=True)
+
+    # Удаляем кнопку из сообщения
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    # Объявляем результат перевыбора
+    initiator_name = escape_markdown2(context.tg_user.full_username())
+    old_winner_name = escape_markdown2(old_winner.full_username())
+    new_winner_name = escape_markdown2(new_winner.full_username())
+
+    await update.effective_chat.send_message(
+        REROLL_ANNOUNCEMENT.format(
+            initiator_name=initiator_name,
+            old_winner_name=old_winner_name,
+            new_winner_name=new_winner_name
+        ),
+        parse_mode="MarkdownV2"
+    )
+
+    logger.info(
+        f"Reroll completed: initiator {context.tg_user.id}, "
+        f"old winner {old_winner.id}, new winner {new_winner.id}"
+    )
+
+
+
+
+@ensure_game
+async def handle_shop_transfer_callback(update: Update, context: GECallbackContext):
+    """Обработчик кнопки 'Передать койны' в магазине"""
+    from bot.handlers.game.shop_helpers import parse_shop_callback_data, create_double_chance_keyboard
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP, TRANSFER_SELECT_PLAYER
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop transfer callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    try:
+        # Парсим callback_data для получения item_type и owner_user_id
+        item_type, owner_user_id = parse_shop_callback_data(query.data)
+        logger.info(f"Parsed callback: item_type={item_type}, owner_user_id={owner_user_id}")
+    except ValueError as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # Проверяем, что нажавший кнопку - это владелец магазина
+    if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    # Получаем список игроков из игры, исключая отправителя
+    players = [p for p in context.game.players if p.id != context.tg_user.id]
+
+    if len(players) < 1:
+        await query.answer("❌ Нет других игроков для передачи", show_alert=True)
+        logger.warning(f"No other players for transfer in game {context.game.id}")
+        return
+
+    # Создаём клавиатуру с игроками (используем create_double_chance_keyboard для единообразия)
+    keyboard = create_double_chance_keyboard(players, owner_user_id=context.tg_user.tg_id, callback_prefix="shop_transfer_select")
+
+    # Отправляем сообщение с выбором получателя
+    try:
+        await query.edit_message_text(
+            text=TRANSFER_SELECT_PLAYER,
+            parse_mode="MarkdownV2",
+            reply_markup=keyboard
+        )
+        await query.answer()
+        logger.info(f"Showed transfer player selection for user {context.tg_user.id}")
+    except Exception as e:
+        logger.error(f"Failed to show transfer selection: {e}")
+        await query.answer("❌ Ошибка при отображении списка игроков")
+
+
+@ensure_game
+async def handle_shop_transfer_select_callback(update: Update, context: GECallbackContext):
+    """Обработчик выбора получателя для передачи койнов"""
+    from bot.handlers.game.transfer_service import (
+        can_transfer, execute_transfer, get_or_create_chat_bank
+    )
+    from bot.handlers.game.text_static import (
+        SHOP_ERROR_NOT_YOUR_SHOP,
+        TRANSFER_SUCCESS,
+        TRANSFER_ERROR_INSUFFICIENT_FUNDS,
+        TRANSFER_ERROR_COOLDOWN
+    )
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop transfer select callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    # Парсим callback_data: shop_transfer_select_{receiver_id}_{owner_user_id}
+    try:
+        parts = query.data.split('_')
+        if len(parts) < 4:
+            raise ValueError(f"Invalid callback_data format: {query.data}")
+
+        owner_user_id = int(parts[-1])
+        receiver_id = int(parts[-2])
+
+        logger.info(f"Parsed callback: receiver_id={receiver_id}, owner_user_id={owner_user_id}")
+    except (ValueError, IndexError) as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # Проверяем, что нажавший кнопку - это владелец магазина
+    if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    # Получаем текущую дату
+    current_dt = current_datetime()
+    cur_year = current_dt.year
+    cur_day = current_dt.timetuple().tm_yday
+
+    # Проверяем кулдаун (по year+day)
+    can_do, error = can_transfer(context.db_session, context.game.id, context.tg_user.id, cur_year, cur_day)
+    if not can_do:
+        if error == "already_transferred_today":
+            await query.answer("❌ Вы уже совершали перевод сегодня", show_alert=True)
+            await query.edit_message_text(
+                text=TRANSFER_ERROR_COOLDOWN,
+                parse_mode="MarkdownV2"
+            )
+        return
+
+    # Получаем баланс отправителя
+    balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+
+    # Для простоты передаём половину баланса (можно улучшить, добавив ввод суммы)
+    amount = balance // 2
+
+    if amount < 2:  # TRANSFER_MIN_AMOUNT
+        await query.answer("❌ Недостаточно койнов для передачи", show_alert=True)
+        await query.edit_message_text(
+            text=TRANSFER_ERROR_INSUFFICIENT_FUNDS.format(balance=balance, amount=amount),
+            parse_mode="MarkdownV2"
+        )
+        return
+
+    # Выполняем перевод
+    amount_sent, amount_received, commission = execute_transfer(
+        context.db_session, context.game.id,
+        context.tg_user.id, receiver_id,
+        amount, cur_year, cur_day
+    )
+
+    # Получаем обновлённые балансы
+    sender_balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+    receiver = context.db_session.query(TGUser).filter_by(id=receiver_id).one()
+    receiver_balance = get_balance(context.db_session, context.game.id, receiver.id)
+    bank = get_or_create_chat_bank(context.db_session, context.game.id)
+
+    # Формируем сообщение об успехе
+    sender_name = escape_markdown2(context.tg_user.full_username())
+    receiver_name = escape_markdown2(receiver.full_username())
+
+    response_text = TRANSFER_SUCCESS.format(
+        sender_name=sender_name,
+        receiver_name=receiver_name,
+        amount_sent=format_number(amount_sent),
+        amount_received=format_number(amount_received),
+        commission=format_number(commission),
+        sender_balance=format_number(sender_balance),
+        receiver_balance=format_number(receiver_balance),
+        bank_balance=format_number(bank.balance)
+    )
+
+    await query.answer("✅ Перевод выполнен!", show_alert=True)
+    await query.edit_message_text(
+        text=response_text,
+        parse_mode="MarkdownV2"
+    )
+
+    logger.info(
+        f"Transfer completed: sender {context.tg_user.id}, receiver {receiver_id}, "
+        f"amount {amount_sent}, commission {commission}"
+    )
+
+
+@ensure_game
+async def handle_shop_bank_callback(update: Update, context: GECallbackContext):
+    """Обработчик кнопки 'Банк чата' в магазине"""
+    from bot.handlers.game.shop_helpers import parse_shop_callback_data
+    from bot.handlers.game.transfer_service import get_or_create_chat_bank
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP, BANK_INFO
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop bank callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    try:
+        # Парсим callback_data для получения item_type и owner_user_id
+        item_type, owner_user_id = parse_shop_callback_data(query.data)
+        logger.info(f"Parsed callback: item_type={item_type}, owner_user_id={owner_user_id}")
+    except ValueError as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # Проверяем, что нажавший кнопку - это владелец магазина
+    if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    # Получаем баланс банка
+    bank = get_or_create_chat_bank(context.db_session, context.game.id)
+
+    # Формируем сообщение
+    response_text = BANK_INFO.format(balance=format_number(bank.balance))
+
+    await query.answer()
+    await query.edit_message_text(
+        text=response_text,
+        parse_mode="MarkdownV2"
+    )
+
+    logger.info(f"Showed bank info for game {context.game.id}, balance: {bank.balance}")
+
+
+@ensure_game
+async def handle_shop_back_callback(update: Update, context: GECallbackContext):
+    """Обработчик кнопки 'Назад в магазин'"""
+    from bot.handlers.game.shop_helpers import parse_shop_callback_data, create_shop_keyboard, format_shop_menu_message
+    from bot.handlers.game.shop_service import get_active_effects
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop back callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    try:
+        # Парсим callback_data для получения item_type и owner_user_id
+        item_type, owner_user_id = parse_shop_callback_data(query.data)
+        logger.info(f"Parsed callback: item_type={item_type}, owner_user_id={owner_user_id}")
+    except ValueError as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # Проверяем, что нажавший кнопку - это владелец магазина
+    if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    # Получаем баланс текущего пользователя
+    balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+
+    # Получаем информацию об активных эффектах
+    current_dt = current_datetime()
+    current_date = current_dt.date()
+
+    active_effects = get_active_effects(
+        context.db_session, context.game.id, context.tg_user.id,
+        current_date
+    )
+
+    # Создаём клавиатуру магазина
+    keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id, active_effects=active_effects)
+
+    # Форматируем сообщение
+    user_name = context.tg_user.full_username()
+    message_text = format_shop_menu_message(balance, user_name, active_effects)
+
+    # Обновляем сообщение
+    await query.answer()
+    await query.edit_message_text(
+        text=message_text,
+        parse_mode="MarkdownV2",
+        reply_markup=keyboard
+    )
+
+    logger.info(f"Returned to shop menu for user {context.tg_user.id}")

@@ -135,6 +135,9 @@ def create_shop_keyboard(owner_user_id: int, active_effects: dict = None) -> Inl
         # Формируем текст кнопки с индикатором активности
         if is_active:
             button_text = f"✅ {item['name']} - {item['price']} 🪙"
+        elif item['price'] is None:
+            # Для действий без цены (передача, банк)
+            button_text = item['name']
         else:
             button_text = f"{item['name']} - {item['price']} 🪙"
 
@@ -154,17 +157,25 @@ def create_shop_keyboard(owner_user_id: int, active_effects: dict = None) -> Inl
     return InlineKeyboardMarkup(keyboard)
 
 
-def create_prediction_keyboard(players: List[TGUser], owner_user_id: int) -> InlineKeyboardMarkup:
+def create_prediction_keyboard(
+    players: List[TGUser],
+    owner_user_id: int,
+    candidates_count: int,
+    selected_ids: List[int] = None
+) -> InlineKeyboardMarkup:
     """
-    Создаёт клавиатуру для выбора игрока для предсказания.
+    Создаёт клавиатуру для выбора кандидатов для предсказания.
 
     Args:
         players: Список игроков (TGUser объекты)
         owner_user_id: ID владельца магазина (кто вызвал команду)
+        candidates_count: Сколько кандидатов нужно выбрать
+        selected_ids: Уже выбранные кандидаты (список ID)
 
     Returns:
         InlineKeyboardMarkup с кнопками игроков
     """
+    selected_ids = selected_ids or []
     keyboard = []
     row = []
 
@@ -174,8 +185,12 @@ def create_prediction_keyboard(players: List[TGUser], owner_user_id: int) -> Inl
         if player.last_name:
             button_text += f" {player.last_name}"
 
-        # Создаём callback_data в формате shop_predict_confirm_{predicted_user_id}_{owner_user_id}
-        callback_data = f"{SHOP_CALLBACK_PREFIX}predict_confirm_{player.id}_{owner_user_id}"
+        # Отмечаем уже выбранных
+        prefix = "✅ " if player.id in selected_ids else ""
+        button_text = f"{prefix}{button_text}"
+
+        # Создаём callback_data в формате shop_predict_select_{player_id}_{owner_user_id}
+        callback_data = f"{SHOP_CALLBACK_PREFIX}predict_select_{player.id}_{owner_user_id}"
 
         button = InlineKeyboardButton(
             text=button_text,
@@ -193,20 +208,43 @@ def create_prediction_keyboard(players: List[TGUser], owner_user_id: int) -> Inl
     if row:
         keyboard.append(row)
 
+    # Кнопка подтверждения (активна только когда выбрано нужное количество)
+    if len(selected_ids) == candidates_count:
+        keyboard.append([InlineKeyboardButton(
+            f"✅ Подтвердить ({candidates_count} кандидат{'а' if candidates_count < 5 else 'ов'})",
+            callback_data=f"{SHOP_CALLBACK_PREFIX}predict_confirm_{owner_user_id}"
+        )])
+    else:
+        remaining = candidates_count - len(selected_ids)
+        keyboard.append([InlineKeyboardButton(
+            f"⏳ Выберите ещё {remaining} кандидат{'а' if remaining < 5 else 'ов'}",
+            callback_data="noop"
+        )])
+
+    # Кнопка отмены
+    keyboard.append([InlineKeyboardButton(
+        "❌ Отмена",
+        callback_data=f"{SHOP_CALLBACK_PREFIX}cancel_{owner_user_id}"
+    )])
+
     return InlineKeyboardMarkup(keyboard)
 
 
-def create_double_chance_keyboard(players: List[TGUser], owner_user_id: int) -> InlineKeyboardMarkup:
+def create_double_chance_keyboard(players: List[TGUser], owner_user_id: int, callback_prefix: str = None) -> InlineKeyboardMarkup:
     """
-    Создаёт клавиатуру для выбора игрока для двойного шанса.
+    Создаёт клавиатуру для выбора игрока для двойного шанса или передачи.
 
     Args:
         players: Список игроков (TGUser объекты)
         owner_user_id: ID владельца магазина (кто вызвал команду)
+        callback_prefix: Префикс для callback_data (по умолчанию 'shop_double_confirm')
 
     Returns:
         InlineKeyboardMarkup с кнопками игроков
     """
+    # Используем переданный префикс или дефолтный
+    prefix = callback_prefix if callback_prefix else f"{SHOP_CALLBACK_PREFIX}double_confirm"
+
     keyboard = []
     row = []
 
@@ -216,8 +254,8 @@ def create_double_chance_keyboard(players: List[TGUser], owner_user_id: int) -> 
         if player.last_name:
             button_text += f" {player.last_name}"
 
-        # Создаём callback_data в формате shop_double_confirm_{target_user_id}_{owner_user_id}
-        callback_data = f"{SHOP_CALLBACK_PREFIX}double_confirm_{player.id}_{owner_user_id}"
+        # Создаём callback_data в формате {prefix}_{target_user_id}_{owner_user_id}
+        callback_data = f"{prefix}_{player.id}_{owner_user_id}"
 
         button = InlineKeyboardButton(
             text=button_text,

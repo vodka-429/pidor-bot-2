@@ -19,6 +19,6 @@ pidorfinalstatus - show final voting status
 pidorfinalclose - close final voting (admins only)
 pidorcoinsme - show your pidorcoin balance
 pidorcoinsstats - pidorcoin leaderboard for current year
-pidorshop - open pidorcoin shop (buy immunity, double chance for any player, predictions)
+pidorshop - open pidorcoin shop (buy immunity, double chance, predictions, transfer coins, view bank)
 credits - report issue to github repo
 meme - get some random meme

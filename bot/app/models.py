@@ -24,7 +24,10 @@ class TGUser(SQLModel, table=True):
     is_blocked: bool = False
 
     games: List['Game'] = Relationship(back_populates="players", link_model=GamePlayer)
-    game_results: List['GameResult'] = Relationship(back_populates="winner")
+    game_results: List['GameResult'] = Relationship(
+        back_populates="winner",
+        sa_relationship_kwargs={"foreign_keys": "[GameResult.winner_id]"}
+    )
     final_voting_wins: List['FinalVoting'] = Relationship(back_populates="winner")
     coin_transactions: List['PidorCoinTransaction'] = Relationship(back_populates="user")
 
@@ -58,7 +61,16 @@ class GameResult(SQLModel, table=True):
     year: int
     day: int
 
-    winner: TGUser = Relationship(back_populates="game_results")
+    # Поля для перевыборов
+    reroll_available: bool = Field(default=True)
+    reroll_initiator_id: Optional[int] = Field(default=None, foreign_key="tguser.id")
+    original_winner_id: Optional[int] = Field(default=None, foreign_key="tguser.id")
+    reroll_message_id: Optional[int] = Field(default=None)
+
+    winner: TGUser = Relationship(
+        back_populates="game_results",
+        sa_relationship_kwargs={"foreign_keys": "[GameResult.winner_id]"}
+    )
     game: Game = Relationship(back_populates="results")
 
     __table_args__ = (
@@ -186,7 +198,8 @@ class Prediction(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     game_id: int = Field(foreign_key="game.id", nullable=False)
     user_id: int = Field(foreign_key="tguser.id", nullable=False)  # Кто предсказывает
-    predicted_user_id: int = Field(foreign_key="tguser.id", nullable=False)  # Кого предсказывают
+    # ИЗМЕНЕНО: теперь храним список ID кандидатов в JSON формате
+    predicted_user_ids: str = Field(nullable=False)  # JSON array: "[123, 456, 789]"
     year: int = Field(nullable=False)
     day: int = Field(nullable=False)
     is_correct: Optional[bool] = Field(default=None)  # Результат предсказания (None до проверки)
@@ -194,8 +207,34 @@ class Prediction(SQLModel, table=True):
 
     game: Game = Relationship()
     user: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[Prediction.user_id]"})
-    predicted_user: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[Prediction.predicted_user_id]"})
 
     __table_args__ = (
         UniqueConstraint('game_id', 'user_id', 'year', 'day', name='unique_prediction'),
     )
+
+
+class ChatBank(SQLModel, table=True):
+    """Банк чата для хранения комиссий от переводов."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False, unique=True)
+    balance: int = Field(default=0, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    game: Game = Relationship()
+
+
+class CoinTransfer(SQLModel, table=True):
+    """История переводов койнов между игроками."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    sender_id: int = Field(foreign_key="tguser.id", nullable=False)
+    receiver_id: int = Field(foreign_key="tguser.id", nullable=False)
+    amount: int = Field(nullable=False)  # Полная сумма (до комиссии)
+    commission: int = Field(nullable=False)  # Размер комиссии
+    year: int = Field(nullable=False)  # Год передачи (для кулдауна по year+day)
+    day: int = Field(nullable=False)   # День года передачи (1-366)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    game: Game = Relationship()
+    sender: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[CoinTransfer.sender_id]"})
+    receiver: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[CoinTransfer.receiver_id]"})

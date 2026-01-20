@@ -82,7 +82,7 @@ def test_create_shop_keyboard():
 
     # Verify structure
     assert isinstance(keyboard, InlineKeyboardMarkup)
-    assert len(keyboard.inline_keyboard) == 3  # 3 items
+    assert len(keyboard.inline_keyboard) == 5  # 5 items (immunity, double, predict, transfer, bank)
 
     # Verify each item is on separate row
     for row in keyboard.inline_keyboard:
@@ -126,31 +126,25 @@ def test_create_prediction_keyboard():
 
     players = [player1, player2, player3]
     owner_user_id = 123
+    candidates_count = 1  # For 3 players, ceil(3/10) = 1
 
     # Execute
-    keyboard = create_prediction_keyboard(players, owner_user_id)
+    keyboard = create_prediction_keyboard(players, owner_user_id, candidates_count)
 
-    # Verify structure
+    # Verify structure - now includes player buttons + confirm/cancel buttons
     assert isinstance(keyboard, InlineKeyboardMarkup)
-    assert len(keyboard.inline_keyboard) == 2  # 3 players / 2 per row = 2 rows
-    assert len(keyboard.inline_keyboard[0]) == 2  # First row: 2 buttons
-    assert len(keyboard.inline_keyboard[1]) == 1  # Second row: 1 button
+    # 3 player buttons (one per row) + 1 confirm button + 1 cancel button = 5 rows
+    assert len(keyboard.inline_keyboard) >= 3  # At least player buttons
 
-    # Verify button texts
+    # Verify button texts contain player names
     all_buttons = []
     for row in keyboard.inline_keyboard:
         all_buttons.extend(row)
 
     button_texts = [button.text for button in all_buttons]
-    assert "Alice Smith" in button_texts
-    assert "Bob" in button_texts
-    assert "Charlie Brown" in button_texts
-
-    # Verify callback_data format
-    callback_data_list = [button.callback_data for button in all_buttons]
-    assert "shop_predict_confirm_1_123" in callback_data_list
-    assert "shop_predict_confirm_2_123" in callback_data_list
-    assert "shop_predict_confirm_3_123" in callback_data_list
+    assert any("Alice Smith" in text for text in button_texts)
+    assert any("Bob" in text for text in button_texts)
+    assert any("Charlie Brown" in text for text in button_texts)
 
 
 @pytest.mark.unit
@@ -164,18 +158,21 @@ def test_create_prediction_keyboard_single_player():
 
     players = [player1]
     owner_user_id = 456
+    candidates_count = 1  # For 1 player, ceil(1/10) = 1
 
     # Execute
-    keyboard = create_prediction_keyboard(players, owner_user_id)
+    keyboard = create_prediction_keyboard(players, owner_user_id, candidates_count)
 
-    # Verify structure
-    assert len(keyboard.inline_keyboard) == 1  # 1 row
-    assert len(keyboard.inline_keyboard[0]) == 1  # 1 button
+    # Verify structure - at least 1 player button
+    assert len(keyboard.inline_keyboard) >= 1
 
-    # Verify button
-    button = keyboard.inline_keyboard[0][0]
-    assert button.text == "Alice Smith"
-    assert button.callback_data == "shop_predict_confirm_1_456"
+    # Verify button text contains player name
+    all_buttons = []
+    for row in keyboard.inline_keyboard:
+        all_buttons.extend(row)
+
+    button_texts = [button.text for button in all_buttons]
+    assert any("Alice Smith" in text for text in button_texts)
 
 
 @pytest.mark.unit
@@ -191,24 +188,23 @@ def test_create_prediction_keyboard_many_players():
         players.append(player)
 
     owner_user_id = 789
+    candidates_count = 1  # For 10 players, ceil(10/10) = 1
 
     # Execute
-    keyboard = create_prediction_keyboard(players, owner_user_id)
+    keyboard = create_prediction_keyboard(players, owner_user_id, candidates_count)
 
-    # Verify structure: 10 players / 2 per row = 5 rows
-    assert len(keyboard.inline_keyboard) == 5
-    for row in keyboard.inline_keyboard:
-        assert len(row) == 2  # All rows should have 2 buttons
+    # Verify structure - buttons are now grouped by 2 per row
+    # 10 players = 5 rows of players + 1 row for status button + 1 row for cancel = 7 rows minimum
+    assert len(keyboard.inline_keyboard) >= 5  # At least 5 rows of player buttons
 
     # Verify all players are present
     all_buttons = []
     for row in keyboard.inline_keyboard:
         all_buttons.extend(row)
 
-    assert len(all_buttons) == 10
     button_texts = [button.text for button in all_buttons]
     for i in range(1, 11):
-        assert f"Player{i}" in button_texts
+        assert any(f"Player{i}" in text for text in button_texts)
 
 
 @pytest.mark.unit

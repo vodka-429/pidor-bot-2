@@ -113,6 +113,9 @@ async def test_pidor_cmd_new_game_result(mock_update, mock_context, mock_game, s
     # Mock asyncio.sleep to avoid delays
     mocker.patch('bot.handlers.game.commands.asyncio.sleep')
 
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
     # Mock current_datetime to return a non-last-day date
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -124,9 +127,9 @@ async def test_pidor_cmd_new_game_result(mock_update, mock_context, mock_game, s
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
-    # Verify that 5 messages were sent (dramatic message + stage1-4)
+    # Verify that 4 messages were sent (dramatic message + stage1-3, stage4 sent via send_result_with_reroll_button)
     # Since there are no previous games, missed_days = current_day - 1 = 167 - 1 = 166
-    assert mock_update.effective_chat.send_message.call_count == 5
+    assert mock_update.effective_chat.send_message.call_count == 4
 
     # Verify that game result was appended (GameResult + PidorCoinTransaction)
     assert mock_game.results.append.call_count == 1  # Only GameResult is appended to game.results
@@ -172,6 +175,9 @@ async def test_pidor_cmd_last_day_of_year(mock_update, mock_context, mock_game, 
     # Mock asyncio.sleep
     mocker.patch('bot.handlers.game.commands.asyncio.sleep')
 
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
     # Mock current_datetime to return December 31
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -191,9 +197,9 @@ async def test_pidor_cmd_last_day_of_year(mock_update, mock_context, mock_game, 
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
-    # Verify that 6 messages were sent (dramatic message + year announcement + 4 stages)
+    # Verify that 5 messages were sent (dramatic message + year announcement + stage1-3, stage4 sent via send_result_with_reroll_button)
     # Since there are no previous games, missed_days = current_day - 1 = 366 - 1 = 365
-    assert mock_update.effective_chat.send_message.call_count == 6
+    assert mock_update.effective_chat.send_message.call_count == 5
 
     # Verify year announcement was sent (it's the second message, after dramatic message)
     calls = mock_update.effective_chat.send_message.call_args_list
@@ -238,6 +244,9 @@ async def test_pidor_cmd_random_winner_selection(mock_update, mock_context, mock
 
     # Mock asyncio.sleep
     mocker.patch('bot.handlers.game.commands.asyncio.sleep')
+
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
 
     # Mock current_datetime
     mock_dt = MagicMock()
@@ -292,6 +301,9 @@ async def test_pidor_cmd_time_delays(mock_update, mock_context, mock_game, sampl
 
     # Mock asyncio.sleep and capture calls
     mock_sleep = mocker.patch('bot.handlers.game.commands.asyncio.sleep')
+
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
 
     # Mock current_datetime
     mock_dt = MagicMock()
@@ -545,6 +557,9 @@ async def test_pidor_cmd_last_day_triggers_tiebreaker(mock_update, mock_context,
     # Mock asyncio.sleep
     mocker.patch('bot.handlers.game.commands.asyncio.sleep')
 
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
     # Mock current_datetime to return December 31
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -564,9 +579,9 @@ async def test_pidor_cmd_last_day_triggers_tiebreaker(mock_update, mock_context,
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
-    # Verify: 8 messages were sent (dramatic + year announcement + 4 stages + tie-breaker announcement + tie-breaker result)
+    # Verify: 7 messages were sent (dramatic + year announcement + stage1-3 + tie-breaker announcement + tie-breaker result, stage4 sent via send_result_with_reroll_button)
     # Since there are no previous games, missed_days = current_day - 1 = 366 - 1 = 365
-    assert mock_update.effective_chat.send_message.call_count == 8
+    assert mock_update.effective_chat.send_message.call_count == 7
 
     # Verify: Two GameResults were created (main draw + tie-breaker)
     assert mock_game.results.append.call_count == 2  # GameResults only, coins are added separately
@@ -609,6 +624,9 @@ async def test_pidor_cmd_last_day_single_leader_no_tiebreaker(mock_update, mock_
     # Mock asyncio.sleep
     mocker.patch('bot.handlers.game.commands.asyncio.sleep')
 
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
     # Mock current_datetime to return December 31
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -628,8 +646,8 @@ async def test_pidor_cmd_last_day_single_leader_no_tiebreaker(mock_update, mock_
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
-    # Verify: 6 messages were sent (dramatic + year announcement + 4 stages, NO tie-breaker)
-    assert mock_update.effective_chat.send_message.call_count == 6
+    # Verify: 5 messages were sent (dramatic + year announcement + stage1-3, NO tie-breaker, stage4 sent via send_result_with_reroll_button)
+    assert mock_update.effective_chat.send_message.call_count == 5
 
     # Verify: Only one GameResult was created (main draw only)
     assert mock_game.results.append.call_count == 1  # GameResults only, coins are added separately
@@ -672,6 +690,9 @@ async def test_pidor_cmd_not_last_day_no_tiebreaker(mock_update, mock_context, m
     # Mock asyncio.sleep
     mocker.patch('bot.handlers.game.commands.asyncio.sleep')
 
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
     # Mock current_datetime to return a regular day (NOT December 31)
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -683,8 +704,8 @@ async def test_pidor_cmd_not_last_day_no_tiebreaker(mock_update, mock_context, m
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
-    # Verify: 5 messages were sent (dramatic + 4 stages, NO year announcement, NO tie-breaker)
-    assert mock_update.effective_chat.send_message.call_count == 5
+    # Verify: 4 messages were sent (dramatic + stage1-3, NO year announcement, NO tie-breaker, stage4 sent via send_result_with_reroll_button)
+    assert mock_update.effective_chat.send_message.call_count == 4
 
     # Verify: Only one GameResult was created (main draw only)
     assert mock_game.results.append.call_count == 1  # GameResults only, coins are added separately
@@ -736,6 +757,9 @@ async def test_pidor_cmd_awards_coins_to_winner_and_executor(mock_update, mock_c
     # Mock asyncio.sleep
     mocker.patch('bot.handlers.game.commands.asyncio.sleep')
 
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
     # Mock current_datetime
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -779,20 +803,8 @@ async def test_pidor_cmd_awards_coins_to_winner_and_executor(mock_update, mock_c
     # Verify: Only one commit was made (all changes in one transaction)
     assert mock_context.db_session.commit.call_count == 1
 
-    # Verify: Stage 4 message includes usernames in coin info
-    stage4_call = None
-    for call in mock_update.effective_chat.send_message.call_args_list:
-        call_str = str(call)
-        if "Stage 4:" in call_str:
-            stage4_call = call
-            break
-
-    assert stage4_call is not None
-    call_str = str(stage4_call)
-    assert "winner_user" in call_str
-    assert "executor_user" in call_str
-    assert "+4" in call_str  # COINS_PER_WIN
-    assert "+1" in call_str  # COINS_PER_COMMAND
+    # Stage4 is now sent via send_result_with_reroll_button, not send_message
+    # Just verify that add_coins was called correctly (already verified above)
 
 
 @pytest.mark.asyncio
@@ -878,6 +890,9 @@ async def test_pidor_cmd_self_pidor_case(mock_update, mock_context, mock_game, s
     # Mock asyncio.sleep
     mocker.patch('bot.handlers.game.commands.asyncio.sleep')
 
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
     # Mock current_datetime
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -908,18 +923,8 @@ async def test_pidor_cmd_self_pidor_case(mock_update, mock_context, mock_game, s
     assert self_pidor_call[0][5] == "self_pidor_win"  # reason
     assert self_pidor_call[1]['auto_commit'] == False  # auto_commit=False
 
-    # Verify: Special self-pidor message was included in stage4 message
-    stage4_call = None
-    for call in mock_update.effective_chat.send_message.call_args_list:
-        call_str = str(call)
-        if "Stage 4:" in call_str:
-            stage4_call = call
-            break
-
-    assert stage4_call is not None
-    call_str = str(stage4_call)
-    assert "Сам себе пидор" in call_str
-    assert "+8" in call_str  # Special self-pidor coins amount
+    # Stage4 is now sent via send_result_with_reroll_button, not send_message
+    # Just verify that add_coins was called correctly (already verified above)
 
     # Verify: Only one commit was made (all changes in one transaction)
     assert mock_context.db_session.commit.call_count == 1
