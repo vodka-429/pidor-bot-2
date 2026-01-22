@@ -1,4 +1,5 @@
 """Tests for prediction service functionality."""
+import json
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import date
@@ -8,6 +9,8 @@ from bot.handlers.game.prediction_service import (
     process_predictions,
     format_predictions_summary,
     award_correct_predictions,
+    calculate_candidates_count,
+    get_predicted_user_ids,
     PREDICTION_REWARD
 )
 from bot.app.models import Prediction, TGUser
@@ -21,12 +24,12 @@ def test_get_predictions_for_day_returns_predictions(mock_db_session):
     year = 2024
     day = 167
 
-    # Create mock predictions
+    # Create mock predictions with JSON list of candidates
     prediction1 = Prediction(
         id=1,
         game_id=game_id,
         user_id=1,
-        predicted_user_id=2,
+        predicted_user_ids=json.dumps([2]),
         year=year,
         day=day
     )
@@ -34,7 +37,7 @@ def test_get_predictions_for_day_returns_predictions(mock_db_session):
         id=2,
         game_id=game_id,
         user_id=3,
-        predicted_user_id=2,
+        predicted_user_ids=json.dumps([2]),
         year=year,
         day=day
     )
@@ -82,12 +85,12 @@ def test_process_predictions_correct(mock_db_session):
     day = 167
     winner_id = 2
 
-    # Create mock prediction
+    # Create mock prediction with JSON list of candidates
     prediction = Prediction(
         id=1,
         game_id=game_id,
         user_id=1,
-        predicted_user_id=2,  # Matches winner_id
+        predicted_user_ids=json.dumps([2]),  # Matches winner_id
         year=year,
         day=day
     )
@@ -118,12 +121,12 @@ def test_process_predictions_incorrect(mock_db_session):
     day = 167
     winner_id = 3
 
-    # Create mock prediction
+    # Create mock prediction with JSON list of candidates
     prediction = Prediction(
         id=1,
         game_id=game_id,
         user_id=1,
-        predicted_user_id=2,  # Does not match winner_id
+        predicted_user_ids=json.dumps([2]),  # Does not match winner_id
         year=year,
         day=day
     )
@@ -158,7 +161,7 @@ def test_process_predictions_multiple(mock_db_session):
         id=1,
         game_id=game_id,
         user_id=1,
-        predicted_user_id=2,  # Correct
+        predicted_user_ids=json.dumps([2]),  # Correct
         year=year,
         day=day
     )
@@ -166,7 +169,7 @@ def test_process_predictions_multiple(mock_db_session):
         id=2,
         game_id=game_id,
         user_id=3,
-        predicted_user_id=4,  # Incorrect
+        predicted_user_ids=json.dumps([4]),  # Incorrect
         year=year,
         day=day
     )
@@ -205,7 +208,7 @@ def test_format_predictions_summary_single(mock_db_session):
         id=1,
         game_id=game_id,
         user_id=1,
-        predicted_user_id=2,
+        predicted_user_ids=json.dumps([2]),
         year=2024,
         day=167,
         is_correct=True
@@ -248,8 +251,8 @@ def test_format_predictions_summary_multiple(mock_db_session):
     predictor1 = TGUser(id=1, tg_id=101, first_name="Player1", username="player1")
     predictor2 = TGUser(id=2, tg_id=102, first_name="Player2", username="player2")
 
-    prediction1 = Prediction(id=1, game_id=game_id, user_id=1, predicted_user_id=3, year=2024, day=167, is_correct=True)
-    prediction2 = Prediction(id=2, game_id=game_id, user_id=2, predicted_user_id=3, year=2024, day=167, is_correct=True)
+    prediction1 = Prediction(id=1, game_id=game_id, user_id=1, predicted_user_ids=json.dumps([3]), year=2024, day=167, is_correct=True)
+    prediction2 = Prediction(id=2, game_id=game_id, user_id=2, predicted_user_ids=json.dumps([3]), year=2024, day=167, is_correct=True)
 
     predictions_results = [(prediction1, True), (prediction2, True)]
 
@@ -294,8 +297,8 @@ def test_format_predictions_summary_mixed(mock_db_session):
     predictor1 = TGUser(id=1, tg_id=101, first_name="Player1", username="player1")
     predictor2 = TGUser(id=2, tg_id=102, first_name="Player2", username="player2")
 
-    prediction1 = Prediction(id=1, game_id=game_id, user_id=1, predicted_user_id=3, year=2024, day=167, is_correct=True)
-    prediction2 = Prediction(id=2, game_id=game_id, user_id=2, predicted_user_id=4, year=2024, day=167, is_correct=False)
+    prediction1 = Prediction(id=1, game_id=game_id, user_id=1, predicted_user_ids=json.dumps([3]), year=2024, day=167, is_correct=True)
+    prediction2 = Prediction(id=2, game_id=game_id, user_id=2, predicted_user_ids=json.dumps([4]), year=2024, day=167, is_correct=False)
 
     predictions_results = [(prediction1, True), (prediction2, False)]
 
@@ -339,9 +342,9 @@ def test_award_correct_predictions(mock_add_coins, mock_db_session):
     game_id = 1
     year = 2024
 
-    prediction1 = Prediction(id=1, game_id=game_id, user_id=1, predicted_user_id=2, year=year, day=167, is_correct=True)
-    prediction2 = Prediction(id=2, game_id=game_id, user_id=3, predicted_user_id=4, year=year, day=167, is_correct=False)
-    prediction3 = Prediction(id=3, game_id=game_id, user_id=5, predicted_user_id=2, year=year, day=167, is_correct=True)
+    prediction1 = Prediction(id=1, game_id=game_id, user_id=1, predicted_user_ids=json.dumps([2]), year=year, day=167, is_correct=True)
+    prediction2 = Prediction(id=2, game_id=game_id, user_id=3, predicted_user_ids=json.dumps([4]), year=year, day=167, is_correct=False)
+    prediction3 = Prediction(id=3, game_id=game_id, user_id=5, predicted_user_ids=json.dumps([2]), year=year, day=167, is_correct=True)
 
     predictions_results = [(prediction1, True), (prediction2, False), (prediction3, True)]
 

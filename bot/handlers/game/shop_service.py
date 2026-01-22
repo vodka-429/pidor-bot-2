@@ -152,7 +152,7 @@ def get_shop_items() -> List[Dict[str, any]]:
     Returns:
         Список словарей с информацией о товарах:
         - name: название товара
-        - price: цена в койнах
+        - price: цена в койнах (None для действий без цены)
         - description: описание товара
         - callback_data: данные для callback кнопки
     """
@@ -174,6 +174,18 @@ def get_shop_items() -> List[Dict[str, any]]:
             'price': PREDICTION_PRICE,
             'description': 'Предскажи пидора дня (+30 койнов при успехе)',
             'callback_data': 'shop_predict'
+        },
+        {
+            'name': '💸 Передать койны',
+            'price': None,
+            'description': 'Передать койны другому игроку (комиссия 10%)',
+            'callback_data': 'shop_transfer'
+        },
+        {
+            'name': '🏦 Банк чата',
+            'price': None,
+            'description': 'Посмотреть баланс банка чата',
+            'callback_data': 'shop_bank'
         }
     ]
 
@@ -265,23 +277,25 @@ def buy_double_chance(db_session, game_id: int, user_id: int, target_user_id: in
     return True, "success"
 
 
-def create_prediction(db_session, game_id: int, user_id: int, predicted_user_id: int, year: int, day: int) -> tuple[bool, str]:
+def create_prediction(db_session, game_id: int, user_id: int, predicted_user_ids: List[int], year: int, day: int) -> tuple[bool, str]:
     """
-    Создать предсказание пидора дня.
+    Создать предсказание пидора дня с несколькими кандидатами.
 
     Args:
         db_session: Сессия базы данных
         game_id: ID игры (чата)
         user_id: ID пользователя (кто предсказывает)
-        predicted_user_id: ID предсказываемого пользователя
+        predicted_user_ids: Список ID предсказываемых пользователей
         year: Год предсказания
         day: День предсказания
 
     Returns:
         Кортеж (успех, сообщение об ошибке или успехе)
     """
+    import json
+
     # Проверяем, что пользователь не предсказывает себя
-    if user_id == predicted_user_id:
+    if user_id in predicted_user_ids:
         return False, "self_prediction"
 
     # Проверяем баланс
@@ -303,11 +317,11 @@ def create_prediction(db_session, game_id: int, user_id: int, predicted_user_id:
     # Списываем койны
     spend_coins(db_session, game_id, user_id, PREDICTION_PRICE, year, "shop_prediction", auto_commit=False)
 
-    # Создаем предсказание
+    # Создаем предсказание с JSON-списком кандидатов
     prediction = Prediction(
         game_id=game_id,
         user_id=user_id,
-        predicted_user_id=predicted_user_id,
+        predicted_user_ids=json.dumps(predicted_user_ids),
         year=year,
         day=day,
         is_correct=None
@@ -316,7 +330,7 @@ def create_prediction(db_session, game_id: int, user_id: int, predicted_user_id:
     db_session.add(prediction)
     db_session.commit()
 
-    logger.info(f"User {user_id} created prediction for user {predicted_user_id} in game {game_id} for day {year}-{day}")
+    logger.info(f"User {user_id} created prediction for users {predicted_user_ids} in game {game_id} for day {year}-{day}")
 
     return True, "success"
 

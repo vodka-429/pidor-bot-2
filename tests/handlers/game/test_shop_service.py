@@ -188,8 +188,8 @@ def test_get_shop_items():
     # Execute
     items = get_shop_items()
 
-    # Verify
-    assert len(items) == 3
+    # Verify - now includes transfer and bank
+    assert len(items) == 5
     assert items[0]['name'] == '🛡️ Защита от пидора'
     assert items[0]['price'] == IMMUNITY_PRICE
     assert items[0]['callback_data'] == 'shop_immunity'
@@ -201,6 +201,13 @@ def test_get_shop_items():
     assert items[2]['name'] == '🔮 Предсказание'
     assert items[2]['price'] == PREDICTION_PRICE
     assert items[2]['callback_data'] == 'shop_predict'
+
+    # New items
+    assert items[3]['name'] == '💸 Передать койны'
+    assert items[3]['callback_data'] == 'shop_transfer'
+
+    assert items[4]['name'] == '🏦 Банк чата'
+    assert items[4]['callback_data'] == 'shop_bank'
 
 
 @pytest.mark.unit
@@ -508,7 +515,7 @@ def test_create_prediction_success(mock_db_session):
     # Setup
     game_id = 1
     user_id = 1
-    predicted_user_id = 2
+    predicted_user_ids = [2, 3]  # Now it's a list
     year = 2024
     day = 167
 
@@ -533,7 +540,7 @@ def test_create_prediction_success(mock_db_session):
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
-    success, message = create_prediction(mock_db_session, game_id, user_id, predicted_user_id, year, day)
+    success, message = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
 
     # Verify
     assert success is True
@@ -550,7 +557,7 @@ def test_create_prediction_already_exists(mock_db_session):
     # Setup
     game_id = 1
     user_id = 1
-    predicted_user_id = 2
+    predicted_user_ids = [2, 3]  # Now it's a list
     year = 2024
     day = 167
 
@@ -562,7 +569,7 @@ def test_create_prediction_already_exists(mock_db_session):
     existing_prediction = Prediction(
         game_id=game_id,
         user_id=user_id,
-        predicted_user_id=predicted_user_id,
+        predicted_user_ids='[2, 3]',  # JSON string
         year=year,
         day=day
     )
@@ -582,7 +589,7 @@ def test_create_prediction_already_exists(mock_db_session):
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
-    success, message = create_prediction(mock_db_session, game_id, user_id, predicted_user_id, year, day)
+    success, message = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
 
     # Verify
     assert success is False
@@ -595,12 +602,12 @@ def test_create_prediction_self(mock_db_session):
     # Setup
     game_id = 1
     user_id = 1
-    predicted_user_id = 1  # Same as user_id
+    predicted_user_ids = [1, 2]  # Includes self
     year = 2024
     day = 167
 
     # Execute
-    success, message = create_prediction(mock_db_session, game_id, user_id, predicted_user_id, year, day)
+    success, message = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
 
     # Verify
     assert success is False

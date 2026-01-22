@@ -74,6 +74,14 @@ async def test_immunity_blocks_selection(mock_update, mock_context, mock_game, s
     mocker.patch('bot.handlers.game.commands.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=10)
 
+    # Mock exec для предсказаний (возвращаем пустой список)
+    mock_predictions_result = MagicMock()
+    mock_predictions_result.all.return_value = []
+    mock_context.db_session.exec.return_value = mock_predictions_result
+
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
@@ -169,6 +177,14 @@ async def test_immunity_reselection(mock_update, mock_context, mock_game, sample
     mocker.patch('bot.handlers.game.commands.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=10)
 
+    # Mock exec для предсказаний
+    mock_predictions_result = MagicMock()
+    mock_predictions_result.all.return_value = []
+    mock_context.db_session.exec.return_value = mock_predictions_result
+
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
@@ -233,6 +249,14 @@ async def test_immunity_message_shown(mock_update, mock_context, mock_game, samp
     mocker.patch('bot.handlers.game.commands.asyncio.sleep')
     mocker.patch('bot.handlers.game.commands.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=14)  # 10 + 4 coins
+
+    # Mock exec для предсказаний
+    mock_predictions_result = MagicMock()
+    mock_predictions_result.all.return_value = []
+    mock_context.db_session.exec.return_value = mock_predictions_result
+
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
 
     # Execute
     await pidor_cmd(mock_update, mock_context)
@@ -336,6 +360,9 @@ async def test_double_chance_increases_probability(mock_update, mock_context, mo
     mocker.patch('bot.handlers.game.commands.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=10)
 
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
@@ -408,6 +435,9 @@ async def test_double_chance_resets_after_win(mock_update, mock_context, mock_ga
     mocker.patch('bot.handlers.game.commands.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=10)
 
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
@@ -452,7 +482,7 @@ async def test_prediction_correct_awards_coins(mock_update, mock_context, mock_g
     prediction = Prediction(
         game_id=mock_game.id,
         user_id=sample_players[1].id,
-        predicted_user_id=sample_players[0].id,
+        predicted_user_ids=f'[{sample_players[0].id}]',
         year=2024,
         day=167,
         is_correct=None
@@ -484,6 +514,9 @@ async def test_prediction_correct_awards_coins(mock_update, mock_context, mock_g
     mock_add_coins = mocker.patch('bot.handlers.game.commands.add_coins')
     mock_add_coins_prediction = mocker.patch('bot.handlers.game.prediction_service.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=40)
+
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
 
     # Execute
     await pidor_cmd(mock_update, mock_context)
@@ -534,7 +567,7 @@ async def test_prediction_incorrect_no_reward(mock_update, mock_context, mock_ga
     prediction = Prediction(
         game_id=mock_game.id,
         user_id=sample_players[2].id,
-        predicted_user_id=sample_players[1].id,  # Predicts player 1
+        predicted_user_ids=f'[{sample_players[1].id}]',  # Predicts player 1
         year=2024,
         day=167,
         is_correct=None
@@ -562,6 +595,9 @@ async def test_prediction_incorrect_no_reward(mock_update, mock_context, mock_ga
 
     mock_add_coins = mocker.patch('bot.handlers.game.commands.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=10)
+
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
 
     # Execute
     await pidor_cmd(mock_update, mock_context)
@@ -610,7 +646,7 @@ async def test_prediction_notification_sent(mock_update, mock_context, mock_game
     prediction = Prediction(
         game_id=mock_game.id,
         user_id=sample_players[1].id,
-        predicted_user_id=sample_players[0].id,
+        predicted_user_ids=f'[{sample_players[0].id}]',
         year=2024,
         day=167,
         is_correct=None
@@ -637,6 +673,9 @@ async def test_prediction_notification_sent(mock_update, mock_context, mock_game
     mocker.patch('bot.handlers.game.commands.asyncio.sleep')
     mocker.patch('bot.handlers.game.commands.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=40)
+
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
 
     # Execute
     await pidor_cmd(mock_update, mock_context)
@@ -726,6 +765,14 @@ async def test_combined_effects(mock_update, mock_context, mock_game, sample_pla
     mocker.patch('bot.handlers.game.commands.asyncio.sleep')
     mocker.patch('bot.handlers.game.commands.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=10)
+
+    # Mock exec для предсказаний
+    mock_predictions_result = MagicMock()
+    mock_predictions_result.all.return_value = []
+    mock_context.db_session.exec.return_value = mock_predictions_result
+
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
 
     # Execute
     await pidor_cmd(mock_update, mock_context)
@@ -863,6 +910,14 @@ async def test_effects_isolated_between_games(mock_update, mock_context, sample_
     mocker.patch('bot.handlers.game.commands.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=10)
 
+    # Mock exec для предсказаний
+    mock_predictions_result = MagicMock()
+    mock_predictions_result.all.return_value = []
+    mock_context.db_session.exec.return_value = mock_predictions_result
+
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
     # Mock game1.results as MagicMock
     game1.results = MagicMock()
     game1.results.append = MagicMock()
@@ -987,6 +1042,9 @@ async def test_double_chance_for_other_player(mock_update, mock_context, mock_ga
     mocker.patch('bot.handlers.game.commands.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=10)
 
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
@@ -1032,7 +1090,7 @@ async def test_predictions_summary_single_message(mock_update, mock_context, moc
     prediction = Prediction(
         game_id=mock_game.id,
         user_id=sample_players[1].id,
-        predicted_user_id=sample_players[0].id,
+        predicted_user_ids=f'[{sample_players[0].id}]',
         year=2024,
         day=167,
         is_correct=None
@@ -1059,6 +1117,9 @@ async def test_predictions_summary_single_message(mock_update, mock_context, moc
     mocker.patch('bot.handlers.game.commands.asyncio.sleep')
     mocker.patch('bot.handlers.game.commands.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=40)
+
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
 
     # Execute
     await pidor_cmd(mock_update, mock_context)
@@ -1109,7 +1170,7 @@ async def test_predictions_summary_multiple_correct(mock_update, mock_context, m
     prediction1 = Prediction(
         game_id=mock_game.id,
         user_id=sample_players[1].id,
-        predicted_user_id=sample_players[0].id,
+        predicted_user_ids=f'[{sample_players[0].id}]',
         year=2024,
         day=167,
         is_correct=None
@@ -1117,7 +1178,7 @@ async def test_predictions_summary_multiple_correct(mock_update, mock_context, m
     prediction2 = Prediction(
         game_id=mock_game.id,
         user_id=sample_players[2].id,
-        predicted_user_id=sample_players[0].id,
+        predicted_user_ids=f'[{sample_players[0].id}]',
         year=2024,
         day=167,
         is_correct=None
@@ -1148,6 +1209,9 @@ async def test_predictions_summary_multiple_correct(mock_update, mock_context, m
     mocker.patch('bot.handlers.game.commands.asyncio.sleep')
     mocker.patch('bot.handlers.game.commands.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=40)
+
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
 
     # Execute
     await pidor_cmd(mock_update, mock_context)
@@ -1191,7 +1255,7 @@ async def test_predictions_summary_mixed_results(mock_update, mock_context, mock
     prediction1 = Prediction(
         game_id=mock_game.id,
         user_id=sample_players[1].id,
-        predicted_user_id=sample_players[0].id,  # Correct
+        predicted_user_ids=f'[{sample_players[0].id}]',  # Correct
         year=2024,
         day=167,
         is_correct=None
@@ -1199,7 +1263,7 @@ async def test_predictions_summary_mixed_results(mock_update, mock_context, mock
     prediction2 = Prediction(
         game_id=mock_game.id,
         user_id=sample_players[2].id,
-        predicted_user_id=sample_players[1].id,  # Incorrect
+        predicted_user_ids=f'[{sample_players[1].id}]',  # Incorrect
         year=2024,
         day=167,
         is_correct=None
@@ -1230,6 +1294,9 @@ async def test_predictions_summary_mixed_results(mock_update, mock_context, mock
     mocker.patch('bot.handlers.game.commands.asyncio.sleep')
     mocker.patch('bot.handlers.game.commands.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=40)
+
+    # Mock send_result_with_reroll_button
+    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
 
     # Execute
     await pidor_cmd(mock_update, mock_context)

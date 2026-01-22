@@ -1,5 +1,7 @@
 """Service functions for predictions (магазин пидор-койнов)."""
+import json
 import logging
+import math
 from typing import List, Tuple
 
 from sqlmodel import select
@@ -13,6 +15,35 @@ logger = logging.getLogger(__name__)
 
 # Награда за правильное предсказание
 PREDICTION_REWARD = 30
+
+
+def calculate_candidates_count(players_count: int) -> int:
+    """
+    Рассчитать количество кандидатов для предсказания.
+
+    Формула: ceil(количество_игроков / 10)
+    Это выравнивает вероятность угадывания примерно до 10-15% для всех размеров чатов.
+
+    Args:
+        players_count: Количество игроков в чате
+
+    Returns:
+        Количество кандидатов для выбора
+    """
+    return math.ceil(players_count / 10)
+
+
+def get_predicted_user_ids(prediction: Prediction) -> List[int]:
+    """
+    Получить список ID кандидатов из предсказания.
+
+    Args:
+        prediction: Объект предсказания
+
+    Returns:
+        Список ID предсказанных пользователей
+    """
+    return json.loads(prediction.predicted_user_ids)
 
 
 def get_predictions_for_day(db_session, game_id: int, year: int, day: int) -> List[Prediction]:
@@ -63,8 +94,9 @@ def process_predictions(
     results = []
 
     for prediction in predictions:
-        # Проверяем, совпал ли predicted_user_id с winner_id
-        is_correct = prediction.predicted_user_id == winner_id
+        # Проверяем, есть ли winner_id среди предсказанных кандидатов
+        predicted_ids = get_predicted_user_ids(prediction)
+        is_correct = winner_id in predicted_ids
         prediction.is_correct = is_correct
 
         results.append((prediction, is_correct))
@@ -72,7 +104,7 @@ def process_predictions(
         if is_correct:
             logger.info(f"User {prediction.user_id} correctly predicted winner {winner_id}")
         else:
-            logger.info(f"User {prediction.user_id} incorrectly predicted {prediction.predicted_user_id}, actual winner: {winner_id}")
+            logger.info(f"User {prediction.user_id} incorrectly predicted {predicted_ids}, actual winner: {winner_id}")
 
         db_session.add(prediction)
 
