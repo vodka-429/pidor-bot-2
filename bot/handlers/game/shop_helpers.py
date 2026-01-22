@@ -277,6 +277,53 @@ def create_double_chance_keyboard(players: List[TGUser], owner_user_id: int, cal
     return InlineKeyboardMarkup(keyboard)
 
 
+def create_transfer_amount_keyboard(balance: int, receiver_id: int, owner_user_id: int) -> InlineKeyboardMarkup:
+    """
+    Создаёт клавиатуру для выбора суммы передачи.
+
+    Args:
+        balance: Баланс отправителя
+        receiver_id: ID получателя (внутренний ID БД)
+        owner_user_id: Telegram ID владельца магазина
+
+    Returns:
+        InlineKeyboardMarkup с кнопками выбора суммы
+    """
+    keyboard = []
+
+    # Рассчитываем суммы (только если >= TRANSFER_MIN_AMOUNT)
+    amounts = [
+        (balance // 4, "25%"),
+        (balance // 2, "50%"),
+        (balance * 3 // 4, "75%"),
+        (balance, "100%")
+    ]
+
+    row = []
+    for amount, label in amounts:
+        if amount >= 2:  # TRANSFER_MIN_AMOUNT
+            callback_data = f"shop_transfer_amount_{receiver_id}_{amount}_{owner_user_id}"
+            button = InlineKeyboardButton(
+                text=f"{amount} 💰 ({label})",
+                callback_data=callback_data
+            )
+            row.append(button)
+            if len(row) >= 2:
+                keyboard.append(row)
+                row = []
+
+    if row:
+        keyboard.append(row)
+
+    # Кнопка "Назад"
+    keyboard.append([InlineKeyboardButton(
+        "⬅️ Назад",
+        callback_data=f"shop_back_{owner_user_id}"
+    )])
+
+    return InlineKeyboardMarkup(keyboard)
+
+
 def format_shop_menu_message(balance: int, user_name: str = None, active_effects: dict = None) -> str:
     """
     Форматирует сообщение меню магазина с балансом и списком товаров.
@@ -306,7 +353,6 @@ def format_shop_menu_message(balance: int, user_name: str = None, active_effects
     items_list = []
 
     for item in items:
-        price_str = format_number(item['price'])
         name_escaped = escape_markdown2(item['name'])
         desc_escaped = escape_markdown2(item['description'])
 
@@ -321,7 +367,12 @@ def format_shop_menu_message(balance: int, user_name: str = None, active_effects
             elif item['callback_data'] == 'shop_predict' and active_effects.get('prediction_exists'):
                 status_info = "\n✅ _Предсказание создано_"
 
-        items_list.append(f"{name_escaped} \\- *{price_str}* 🪙\n_{desc_escaped}_{status_info}")
+        # Проверяем, есть ли цена у товара
+        if item['price'] is not None:
+            price_str = format_number(item['price'])
+            items_list.append(f"{name_escaped} \\- *{price_str}* 🪙\n_{desc_escaped}_{status_info}")
+        else:
+            items_list.append(f"{name_escaped}\n_{desc_escaped}_{status_info}")
 
     items_text = '\n\n'.join(items_list)
 

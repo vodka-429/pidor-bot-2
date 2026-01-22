@@ -1904,7 +1904,8 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
 async def handle_reroll_callback(update: Update, context: GECallbackContext):
     """Обработчик нажатия кнопки перевыбора."""
     from bot.handlers.game.reroll_service import can_reroll, execute_reroll, REROLL_PRICE
-    from bot.handlers.game.coin_service import can_afford, get_balance
+    from bot.handlers.game.shop_service import can_afford
+    from bot.handlers.game.coin_service import get_balance
     from bot.handlers.game.text_static import (
         REROLL_ERROR_ALREADY_USED,
         REROLL_ERROR_INSUFFICIENT_FUNDS,
@@ -2045,16 +2046,9 @@ async def handle_shop_transfer_callback(update: Update, context: GECallbackConte
 
 @ensure_game
 async def handle_shop_transfer_select_callback(update: Update, context: GECallbackContext):
-    """Обработчик выбора получателя для передачи койнов"""
-    from bot.handlers.game.transfer_service import (
-        can_transfer, execute_transfer, get_or_create_chat_bank
-    )
-    from bot.handlers.game.text_static import (
-        SHOP_ERROR_NOT_YOUR_SHOP,
-        TRANSFER_SUCCESS,
-        TRANSFER_ERROR_INSUFFICIENT_FUNDS,
-        TRANSFER_ERROR_COOLDOWN
-    )
+    """Обработчик выбора получателя — показывает клавиатуру с выбором суммы"""
+    from bot.handlers.game.shop_helpers import create_transfer_amount_keyboard
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP, TRANSFER_SELECT_AMOUNT
 
     query = update.callback_query
 
@@ -2062,7 +2056,7 @@ async def handle_shop_transfer_select_callback(update: Update, context: GECallba
         logger.error("callback_query is None!")
         return
 
-    logger.info(f"Shop transfer select callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Shop transfer select callback from user {query.from_user.id}")
     logger.info(f"Callback data: {query.data}")
 
     # Парсим callback_data: shop_transfer_select_{receiver_id}_{owner_user_id}
@@ -2075,6 +2069,76 @@ async def handle_shop_transfer_select_callback(update: Update, context: GECallba
         receiver_id = int(parts[-2])
 
         logger.info(f"Parsed callback: receiver_id={receiver_id}, owner_user_id={owner_user_id}")
+    except (ValueError, IndexError) as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # Проверяем, что нажавший кнопку - это владелец магазина
+    if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    # Получаем баланс отправителя
+    balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+
+    if balance < 2:  # TRANSFER_MIN_AMOUNT
+        await query.answer("❌ Недостаточно койнов для передачи (минимум 2)", show_alert=True)
+        return
+
+    # Получаем имя получателя
+    receiver = context.db_session.query(TGUser).filter_by(id=receiver_id).one()
+    receiver_name = escape_markdown2(receiver.full_username())
+
+    # Создаём клавиатуру с выбором суммы
+    keyboard = create_transfer_amount_keyboard(balance, receiver_id, context.tg_user.tg_id)
+
+    await query.edit_message_text(
+        text=TRANSFER_SELECT_AMOUNT.format(
+            receiver_name=receiver_name,
+            balance=format_number(balance)
+        ),
+        parse_mode="MarkdownV2",
+        reply_markup=keyboard
+    )
+    await query.answer()
+
+    logger.info(f"Showed transfer amount selection for user {context.tg_user.id}, receiver {receiver_id}")
+
+
+@ensure_game
+async def handle_shop_transfer_amount_callback(update: Update, context: GECallbackContext):
+    """Обработчик выбора суммы для передачи койнов"""
+    from bot.handlers.game.transfer_service import (
+        can_transfer, execute_transfer, get_or_create_chat_bank
+    )
+    from bot.handlers.game.text_static import (
+        SHOP_ERROR_NOT_YOUR_SHOP,
+        TRANSFER_SUCCESS,
+        TRANSFER_ERROR_COOLDOWN
+    )
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop transfer amount callback from user {query.from_user.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    # Парсим callback_data: shop_transfer_amount_{receiver_id}_{amount}_{owner_user_id}
+    try:
+        parts = query.data.split('_')
+        if len(parts) < 5:
+            raise ValueError(f"Invalid callback_data format: {query.data}")
+
+        owner_user_id = int(parts[-1])
+        amount = int(parts[-2])
+        receiver_id = int(parts[-3])
+
+        logger.info(f"Parsed callback: receiver_id={receiver_id}, amount={amount}, owner_user_id={owner_user_id}")
     except (ValueError, IndexError) as e:
         logger.error(f"Failed to parse callback_data: {e}")
         await query.answer("❌ Ошибка обработки запроса")
@@ -2102,18 +2166,10 @@ async def handle_shop_transfer_select_callback(update: Update, context: GECallba
             )
         return
 
-    # Получаем баланс отправителя
+    # Проверяем баланс
     balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
-
-    # Для простоты передаём половину баланса (можно улучшить, добавив ввод суммы)
-    amount = balance // 2
-
-    if amount < 2:  # TRANSFER_MIN_AMOUNT
-        await query.answer("❌ Недостаточно койнов для передачи", show_alert=True)
-        await query.edit_message_text(
-            text=TRANSFER_ERROR_INSUFFICIENT_FUNDS.format(balance=balance, amount=amount),
-            parse_mode="MarkdownV2"
-        )
+    if balance < amount:
+        await query.answer(f"❌ Недостаточно койнов! Баланс: {balance}", show_alert=True)
         return
 
     # Выполняем перевод
@@ -2154,7 +2210,6 @@ async def handle_shop_transfer_select_callback(update: Update, context: GECallba
         f"Transfer completed: sender {context.tg_user.id}, receiver {receiver_id}, "
         f"amount {amount_sent}, commission {commission}"
     )
-
 
 @ensure_game
 async def handle_shop_bank_callback(update: Update, context: GECallbackContext):
