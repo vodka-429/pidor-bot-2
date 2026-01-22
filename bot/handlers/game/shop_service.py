@@ -294,10 +294,6 @@ def create_prediction(db_session, game_id: int, user_id: int, predicted_user_ids
     """
     import json
 
-    # Проверяем, что пользователь не предсказывает себя
-    if user_id in predicted_user_ids:
-        return False, "self_prediction"
-
     # Проверяем баланс
     if not can_afford(db_session, game_id, user_id, PREDICTION_PRICE):
         return False, "insufficient_funds"

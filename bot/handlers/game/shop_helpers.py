@@ -177,6 +177,20 @@ def create_prediction_keyboard(
     """
     selected_ids = selected_ids or []
     keyboard = []
+
+    # Кнопка подтверждения в начале (активна только когда выбрано нужное количество)
+    if len(selected_ids) == candidates_count:
+        keyboard.append([InlineKeyboardButton(
+            f"✅ Подтвердить ({candidates_count} кандидат{'а' if candidates_count < 5 else 'ов'})",
+            callback_data=f"{SHOP_CALLBACK_PREFIX}predict_confirm_{owner_user_id}"
+        )])
+    else:
+        remaining = candidates_count - len(selected_ids)
+        keyboard.append([InlineKeyboardButton(
+            f"⏳ Выберите ещё {remaining} кандидат{'а' if remaining < 5 else 'ов'}",
+            callback_data="noop"
+        )])
+
     row = []
 
     for player in players:
@@ -207,19 +221,6 @@ def create_prediction_keyboard(
     # Добавляем оставшиеся кнопки
     if row:
         keyboard.append(row)
-
-    # Кнопка подтверждения (активна только когда выбрано нужное количество)
-    if len(selected_ids) == candidates_count:
-        keyboard.append([InlineKeyboardButton(
-            f"✅ Подтвердить ({candidates_count} кандидат{'а' if candidates_count < 5 else 'ов'})",
-            callback_data=f"{SHOP_CALLBACK_PREFIX}predict_confirm_{owner_user_id}"
-        )])
-    else:
-        remaining = candidates_count - len(selected_ids)
-        keyboard.append([InlineKeyboardButton(
-            f"⏳ Выберите ещё {remaining} кандидат{'а' if remaining < 5 else 'ов'}",
-            callback_data="noop"
-        )])
 
     # Кнопка отмены
     keyboard.append([InlineKeyboardButton(

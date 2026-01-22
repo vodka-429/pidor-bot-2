@@ -213,6 +213,24 @@ class Prediction(SQLModel, table=True):
     )
 
 
+class PredictionDraft(SQLModel, table=True):
+    """Черновики предсказаний (выбранные кандидаты до подтверждения)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    user_id: int = Field(foreign_key="tguser.id", nullable=False)  # Кто предсказывает
+    selected_user_ids: str = Field(nullable=False)  # JSON array: "[123, 456]"
+    candidates_count: int = Field(nullable=False)  # Сколько кандидатов нужно выбрать
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    game: Game = Relationship()
+    user: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[PredictionDraft.user_id]"})
+
+    __table_args__ = (
+        UniqueConstraint('game_id', 'user_id', name='unique_prediction_draft'),
+    )
+
+
 class ChatBank(SQLModel, table=True):
     """Банк чата для хранения комиссий от переводов."""
     id: Optional[int] = Field(default=None, primary_key=True)

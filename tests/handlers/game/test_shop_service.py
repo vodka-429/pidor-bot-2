@@ -598,7 +598,7 @@ def test_create_prediction_already_exists(mock_db_session):
 
 @pytest.mark.unit
 def test_create_prediction_self(mock_db_session):
-    """Test create_prediction fails when user tries to predict themselves."""
+    """Test create_prediction allows user to predict themselves."""
     # Setup
     game_id = 1
     user_id = 1
@@ -606,16 +606,36 @@ def test_create_prediction_self(mock_db_session):
     year = 2024
     day = 167
 
+    # Mock sufficient balance
+    mock_balance_result = MagicMock()
+    mock_balance_result.first.return_value = 20
+
+    # Mock no existing prediction
+    mock_prediction_result = MagicMock()
+    mock_prediction_result.first.return_value = None
+
+    # Configure exec
+    call_count = 0
+    def exec_side_effect(stmt):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:  # Balance check
+            return mock_balance_result
+        else:  # Prediction check
+            return mock_prediction_result
+
+    mock_db_session.exec.side_effect = exec_side_effect
+
     # Execute
     success, message = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
 
-    # Verify
-    assert success is False
-    assert message == "self_prediction"
+    # Verify - self-prediction is now allowed
+    assert success is True
+    assert message == "success"
 
-    # Verify no database operations were performed
-    mock_db_session.exec.assert_not_called()
-    mock_db_session.add.assert_not_called()
+    # Verify prediction was added
+    assert mock_db_session.add.call_count == 2  # Transaction + prediction
+    mock_db_session.commit.assert_called()
 
 
 @pytest.mark.unit

@@ -346,9 +346,19 @@ async def test_handle_shop_predict_callback_shows_players(mock_update, mock_call
     # Mock the database query to return our game (for @ensure_game decorator)
     mock_db_session.query.return_value.filter_by.return_value.one_or_none.return_value = game
 
-    # The decorator will set context.game, so we don't need to set it manually
+    # Mock get_or_create_prediction_draft to return a draft with empty selection
+    with patch('bot.handlers.game.prediction_service.get_or_create_prediction_draft') as mock_get_draft:
+        from bot.app.models import PredictionDraft
+        mock_draft = PredictionDraft(
+            id=1,
+            game_id=1,
+            user_id=100,
+            selected_user_ids='[]',  # Empty JSON array as string
+            candidates_count=2
+        )
+        mock_get_draft.return_value = mock_draft
 
-    await handle_shop_predict_callback(mock_update, context)
+        await handle_shop_predict_callback(mock_update, context)
 
     # Verify that edit_message_text was called with player selection
     mock_callback_query.edit_message_text.assert_called_once()
@@ -363,7 +373,7 @@ async def test_handle_shop_predict_callback_shows_players(mock_update, mock_call
 async def test_handle_shop_predict_confirm_callback_success(mock_update, mock_callback_query, mock_context, mock_db_session, sample_players):
     """Test successful prediction creation."""
     # Setup callback data
-    mock_callback_query.data = "shop_predict_confirm_101_100"  # Predict user 101, owner 100
+    mock_callback_query.data = "shop_predict_confirm_100"  # owner 100
     mock_callback_query.from_user.id = 100
 
     # Ensure context has proper user ID
@@ -371,15 +381,26 @@ async def test_handle_shop_predict_confirm_callback_success(mock_update, mock_ca
 
     # Mock get_balance to return sufficient funds (return int, not tuple)
     with patch('bot.handlers.game.coin_service.get_balance', return_value=150):
-        # Mock shop_service.create_prediction to return success
-        with patch('bot.handlers.game.shop_service.create_prediction', return_value=(True, "success")):
-            # Mock query for predicted user
-            mock_db_session.query.return_value.filter_by.return_value.one.return_value = sample_players[1]
+        # Mock get_prediction_draft to return a draft with selected candidates
+        with patch('bot.handlers.game.prediction_service.get_prediction_draft') as mock_get_draft:
+            from bot.app.models import PredictionDraft
+            mock_draft = PredictionDraft(
+                id=1,
+                game_id=1,
+                user_id=100,
+                selected_user_ids='[101, 102]',  # JSON array as string
+                candidates_count=2
+            )
+            mock_get_draft.return_value = mock_draft
 
-            with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
-                mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
+            # Mock shop_service.create_prediction to return success
+            with patch('bot.handlers.game.shop_service.create_prediction', return_value=(True, "success")):
+                # Mock delete_prediction_draft
+                with patch('bot.handlers.game.prediction_service.delete_prediction_draft'):
+                    with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
+                        mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
 
-                await handle_shop_predict_confirm_callback(mock_update, mock_context)
+                        await handle_shop_predict_confirm_callback(mock_update, mock_context)
 
     # Verify success response
     mock_callback_query.answer.assert_called_once()
@@ -391,28 +412,29 @@ async def test_handle_shop_predict_confirm_callback_success(mock_update, mock_ca
 async def test_handle_shop_predict_confirm_callback_already_exists(mock_update, mock_callback_query, mock_context, mock_db_session, sample_players):
     """Test prediction creation when already exists."""
     # Setup callback data
-    mock_callback_query.data = "shop_predict_confirm_101_100"
+    mock_callback_query.data = "shop_predict_confirm_100"
     mock_callback_query.from_user.id = 100
 
     # Mock get_balance to return sufficient funds (return int, not tuple)
     with patch('bot.handlers.game.coin_service.get_balance', return_value=150):
-        # Mock that prediction already exists
-        existing_prediction = Prediction(
-            id=1,
-            game_id=1,
-            user_id=100,
-            predicted_user_id=101,
-            year=2024,
-            day=15,
-            is_correct=None,
-            created_at=datetime(2024, 1, 15, 10, 0, 0)
-        )
-        mock_db_session.exec.return_value.one_or_none.return_value = existing_prediction
+        # Mock get_prediction_draft to return a draft with selected candidates
+        with patch('bot.handlers.game.prediction_service.get_prediction_draft') as mock_get_draft:
+            from bot.app.models import PredictionDraft
+            mock_draft = PredictionDraft(
+                id=1,
+                game_id=1,
+                user_id=100,
+                selected_user_ids='[101]',  # JSON array as string
+                candidates_count=1
+            )
+            mock_get_draft.return_value = mock_draft
 
-        with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
-            mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
+            # Mock shop_service.create_prediction to return error
+            with patch('bot.handlers.game.shop_service.create_prediction', return_value=(False, "already_exists")):
+                with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
+                    mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
 
-            await handle_shop_predict_confirm_callback(mock_update, mock_context)
+                    await handle_shop_predict_confirm_callback(mock_update, mock_context)
 
     # Verify error response
     mock_callback_query.answer.assert_called_once()
@@ -422,24 +444,37 @@ async def test_handle_shop_predict_confirm_callback_already_exists(mock_update, 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_shop_predict_confirm_callback_self(mock_update, mock_callback_query, mock_context, mock_db_session):
-    """Test that user cannot predict themselves."""
+    """Test that user CAN predict themselves (restriction removed)."""
     # Setup callback data - user predicting themselves
-    mock_callback_query.data = "shop_predict_confirm_100_100"  # Same user ID
+    mock_callback_query.data = "shop_predict_confirm_100"
     mock_callback_query.from_user.id = 100
 
     # Mock get_balance to return sufficient funds (return int, not tuple)
     with patch('bot.handlers.game.coin_service.get_balance', return_value=150):
-        # Mock that no prediction exists yet
-        mock_db_session.exec.return_value.one_or_none.return_value = None
+        # Mock get_prediction_draft to return a draft with self-selection
+        with patch('bot.handlers.game.prediction_service.get_prediction_draft') as mock_get_draft:
+            from bot.app.models import PredictionDraft
+            mock_draft = PredictionDraft(
+                id=1,
+                game_id=1,
+                user_id=100,
+                selected_user_ids='[100]',  # Self-prediction as JSON array
+                candidates_count=1
+            )
+            mock_get_draft.return_value = mock_draft
 
-        with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
-            mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
+            # Mock shop_service.create_prediction to return success (self-prediction now allowed)
+            with patch('bot.handlers.game.shop_service.create_prediction', return_value=(True, "success")):
+                # Mock delete_prediction_draft
+                with patch('bot.handlers.game.prediction_service.delete_prediction_draft'):
+                    with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
+                        mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
 
-            await handle_shop_predict_confirm_callback(mock_update, mock_context)
+                        await handle_shop_predict_confirm_callback(mock_update, mock_context)
 
-    # Verify error response
+    # Verify success response (self-prediction is now allowed)
     mock_callback_query.answer.assert_called_once()
-    assert "❌" in mock_callback_query.answer.call_args[0][0]
+    assert "✅" in mock_callback_query.answer.call_args[0][0]
 
 
 @pytest.mark.unit
@@ -447,18 +482,29 @@ async def test_handle_shop_predict_confirm_callback_self(mock_update, mock_callb
 async def test_handle_shop_predict_confirm_callback_insufficient_funds(mock_update, mock_callback_query, mock_context, mock_db_session):
     """Test prediction creation with insufficient funds."""
     # Setup callback data
-    mock_callback_query.data = "shop_predict_confirm_101_100"
+    mock_callback_query.data = "shop_predict_confirm_100"
     mock_callback_query.from_user.id = 100
 
     # Mock get_balance to return insufficient funds (10 coins, return int not tuple)
     with patch('bot.handlers.game.coin_service.get_balance', return_value=10):
-        # Mock that no prediction exists yet
-        mock_db_session.exec.return_value.one_or_none.return_value = None
+        # Mock get_prediction_draft to return a draft with selected candidates
+        with patch('bot.handlers.game.prediction_service.get_prediction_draft') as mock_get_draft:
+            from bot.app.models import PredictionDraft
+            mock_draft = PredictionDraft(
+                id=1,
+                game_id=1,
+                user_id=100,
+                selected_user_ids='[101]',  # JSON array as string
+                candidates_count=1
+            )
+            mock_get_draft.return_value = mock_draft
 
-        with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
-            mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
+            # Mock shop_service.create_prediction to return error
+            with patch('bot.handlers.game.shop_service.create_prediction', return_value=(False, "insufficient_funds")):
+                with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
+                    mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
 
-            await handle_shop_predict_confirm_callback(mock_update, mock_context)
+                    await handle_shop_predict_confirm_callback(mock_update, mock_context)
 
     # Verify error response
     mock_callback_query.answer.assert_called_once()
