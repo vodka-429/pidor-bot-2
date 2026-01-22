@@ -186,3 +186,113 @@ def award_correct_predictions(
                 auto_commit=False
             )
             logger.info(f"Awarded {PREDICTION_REWARD} coins to user {prediction.user_id} for correct prediction")
+
+
+def get_or_create_prediction_draft(db_session, game_id: int, user_id: int, candidates_count: int):
+    """
+    Получить или создать черновик предсказания.
+
+    Args:
+        db_session: Сессия базы данных
+        game_id: ID игры (чата)
+        user_id: ID пользователя
+        candidates_count: Количество кандидатов для выбора
+
+    Returns:
+        Объект PredictionDraft
+    """
+    from bot.app.models import PredictionDraft
+
+    stmt = select(PredictionDraft).where(
+        PredictionDraft.game_id == game_id,
+        PredictionDraft.user_id == user_id
+    )
+    draft = db_session.exec(stmt).first()
+
+    if draft is None:
+        # Создаём новый черновик с пустым списком выбранных
+        draft = PredictionDraft(
+            game_id=game_id,
+            user_id=user_id,
+            selected_user_ids=json.dumps([]),
+            candidates_count=candidates_count
+        )
+        db_session.add(draft)
+        db_session.commit()
+        db_session.refresh(draft)
+        logger.info(f"Created new prediction draft for user {user_id} in game {game_id}")
+
+    return draft
+
+
+def update_prediction_draft(db_session, draft_id: int, selected_user_ids: List[int]):
+    """
+    Обновить выбранных кандидатов в черновике.
+
+    Args:
+        db_session: Сессия базы данных
+        draft_id: ID черновика
+        selected_user_ids: Список ID выбранных пользователей
+    """
+    from bot.app.models import PredictionDraft
+    from datetime import datetime
+
+    stmt = select(PredictionDraft).where(PredictionDraft.id == draft_id)
+    draft = db_session.exec(stmt).one()
+
+    draft.selected_user_ids = json.dumps(selected_user_ids)
+    draft.updated_at = datetime.utcnow()
+
+    db_session.add(draft)
+    db_session.commit()
+
+    logger.info(f"Updated prediction draft {draft_id} with {len(selected_user_ids)} selected candidates")
+
+
+def delete_prediction_draft(db_session, game_id: int, user_id: int):
+    """
+    Удалить черновик предсказания после подтверждения или отмены.
+
+    Args:
+        db_session: Сессия базы данных
+        game_id: ID игры (чата)
+        user_id: ID пользователя
+    """
+    from bot.app.models import PredictionDraft
+
+    stmt = select(PredictionDraft).where(
+        PredictionDraft.game_id == game_id,
+        PredictionDraft.user_id == user_id
+    )
+    draft = db_session.exec(stmt).first()
+
+    if draft:
+        db_session.delete(draft)
+        db_session.commit()
+        logger.info(f"Deleted prediction draft for user {user_id} in game {game_id}")
+
+
+def get_prediction_draft(db_session, game_id: int, user_id: int):
+    """
+    Получить текущий черновик предсказания.
+
+    Args:
+        db_session: Сессия базы данных
+        game_id: ID игры (чата)
+        user_id: ID пользователя
+
+    Returns:
+        Объект PredictionDraft или None, если черновик не найден
+    """
+    from bot.app.models import PredictionDraft
+
+    stmt = select(PredictionDraft).where(
+        PredictionDraft.game_id == game_id,
+        PredictionDraft.user_id == user_id
+    )
+    draft = db_session.exec(stmt).first()
+
+    if draft:
+        logger.info(f"Found prediction draft for user {user_id} in game {game_id}")
+
+    return draft

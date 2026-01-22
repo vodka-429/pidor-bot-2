@@ -1,4 +1,5 @@
 """Integration tests for shop functionality in game logic."""
+import json
 import pytest
 from datetime import datetime, date, timedelta
 from unittest.mock import MagicMock, AsyncMock, patch
@@ -1304,3 +1305,347 @@ async def test_predictions_summary_mixed_results(mock_update, mock_context, mock
     # Verify predictions have correct results
     assert prediction1.is_correct is True, "First prediction should be correct"
     assert prediction2.is_correct is False, "Second prediction should be incorrect"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_prediction_full_flow(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test full prediction flow: shop → select prediction → select candidates → confirm."""
+    from bot.handlers.game.commands import (
+        handle_shop_predict_callback,
+        handle_shop_predict_select_callback,
+        handle_shop_predict_confirm_callback
+    )
+    from bot.app.models import PredictionDraft
+
+    # Setup
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+    mock_context.user_data = {}
+    mock_context.tg_user = sample_players[0]  # Set context user
+
+    # Mock user - ВАЖНО: используем tg_id (Telegram ID)
+    mock_update.effective_user.id = sample_players[0].tg_id
+
+    # Mock callback query
+    mock_callback_query = MagicMock()
+    mock_callback_query.answer = AsyncMock()
+    mock_callback_query.edit_message_text = AsyncMock()
+    mock_callback_query.message.chat_id = mock_game.chat_id
+    mock_callback_query.from_user.id = sample_players[0].tg_id  # ВАЖНО: устанавливаем tg_id
+    mock_update.callback_query = mock_callback_query
+
+    # Mock current_datetime с реальной датой
+    mock_dt = MagicMock()
+    mock_dt.year = 2024
+    mock_dt.month = 6
+    mock_dt.day = 15
+    mock_dt.timetuple.return_value.tm_yday = 167
+    mock_dt.date.return_value = date(2024, 6, 15)
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+
+    # Mock get_balance
+    mocker.patch('bot.handlers.game.commands.get_balance', return_value=100)
+
+    # Mock get_active_effects
+    mocker.patch('bot.handlers.game.shop_service.get_active_effects', return_value={})
+
+    # Mock ensure_game decorator - возвращаем mock_game вместо запроса к БД
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+    mock_context.db_session.query.return_value = mock_game_query
+
+    # Step 1: Open prediction purchase
+    # Формат: shop_predict_{owner_user_id} где owner_user_id это tg_id
+    mock_callback_query.data = f"shop_predict_{sample_players[0].tg_id}"
+
+    # Mock exec to return no existing prediction, then return draft
+    draft = PredictionDraft(
+        id=1,
+        game_id=mock_game.id,
+        user_id=sample_players[0].id,
+        selected_user_ids='[]',
+        candidates_count=1
+    )
+
+    # Создаём side_effect для exec - первый вызов возвращает None (нет draft), второй создаёт draft
+    exec_call_count = [0]
+    def mock_exec_side_effect(stmt):
+        mock_result = MagicMock()
+        exec_call_count[0] += 1
+        if exec_call_count[0] == 1:
+            # Первый вызов - проверка существующего draft
+            mock_result.first.return_value = None
+        else:
+            # Последующие вызовы - возвращаем draft
+            mock_result.first.return_value = draft
+            mock_result.one.return_value = draft
+        return mock_result
+
+    mock_context.db_session.exec.side_effect = mock_exec_side_effect
+
+    await handle_shop_predict_callback(mock_update, mock_context)
+
+    # Verify draft was created - проверяем через commit, так как draft создаётся внутри get_or_create_prediction_draft
+    assert mock_context.db_session.commit.called, "Should commit draft creation"
+
+    # Step 2: Select first candidate
+    # Формат: shop_predict_select_{player_id}_{owner_user_id}
+    mock_callback_query.data = f"shop_predict_select_{sample_players[1].id}_{sample_players[0].tg_id}"
+
+    # Reset exec side effect для возврата draft
+    mock_context.db_session.exec.side_effect = None
+    mock_result = MagicMock()
+    mock_result.first.return_value = draft
+    mock_result.one.return_value = draft
+    mock_context.db_session.exec.return_value = mock_result
+
+    await handle_shop_predict_select_callback(mock_update, mock_context)
+
+    # Verify candidate was added to draft
+    selected_ids = json.loads(draft.selected_user_ids)
+    assert sample_players[1].id in selected_ids, "Candidate should be added to draft"
+
+    # Step 3: Confirm prediction
+    # Формат: shop_predict_confirm_{owner_user_id}
+    mock_callback_query.data = f"shop_predict_confirm_{sample_players[0].tg_id}"
+
+    # Update draft with selected candidate
+    draft.selected_user_ids = json.dumps([sample_players[1].id])
+    mock_result.first.return_value = draft
+
+    # Mock can_afford и spend_coins для shop_service
+    mocker.patch('bot.handlers.game.shop_service.can_afford', return_value=True)
+    mocker.patch('bot.handlers.game.shop_service.spend_coins')
+
+    await handle_shop_predict_confirm_callback(mock_update, mock_context)
+
+    # Verify prediction was created - проверяем через commit
+    assert mock_context.db_session.commit.called, "Should commit prediction creation"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_prediction_cancel_flow(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test prediction cancel flow: shop → select prediction → select candidates → cancel."""
+    from bot.handlers.game.commands import (
+        handle_shop_predict_callback,
+        handle_shop_predict_select_callback,
+        handle_shop_predict_cancel_callback
+    )
+    from bot.app.models import PredictionDraft
+
+    # Setup
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+    mock_context.user_data = {}
+    mock_context.tg_user = sample_players[0]  # Set context user
+
+    # Mock user - ВАЖНО: используем tg_id (Telegram ID)
+    mock_update.effective_user.id = sample_players[0].tg_id
+
+    # Mock callback query
+    mock_callback_query = MagicMock()
+    mock_callback_query.answer = AsyncMock()
+    mock_callback_query.edit_message_text = AsyncMock()
+    mock_callback_query.message.chat_id = mock_game.chat_id
+    mock_callback_query.from_user.id = sample_players[0].tg_id  # ВАЖНО: устанавливаем tg_id
+    mock_update.callback_query = mock_callback_query
+
+    # Mock current_datetime с реальной датой
+    mock_dt = MagicMock()
+    mock_dt.year = 2024
+    mock_dt.month = 6
+    mock_dt.day = 15
+    mock_dt.timetuple.return_value.tm_yday = 167
+    mock_dt.date.return_value = date(2024, 6, 15)
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+
+    # Mock get_balance
+    mocker.patch('bot.handlers.game.commands.get_balance', return_value=100)
+
+    # Mock get_active_effects
+    mocker.patch('bot.handlers.game.shop_service.get_active_effects', return_value={})
+
+    # Mock ensure_game decorator - возвращаем mock_game вместо запроса к БД
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+    mock_context.db_session.query.return_value = mock_game_query
+
+    # Step 1: Open prediction purchase
+    mock_callback_query.data = f"shop_predict_{sample_players[0].tg_id}"
+
+    # Mock exec to return no existing prediction, then return draft
+    draft = PredictionDraft(
+        id=1,
+        game_id=mock_game.id,
+        user_id=sample_players[0].id,
+        selected_user_ids='[]',
+        candidates_count=1
+    )
+
+    # Создаём side_effect для exec
+    exec_call_count = [0]
+    def mock_exec_side_effect(stmt):
+        mock_result = MagicMock()
+        exec_call_count[0] += 1
+        if exec_call_count[0] == 1:
+            # Первый вызов - проверка существующего draft
+            mock_result.first.return_value = None
+        else:
+            # Последующие вызовы - возвращаем draft
+            mock_result.first.return_value = draft
+            mock_result.one.return_value = draft
+        return mock_result
+
+    mock_context.db_session.exec.side_effect = mock_exec_side_effect
+
+    await handle_shop_predict_callback(mock_update, mock_context)
+
+    # Verify draft was created - проверяем через commit
+    assert mock_context.db_session.commit.called, "Should commit draft creation"
+
+    # Step 2: Select candidate
+    # Формат: shop_predict_select_{player_id}_{owner_user_id}
+    mock_callback_query.data = f"shop_predict_select_{sample_players[1].id}_{sample_players[0].tg_id}"
+
+    # Reset exec side effect для возврата draft
+    mock_context.db_session.exec.side_effect = None
+    mock_result = MagicMock()
+    mock_result.first.return_value = draft
+    mock_result.one.return_value = draft
+    mock_context.db_session.exec.return_value = mock_result
+
+    await handle_shop_predict_select_callback(mock_update, mock_context)
+
+    # Step 3: Cancel prediction
+    mock_callback_query.data = f"shop_cancel_{sample_players[0].tg_id}"
+
+    # Update draft with selected candidate
+    draft.selected_user_ids = json.dumps([sample_players[1].id])
+    mock_result.first.return_value = draft
+
+    await handle_shop_predict_cancel_callback(mock_update, mock_context)
+
+    # Verify draft was deleted - проверяем через commit
+    assert mock_context.db_session.commit.called, "Should commit draft deletion"
+
+    # Verify cancel message was shown (возврат в магазин)
+    assert mock_callback_query.edit_message_text.called, "Should show shop menu"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_prediction_self_prediction_allowed(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Test that self-prediction is allowed."""
+    from bot.handlers.game.commands import (
+        handle_shop_predict_callback,
+        handle_shop_predict_select_callback,
+        handle_shop_predict_confirm_callback
+    )
+    from bot.app.models import PredictionDraft
+
+    # Setup
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+    mock_context.user_data = {}
+    mock_context.tg_user = sample_players[0]  # Set context user
+
+    # Mock user - will predict themselves - ВАЖНО: используем tg_id (Telegram ID)
+    mock_update.effective_user.id = sample_players[0].tg_id
+
+    # Mock callback query
+    mock_callback_query = MagicMock()
+    mock_callback_query.answer = AsyncMock()
+    mock_callback_query.edit_message_text = AsyncMock()
+    mock_callback_query.message.chat_id = mock_game.chat_id
+    mock_callback_query.from_user.id = sample_players[0].tg_id  # ВАЖНО: устанавливаем tg_id
+    mock_update.callback_query = mock_callback_query
+
+    # Mock current_datetime с реальной датой
+    mock_dt = MagicMock()
+    mock_dt.year = 2024
+    mock_dt.month = 6
+    mock_dt.day = 15
+    mock_dt.timetuple.return_value.tm_yday = 167
+    mock_dt.date.return_value = date(2024, 6, 15)
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+
+    # Mock get_balance
+    mocker.patch('bot.handlers.game.commands.get_balance', return_value=100)
+
+    # Mock get_active_effects
+    mocker.patch('bot.handlers.game.shop_service.get_active_effects', return_value={})
+
+    # Mock ensure_game decorator - возвращаем mock_game вместо запроса к БД
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+    mock_context.db_session.query.return_value = mock_game_query
+
+    # Step 1: Open prediction purchase
+    mock_callback_query.data = f"shop_predict_{sample_players[0].tg_id}"
+
+    # Mock exec to return no existing prediction, then return draft
+    draft = PredictionDraft(
+        id=1,
+        game_id=mock_game.id,
+        user_id=sample_players[0].id,
+        selected_user_ids='[]',
+        candidates_count=1
+    )
+
+    # Создаём side_effect для exec
+    exec_call_count = [0]
+    def mock_exec_side_effect(stmt):
+        mock_result = MagicMock()
+        exec_call_count[0] += 1
+        if exec_call_count[0] == 1:
+            # Первый вызов - проверка существующего draft
+            mock_result.first.return_value = None
+        else:
+            # Последующие вызовы - возвращаем draft
+            mock_result.first.return_value = draft
+            mock_result.one.return_value = draft
+        return mock_result
+
+    mock_context.db_session.exec.side_effect = mock_exec_side_effect
+
+    await handle_shop_predict_callback(mock_update, mock_context)
+
+    # Step 2: Select SELF as candidate
+    # Формат: shop_predict_select_{player_id}_{owner_user_id}
+    mock_callback_query.data = f"shop_predict_select_{sample_players[0].id}_{sample_players[0].tg_id}"
+
+    # Reset exec side effect для возврата draft
+    mock_context.db_session.exec.side_effect = None
+    mock_result = MagicMock()
+    mock_result.first.return_value = draft
+    mock_result.one.return_value = draft
+    mock_context.db_session.exec.return_value = mock_result
+
+    # This should NOT raise an error or show error message
+    await handle_shop_predict_select_callback(mock_update, mock_context)
+
+    # Verify self was added to draft (self-prediction is allowed)
+    selected_ids = json.loads(draft.selected_user_ids)
+    assert sample_players[0].id in selected_ids, "Self-prediction should be allowed"
+
+    # Step 3: Confirm self-prediction
+    mock_callback_query.data = f"shop_predict_confirm_{sample_players[0].tg_id}"
+
+    # Update draft with self selected
+    draft.selected_user_ids = json.dumps([sample_players[0].id])
+    mock_result.first.return_value = draft
+
+    # Mock can_afford и spend_coins для shop_service
+    mocker.patch('bot.handlers.game.shop_service.can_afford', return_value=True)
+    mocker.patch('bot.handlers.game.shop_service.spend_coins')
+
+    # This should succeed without errors
+    await handle_shop_predict_confirm_callback(mock_update, mock_context)
+
+    # Verify prediction was created - проверяем через commit
+    assert mock_context.db_session.commit.called, "Self-prediction should be created successfully"

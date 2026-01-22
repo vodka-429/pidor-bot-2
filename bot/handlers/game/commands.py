@@ -1452,7 +1452,7 @@ async def handle_shop_double_callback(update: Update, context: GECallbackContext
 async def handle_shop_predict_callback(update: Update, context: GECallbackContext):
     """Обработчик выбора кандидатов для предсказания"""
     from bot.handlers.game.shop_helpers import parse_shop_callback_data, create_prediction_keyboard
-    from bot.handlers.game.prediction_service import calculate_candidates_count
+    from bot.handlers.game.prediction_service import calculate_candidates_count, get_or_create_prediction_draft
     from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP
 
     query = update.callback_query
@@ -1491,12 +1491,24 @@ async def handle_shop_predict_callback(update: Update, context: GECallbackContex
     candidates_count = calculate_candidates_count(len(players))
     logger.info(f"Calculated {candidates_count} candidates for {len(players)} players")
 
+    # Создаём или получаем черновик в БД
+    draft = get_or_create_prediction_draft(
+        context.db_session,
+        context.game.id,
+        context.tg_user.id,
+        candidates_count
+    )
+
+    # Получаем текущий выбор из черновика
+    import json
+    selected_ids = json.loads(draft.selected_user_ids)
+
     # Создаём клавиатуру с игроками для множественного выбора
     keyboard = create_prediction_keyboard(
         players,
         owner_user_id=context.tg_user.tg_id,
         candidates_count=candidates_count,
-        selected_ids=[]
+        selected_ids=selected_ids
     )
 
     # Формируем сообщение
@@ -1525,8 +1537,9 @@ async def handle_shop_predict_callback(update: Update, context: GECallbackContex
 async def handle_shop_predict_select_callback(update: Update, context: GECallbackContext):
     """Обработчик выбора кандидата для предсказания"""
     from bot.handlers.game.shop_helpers import create_prediction_keyboard
-    from bot.handlers.game.prediction_service import calculate_candidates_count
+    from bot.handlers.game.prediction_service import calculate_candidates_count, get_prediction_draft, update_prediction_draft
     from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP
+    import json
 
     query = update.callback_query
 
@@ -1557,11 +1570,16 @@ async def handle_shop_predict_select_callback(update: Update, context: GECallbac
         await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
         return
 
-    # Получаем текущий выбор из context.user_data
-    if 'prediction_selection' not in context.user_data:
-        context.user_data['prediction_selection'] = []
+    # Получаем черновик из БД
+    draft = get_prediction_draft(context.db_session, context.game.id, context.tg_user.id)
 
-    selected = context.user_data['prediction_selection']
+    if not draft:
+        await query.answer("❌ Черновик не найден", show_alert=True)
+        logger.error(f"Draft not found for user {context.tg_user.id} in game {context.game.id}")
+        return
+
+    # Получаем текущий выбор из черновика
+    selected = json.loads(draft.selected_user_ids)
 
     # Рассчитываем нужное количество кандидатов
     players = context.game.players
@@ -1577,6 +1595,9 @@ async def handle_shop_predict_select_callback(update: Update, context: GECallbac
     else:
         await query.answer(f"❌ Уже выбрано {candidates_count} кандидатов", show_alert=True)
         return
+
+    # Обновляем черновик в БД
+    update_prediction_draft(context.db_session, draft.id, selected)
 
     # Обновляем клавиатуру
     keyboard = create_prediction_keyboard(
@@ -1610,12 +1631,14 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
     """Обработчик подтверждения предсказания с несколькими кандидатами"""
     from bot.handlers.game.shop_helpers import parse_shop_callback_data
     from bot.handlers.game.shop_service import create_prediction
+    from bot.handlers.game.prediction_service import get_prediction_draft, delete_prediction_draft
     from bot.handlers.game.text_static import (
         SHOP_ERROR_NOT_YOUR_SHOP,
         PREDICTION_ERROR_INSUFFICIENT_FUNDS,
         PREDICTION_ERROR_ALREADY_EXISTS,
         PREDICTION_ERROR_SELF
     )
+    import json
 
     query = update.callback_query
 
@@ -1645,8 +1668,16 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
         await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
         return
 
-    # Получаем выбранных кандидатов из context.user_data
-    selected = context.user_data.get('prediction_selection', [])
+    # Получаем черновик из БД
+    draft = get_prediction_draft(context.db_session, context.game.id, context.tg_user.id)
+
+    if not draft:
+        await query.answer("❌ Черновик не найден", show_alert=True)
+        logger.error(f"Draft not found for user {context.tg_user.id} in game {context.game.id}")
+        return
+
+    # Получаем выбранных кандидатов из черновика
+    selected = json.loads(draft.selected_user_ids)
 
     if not selected:
         await query.answer("❌ Выберите кандидатов!", show_alert=True)
@@ -1672,6 +1703,9 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
     )
 
     if success:
+        # Удаляем черновик после успешного создания предсказания
+        delete_prediction_draft(context.db_session, context.game.id, context.tg_user.id)
+
         # Получаем новый баланс
         balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
 
@@ -1698,8 +1732,9 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
         await query.answer("✅ Предсказание создано!", show_alert=True)
         logger.info(f"User {context.tg_user.id} created prediction for users {selected} in game {context.game.id}")
 
-        # Очищаем выбор
-        context.user_data['prediction_selection'] = []
+        # Очищаем выбор из памяти (на случай если он там был)
+        if 'prediction_selection' in context.user_data:
+            context.user_data['prediction_selection'] = []
 
         # Отправляем сообщение с результатом
         await query.edit_message_text(
@@ -2165,6 +2200,82 @@ async def handle_shop_bank_callback(update: Update, context: GECallbackContext):
     )
 
     logger.info(f"Showed bank info for game {context.game.id}, balance: {bank.balance}")
+
+
+@ensure_game
+async def handle_shop_predict_cancel_callback(update: Update, context: GECallbackContext):
+    """Обработчик кнопки 'Отмена' при выборе предсказания"""
+    from bot.handlers.game.shop_helpers import parse_shop_callback_data, create_shop_keyboard, format_shop_menu_message
+    from bot.handlers.game.shop_service import get_active_effects
+    from bot.handlers.game.prediction_service import delete_prediction_draft
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop predict cancel callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    try:
+        # Парсим callback_data для получения item_type и owner_user_id
+        item_type, owner_user_id = parse_shop_callback_data(query.data)
+        logger.info(f"Parsed callback: item_type={item_type}, owner_user_id={owner_user_id}")
+    except ValueError as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # Проверяем, что нажавший кнопку - это владелец магазина
+    if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    # Удаляем черновик предсказания из БД
+    current_dt = current_datetime()
+    cur_year = current_dt.year
+    cur_day = current_dt.timetuple().tm_yday
+
+    # Вычисляем завтрашний день (день действия предсказания)
+    from bot.handlers.game.shop_service import calculate_next_day
+    current_date = current_dt.date()
+    target_year, target_day = calculate_next_day(current_date, cur_year)
+
+    delete_prediction_draft(context.db_session, context.game.id, context.tg_user.id)
+    logger.info(f"Deleted prediction draft for user {context.tg_user.id} in game {context.game.id}")
+
+    # Очищаем выбор из памяти (на случай если он там был)
+    if 'prediction_selection' in context.user_data:
+        context.user_data['prediction_selection'] = []
+
+    # Получаем баланс текущего пользователя
+    balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+
+    # Получаем информацию об активных эффектах
+    active_effects = get_active_effects(
+        context.db_session, context.game.id, context.tg_user.id,
+        current_date
+    )
+
+    # Создаём клавиатуру магазина
+    keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id, active_effects=active_effects)
+
+    # Форматируем сообщение
+    user_name = context.tg_user.full_username()
+    message_text = format_shop_menu_message(balance, user_name, active_effects)
+
+    # Обновляем сообщение
+    await query.answer("❌ Предсказание отменено")
+    await query.edit_message_text(
+        text=message_text,
+        parse_mode="MarkdownV2",
+        reply_markup=keyboard
+    )
+
+    logger.info(f"Cancelled prediction and returned to shop menu for user {context.tg_user.id}")
 
 
 @ensure_game

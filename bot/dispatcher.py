@@ -18,7 +18,7 @@ from bot.handlers.game.commands import pidor_cmd, pidorules_cmd, pidoreg_cmd, \
     pidorcoinsme_cmd, pidorcoinsstats_cmd, pidorshop_cmd, \
     handle_shop_immunity_callback, handle_shop_double_callback, \
     handle_shop_predict_callback, handle_shop_predict_select_callback, \
-    handle_shop_predict_confirm_callback, \
+    handle_shop_predict_confirm_callback, handle_shop_predict_cancel_callback, \
     handle_shop_double_confirm_callback, handle_reroll_callback, \
     handle_shop_transfer_callback, handle_shop_transfer_select_callback, \
     handle_shop_bank_callback, handle_shop_back_callback
@@ -107,6 +107,7 @@ def init_dispatcher(application: Application, db_engine):
     application.add_handler(CallbackQueryHandler(handle_shop_predict_callback, pattern=r'^shop_predict_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_predict_select_callback, pattern=r'^shop_predict_select_\d+_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_predict_confirm_callback, pattern=r'^shop_predict_confirm_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_predict_cancel_callback, pattern=r'^shop_cancel_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_transfer_callback, pattern=r'^shop_transfer_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_transfer_select_callback, pattern=r'^shop_transfer_select_\d+_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_bank_callback, pattern=r'^shop_bank_\d+$'))
