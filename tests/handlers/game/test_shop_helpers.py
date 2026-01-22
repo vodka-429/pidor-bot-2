@@ -278,3 +278,101 @@ def test_format_and_parse_roundtrip():
         # Verify roundtrip
         assert parsed_item_type == item_type
         assert parsed_owner_user_id == owner_user_id
+
+
+@pytest.mark.unit
+def test_format_shop_menu_message_with_none_price():
+    """Test that shop menu message correctly handles items with None price."""
+    # Test that items without price (like "Передать койны" and "Банк чата")
+    # are displayed without "None 🪙"
+    result = format_shop_menu_message(100)
+
+    # Verify the message is generated
+    assert "🏪 *Магазин пидор\\-койнов*" in result
+    assert "💰 Ваш баланс: *100* 🪙" in result
+
+    # Verify that "None" does not appear in the message
+    assert "None" not in result
+    assert "None 🪙" not in result
+
+    # Verify that items with prices still show correctly
+    assert "*10* 🪙" in result  # Immunity price
+    assert "*8* 🪙" in result   # Double chance price
+    assert "*3* 🪙" in result   # Prediction price
+
+    # Verify that items without prices are present but without price display
+    # These items should have their names and descriptions but no price
+    assert "💸 Передать койны" in result
+    assert "🏦 Банк чата" in result
+
+
+@pytest.mark.unit
+def test_create_transfer_amount_keyboard():
+    """Test creating transfer amount keyboard with amount buttons."""
+    from bot.handlers.game.shop_helpers import create_transfer_amount_keyboard
+
+    # Test with balance 100
+    balance = 100
+    receiver_id = 2
+    owner_user_id = 123456
+
+    keyboard = create_transfer_amount_keyboard(balance, receiver_id, owner_user_id)
+
+    # Verify structure
+    assert isinstance(keyboard, InlineKeyboardMarkup)
+
+    # Verify buttons exist
+    all_buttons = []
+    for row in keyboard.inline_keyboard:
+        all_buttons.extend(row)
+
+    button_texts = [button.text for button in all_buttons]
+    callback_data_list = [button.callback_data for button in all_buttons]
+
+    # Verify amount buttons (25%, 50%, 75%, 100%)
+    assert any("25 💰 (25%)" in text for text in button_texts)
+    assert any("50 💰 (50%)" in text for text in button_texts)
+    assert any("75 💰 (75%)" in text for text in button_texts)
+    assert any("100 💰 (100%)" in text for text in button_texts)
+
+    # Verify back button
+    assert any("⬅️ Назад" in text for text in button_texts)
+
+    # Verify callback_data format
+    assert any("shop_transfer_amount_2_25_123456" in cd for cd in callback_data_list)
+    assert any("shop_transfer_amount_2_50_123456" in cd for cd in callback_data_list)
+    assert any("shop_transfer_amount_2_75_123456" in cd for cd in callback_data_list)
+    assert any("shop_transfer_amount_2_100_123456" in cd for cd in callback_data_list)
+    assert any("shop_back_123456" in cd for cd in callback_data_list)
+
+
+@pytest.mark.unit
+def test_create_transfer_amount_keyboard_small_balance():
+    """Test creating transfer amount keyboard with small balance."""
+    from bot.handlers.game.shop_helpers import create_transfer_amount_keyboard
+
+    # Test with balance 5 (only 50% and 100% will be >= 2)
+    balance = 5
+    receiver_id = 3
+    owner_user_id = 654321
+
+    keyboard = create_transfer_amount_keyboard(balance, receiver_id, owner_user_id)
+
+    # Verify structure
+    assert isinstance(keyboard, InlineKeyboardMarkup)
+
+    # Verify buttons
+    all_buttons = []
+    for row in keyboard.inline_keyboard:
+        all_buttons.extend(row)
+
+    button_texts = [button.text for button in all_buttons]
+
+    # Only 50% (2) and 100% (5) should be present (25% = 1, 75% = 3)
+    # Actually 75% = 3 should also be present
+    assert any("2 💰 (50%)" in text for text in button_texts)
+    assert any("3 💰 (75%)" in text for text in button_texts)
+    assert any("5 💰 (100%)" in text for text in button_texts)
+
+    # Verify back button
+    assert any("⬅️ Назад" in text for text in button_texts)
