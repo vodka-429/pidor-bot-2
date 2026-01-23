@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import random
+from datetime import date
 from typing import List, Tuple
 
 from sqlmodel import select
@@ -53,7 +54,9 @@ def execute_reroll(
     year: int,
     day: int,
     initiator_id: int,
-    players: List[TGUser]
+    players: List[TGUser],
+    current_date: date,
+    immunity_enabled: bool = True
 ) -> Tuple[TGUser, TGUser]:
     """
     Выполнить перевыбор.
@@ -69,6 +72,8 @@ def execute_reroll(
         day: День года (1-366)
         initiator_id: ID пользователя, инициировавшего перевыбор
         players: Список всех игроков для перевыбора
+        current_date: Текущая дата для проверки эффектов
+        immunity_enabled: Включена ли защита (по умолчанию True)
 
     Returns:
         Кортеж (старый_победитель, новый_победитель)
@@ -107,9 +112,27 @@ def execute_reroll(
     # ВАЖНО: НЕ отменяем награду старого победителя!
     # Он сохраняет свои койны.
 
-    # Выбираем нового победителя (старый победитель тоже участвует)
-    new_winner = random.choice(players)
+    # Выбираем нового победителя с учётом эффектов (защита, двойной шанс)
+    from bot.handlers.game.selection_service import select_winner_with_effects
+
+    selection_result = select_winner_with_effects(
+        db_session, game_id, players, current_date, immunity_enabled
+    )
+
+    # Если все игроки защищены - выбираем случайного (fallback)
+    if selection_result.all_protected:
+        logger.warning(f"All players protected during reroll in game {game_id}, selecting random")
+        new_winner = random.choice(players)
+    else:
+        new_winner = selection_result.winner
+
     logger.info(f"Selected new winner: {new_winner.id} ({new_winner.full_username()})")
+
+    # Если сработала защита при перевыборе - начисляем койны защищённому игроку
+    if selection_result.had_immunity and selection_result.protected_player:
+        protected_player = selection_result.protected_player
+        add_coins(db_session, game_id, protected_player.id, COINS_PER_WIN, year, "immunity_save_reroll", auto_commit=False)
+        logger.info(f"Protection activated during reroll for player {protected_player.id}, awarded {COINS_PER_WIN} coins")
 
     # Обновляем GameResult
     game_result.original_winner_id = old_winner_id
@@ -122,6 +145,14 @@ def execute_reroll(
     # Начисляем койны новому победителю (даже если это тот же человек - двойная награда!)
     add_coins(db_session, game_id, new_winner.id, COINS_PER_WIN, year, "pidor_win_reroll", auto_commit=False)
     logger.info(f"Added {COINS_PER_WIN} coins to new winner {new_winner.id}")
+
+    # Обрабатываем предсказания для нового победителя
+    from bot.handlers.game.prediction_service import process_predictions_for_reroll
+
+    predictions_results = process_predictions_for_reroll(
+        db_session, game_id, year, day, new_winner.id
+    )
+    logger.info(f"Processed {len(predictions_results)} predictions for reroll")
 
     db_session.commit()
 

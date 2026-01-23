@@ -1,7 +1,7 @@
 """Tests for reroll service functionality."""
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from datetime import datetime
+from datetime import datetime, date
 
 from bot.handlers.game.reroll_service import (
     can_reroll,
@@ -118,12 +118,22 @@ def test_execute_reroll_updates_game_result(mock_db_session, sample_players):
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
+    current_date = date(2024, 4, 10)  # День 100 в 2024 году
+
     with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
-         patch('random.choice', return_value=sample_players[1]):
+         patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
+
+        # Мокаем результат выбора победителя
+        mock_selection_result = MagicMock()
+        mock_selection_result.winner = sample_players[1]
+        mock_selection_result.all_protected = False
+        mock_selection_result.had_immunity = False
+        mock_selection_result.protected_player = None
+        mock_select.return_value = mock_selection_result
 
         old_winner_result, new_winner_result = execute_reroll(
-            mock_db_session, game_id, year, day, initiator_id, sample_players
+            mock_db_session, game_id, year, day, initiator_id, sample_players, current_date
         )
 
     # Verify spend_coins was called
@@ -185,12 +195,22 @@ def test_execute_reroll_allows_same_winner(mock_db_session, sample_players):
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute - same player wins again
+    current_date = date(2024, 4, 10)
+
     with patch('bot.handlers.game.reroll_service.spend_coins'), \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
-         patch('random.choice', return_value=old_winner):
+         patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
+
+        # Мокаем результат выбора победителя - тот же игрок
+        mock_selection_result = MagicMock()
+        mock_selection_result.winner = old_winner
+        mock_selection_result.all_protected = False
+        mock_selection_result.had_immunity = False
+        mock_selection_result.protected_player = None
+        mock_select.return_value = mock_selection_result
 
         old_winner_result, new_winner_result = execute_reroll(
-            mock_db_session, game_id, year, day, initiator_id, sample_players
+            mock_db_session, game_id, year, day, initiator_id, sample_players, current_date
         )
 
     # Verify add_coins was called even for the same winner (double reward)
@@ -214,8 +234,9 @@ def test_execute_reroll_raises_error_when_no_players(mock_db_session):
     players = []
 
     # Execute and verify
+    current_date = date(2024, 4, 10)
     with pytest.raises(ValueError, match="Players list cannot be empty"):
-        execute_reroll(mock_db_session, game_id, year, day, initiator_id, players)
+        execute_reroll(mock_db_session, game_id, year, day, initiator_id, players, current_date)
 
 
 @pytest.mark.unit
@@ -233,8 +254,9 @@ def test_execute_reroll_raises_error_when_game_result_not_found(mock_db_session,
     mock_db_session.exec.return_value = mock_result
 
     # Execute and verify
+    current_date = date(2024, 4, 10)
     with pytest.raises(ValueError, match="GameResult not found"):
-        execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players)
+        execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players, current_date)
 
 
 @pytest.mark.unit
@@ -269,8 +291,9 @@ def test_execute_reroll_raises_error_when_old_winner_not_found(mock_db_session, 
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute and verify
+    current_date = date(2024, 4, 10)
     with pytest.raises(ValueError, match="Old winner with id .* not found"):
-        execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players)
+        execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players, current_date)
 
 
 @pytest.mark.asyncio
@@ -346,11 +369,21 @@ def test_execute_reroll_preserves_old_winner_coins(mock_db_session, sample_playe
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
+    current_date = date(2024, 4, 10)
+
     with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
-         patch('random.choice', return_value=sample_players[1]):
+         patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
 
-        execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players)
+        # Мокаем результат выбора победителя
+        mock_selection_result = MagicMock()
+        mock_selection_result.winner = sample_players[1]
+        mock_selection_result.all_protected = False
+        mock_selection_result.had_immunity = False
+        mock_selection_result.protected_player = None
+        mock_select.return_value = mock_selection_result
+
+        execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players, current_date)
 
     # Verify spend_coins was called ONLY for initiator, NOT for old winner
     assert mock_spend.call_count == 1
@@ -363,3 +396,244 @@ def test_execute_reroll_preserves_old_winner_coins(mock_db_session, sample_playe
     mock_add.assert_called_with(
         mock_db_session, game_id, sample_players[1].id, COINS_PER_WIN, year, "pidor_win_reroll", auto_commit=False
     )
+
+
+@pytest.mark.unit
+def test_execute_reroll_with_immunity_protection(mock_db_session, sample_players):
+    """Test execute_reroll respects immunity - protected player is not selected."""
+    # Setup
+    game_id = 1
+    year = 2024
+    day = 100
+    initiator_id = 2
+    old_winner_id = 1
+
+    # Mock GameResult
+    mock_game_result = MagicMock()
+    mock_game_result.winner_id = old_winner_id
+
+    # Mock old winner
+    old_winner = sample_players[0]
+    old_winner.id = old_winner_id
+
+    # Protected player (будет выбран первым, но защищён)
+    protected_player = sample_players[1]
+    protected_player.id = 2
+
+    # Final winner (будет выбран после перевыбора)
+    final_winner = sample_players[2]
+    final_winner.id = 3
+
+    # Mock database queries
+    def exec_side_effect(stmt):
+        mock_result = MagicMock()
+        if not hasattr(exec_side_effect, 'call_count'):
+            exec_side_effect.call_count = 0
+        exec_side_effect.call_count += 1
+
+        if exec_side_effect.call_count == 1:
+            mock_result.first.return_value = mock_game_result
+        elif exec_side_effect.call_count == 2:
+            mock_result.first.return_value = old_winner
+
+        return mock_result
+
+    mock_db_session.exec.side_effect = exec_side_effect
+
+    # Execute
+    current_date = date(2024, 4, 10)
+
+    with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
+         patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
+         patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
+
+        # Мокаем результат выбора: защита сработала, перевыбран другой игрок
+        mock_selection_result = MagicMock()
+        mock_selection_result.winner = final_winner
+        mock_selection_result.all_protected = False
+        mock_selection_result.had_immunity = True  # Защита сработала!
+        mock_selection_result.protected_player = protected_player
+        mock_select.return_value = mock_selection_result
+
+        old_winner_result, new_winner_result = execute_reroll(
+            mock_db_session, game_id, year, day, initiator_id, sample_players, current_date
+        )
+
+    # Verify selection was called with correct parameters
+    mock_select.assert_called_once_with(
+        mock_db_session, game_id, sample_players, current_date, True
+    )
+
+    # Verify coins were added to protected player (immunity reward)
+    assert mock_add.call_count == 2
+    # First call - immunity reward for protected player
+    mock_add.assert_any_call(
+        mock_db_session, game_id, protected_player.id, COINS_PER_WIN, year, "immunity_save_reroll", auto_commit=False
+    )
+    # Second call - win reward for final winner
+    mock_add.assert_any_call(
+        mock_db_session, game_id, final_winner.id, COINS_PER_WIN, year, "pidor_win_reroll", auto_commit=False
+    )
+
+    # Verify GameResult was updated with final winner
+    assert mock_game_result.winner_id == final_winner.id
+
+    # Verify returned values
+    assert old_winner_result == old_winner
+    assert new_winner_result == final_winner
+
+
+@pytest.mark.unit
+def test_execute_reroll_with_double_chance(mock_db_session, sample_players):
+    """Test execute_reroll respects double chance - player appears twice in pool."""
+    # Setup
+    game_id = 1
+    year = 2024
+    day = 100
+    initiator_id = 2
+    old_winner_id = 1
+
+    # Mock GameResult
+    mock_game_result = MagicMock()
+    mock_game_result.winner_id = old_winner_id
+
+    # Mock old winner
+    old_winner = sample_players[0]
+    old_winner.id = old_winner_id
+
+    # Winner with double chance
+    double_chance_winner = sample_players[1]
+    double_chance_winner.id = 2
+
+    # Mock database queries
+    def exec_side_effect(stmt):
+        mock_result = MagicMock()
+        if not hasattr(exec_side_effect, 'call_count'):
+            exec_side_effect.call_count = 0
+        exec_side_effect.call_count += 1
+
+        if exec_side_effect.call_count == 1:
+            mock_result.first.return_value = mock_game_result
+        elif exec_side_effect.call_count == 2:
+            mock_result.first.return_value = old_winner
+
+        return mock_result
+
+    mock_db_session.exec.side_effect = exec_side_effect
+
+    # Execute
+    current_date = date(2024, 4, 10)
+
+    with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
+         patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
+         patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
+
+        # Мокаем результат выбора: победитель с двойным шансом
+        mock_selection_result = MagicMock()
+        mock_selection_result.winner = double_chance_winner
+        mock_selection_result.all_protected = False
+        mock_selection_result.had_immunity = False
+        mock_selection_result.had_double_chance = True  # Двойной шанс сработал!
+        mock_selection_result.protected_player = None
+        mock_select.return_value = mock_selection_result
+
+        old_winner_result, new_winner_result = execute_reroll(
+            mock_db_session, game_id, year, day, initiator_id, sample_players, current_date
+        )
+
+    # Verify selection was called (it handles double chance internally)
+    mock_select.assert_called_once_with(
+        mock_db_session, game_id, sample_players, current_date, True
+    )
+
+    # Verify coins were added to winner
+    assert mock_add.call_count == 1
+    mock_add.assert_called_with(
+        mock_db_session, game_id, double_chance_winner.id, COINS_PER_WIN, year, "pidor_win_reroll", auto_commit=False
+    )
+
+    # Verify GameResult was updated
+    assert mock_game_result.winner_id == double_chance_winner.id
+
+    # Verify returned values
+    assert old_winner_result == old_winner
+    assert new_winner_result == double_chance_winner
+
+
+@pytest.mark.unit
+def test_execute_reroll_when_all_protected(mock_db_session, sample_players):
+    """Test execute_reroll when all players are protected - selects random player."""
+    # Setup
+    game_id = 1
+    year = 2024
+    day = 100
+    initiator_id = 2
+    old_winner_id = 1
+
+    # Mock GameResult
+    mock_game_result = MagicMock()
+    mock_game_result.winner_id = old_winner_id
+
+    # Mock old winner
+    old_winner = sample_players[0]
+    old_winner.id = old_winner_id
+
+    # Random winner (будет выбран случайно, т.к. все защищены)
+    random_winner = sample_players[1]
+
+    # Mock database queries
+    def exec_side_effect(stmt):
+        mock_result = MagicMock()
+        if not hasattr(exec_side_effect, 'call_count'):
+            exec_side_effect.call_count = 0
+        exec_side_effect.call_count += 1
+
+        if exec_side_effect.call_count == 1:
+            mock_result.first.return_value = mock_game_result
+        elif exec_side_effect.call_count == 2:
+            mock_result.first.return_value = old_winner
+
+        return mock_result
+
+    mock_db_session.exec.side_effect = exec_side_effect
+
+    # Execute
+    current_date = date(2024, 4, 10)
+
+    with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
+         patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
+         patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select, \
+         patch('bot.handlers.game.reroll_service.random.choice', return_value=random_winner) as mock_random:
+
+        # Мокаем результат выбора: все защищены
+        mock_selection_result = MagicMock()
+        mock_selection_result.winner = None  # Нет победителя
+        mock_selection_result.all_protected = True  # Все защищены!
+        mock_selection_result.had_immunity = False
+        mock_selection_result.protected_player = None
+        mock_select.return_value = mock_selection_result
+
+        old_winner_result, new_winner_result = execute_reroll(
+            mock_db_session, game_id, year, day, initiator_id, sample_players, current_date
+        )
+
+    # Verify selection was called
+    mock_select.assert_called_once_with(
+        mock_db_session, game_id, sample_players, current_date, True
+    )
+
+    # Verify random.choice was called as fallback
+    mock_random.assert_called_once_with(sample_players)
+
+    # Verify coins were added to random winner
+    assert mock_add.call_count == 1
+    mock_add.assert_called_with(
+        mock_db_session, game_id, random_winner.id, COINS_PER_WIN, year, "pidor_win_reroll", auto_commit=False
+    )
+
+    # Verify GameResult was updated with random winner
+    assert mock_game_result.winner_id == random_winner.id
+
+    # Verify returned values
+    assert old_winner_result == old_winner
+    assert new_winner_result == random_winner

@@ -158,6 +158,44 @@ def format_predictions_summary(predictions_results: List[Tuple[Prediction, bool]
     return result
 
 
+def format_predictions_summary_html(predictions_results: List[Tuple[Prediction, bool]], db_session) -> str:
+    """
+    Форматировать результаты предсказаний в HTML для объединённого сообщения.
+
+    Args:
+        predictions_results: Список кортежей (предсказание, правильность)
+        db_session: Сессия базы данных
+
+    Returns:
+        Отформатированное HTML-сообщение с результатами всех предсказаний
+    """
+    from html import escape as html_escape
+    from bot.handlers.game.coin_service import get_balance
+
+    if not predictions_results:
+        return ""
+
+    lines = ["🔮 <b>Результаты предсказаний:</b>"]
+
+    for prediction, is_correct in predictions_results:
+        # Получаем пользователя, который сделал предсказание
+        stmt = select(TGUser).where(TGUser.id == prediction.user_id)
+        predictor = db_session.exec(stmt).one()
+
+        if is_correct:
+            # Получаем новый баланс предсказателя
+            predictor_balance = get_balance(db_session, prediction.game_id, prediction.user_id)
+            line = f"✅ {html_escape(predictor.full_username())} угадал(а)! +30 🪙 (баланс: {predictor_balance})"
+        else:
+            line = f"❌ {html_escape(predictor.full_username())} не угадал(а)"
+
+        lines.append(line)
+
+    result = '\n'.join(lines)
+    logger.info(f"Formatted predictions summary (HTML) with {len(predictions_results)} predictions")
+    return result
+
+
 def award_correct_predictions(
     db_session,
     game_id: int,
@@ -186,6 +224,66 @@ def award_correct_predictions(
                 auto_commit=False
             )
             logger.info(f"Awarded {PREDICTION_REWARD} coins to user {prediction.user_id} for correct prediction")
+
+
+def process_predictions_for_reroll(
+    db_session,
+    game_id: int,
+    year: int,
+    day: int,
+    new_winner_id: int
+) -> List[Tuple[Prediction, bool]]:
+    """
+    Обработать предсказания при перевыборе.
+
+    ВАЖНО: Не отменяет награды за старого победителя!
+    Проверяет предсказания по новому победителю и начисляет дополнительные награды.
+
+    Args:
+        db_session: Сессия базы данных
+        game_id: ID игры (чата)
+        year: Год
+        day: День года
+        new_winner_id: ID нового победителя после перевыбора
+
+    Returns:
+        Список кортежей (предсказание, правильность для нового победителя)
+    """
+    predictions = get_predictions_for_day(db_session, game_id, year, day)
+    results = []
+
+    for prediction in predictions:
+        # Проверяем, есть ли new_winner_id среди предсказанных кандидатов
+        predicted_ids = get_predicted_user_ids(prediction)
+        is_correct_for_new_winner = new_winner_id in predicted_ids
+
+        # Если предсказание уже было правильным (для старого победителя),
+        # и оно также правильно для нового - это двойная награда
+        # Если было неправильным, но стало правильным - начисляем награду
+        if is_correct_for_new_winner:
+            # Начисляем койны за правильное предсказание при перевыборе
+            add_coins(
+                db_session,
+                game_id,
+                prediction.user_id,
+                PREDICTION_REWARD,
+                year,
+                "prediction_correct_reroll",
+                auto_commit=False
+            )
+            logger.info(
+                f"User {prediction.user_id} correctly predicted new winner {new_winner_id} "
+                f"after reroll (was correct for old: {prediction.is_correct})"
+            )
+        else:
+            logger.info(
+                f"User {prediction.user_id} did not predict new winner {new_winner_id} "
+                f"(was correct for old: {prediction.is_correct})"
+            )
+
+        results.append((prediction, is_correct_for_new_winner))
+
+    return results
 
 
 def get_or_create_prediction_draft(db_session, game_id: int, user_id: int, candidates_count: int):

@@ -1060,7 +1060,7 @@ async def test_double_chance_for_other_player(mock_update, mock_context, mock_ga
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_predictions_summary_single_message(mock_update, mock_context, mock_game, sample_players, mocker):
-    """Test that all predictions are shown in a single summary message."""
+    """Test that predictions are shown in the unified stage4 message."""
     # Setup
     mock_game.players = sample_players
     mock_context.game = mock_game
@@ -1119,22 +1119,22 @@ async def test_predictions_summary_single_message(mock_update, mock_context, moc
     mocker.patch('bot.handlers.game.commands.add_coins')
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=40)
 
-    # Mock send_result_with_reroll_button
-    mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+    # Mock send_result_with_reroll_button to capture the message
+    mock_send_result = mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
 
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
-    # Verify that prediction summary message was sent (should contain "Результаты предсказаний" or similar)
-    calls = mock_update.effective_chat.send_message.call_args_list
-    prediction_summary_found = False
-    for call in calls:
-        call_str = str(call)
-        if "предсказан" in call_str.lower() or "prediction" in call_str.lower():
-            prediction_summary_found = True
-            break
+    # Verify that prediction summary is included in stage4_message (passed to send_result_with_reroll_button)
+    assert mock_send_result.called, "send_result_with_reroll_button should be called"
 
-    assert prediction_summary_found, "Prediction summary message should be sent"
+    # Get the stage4_message argument (first positional argument after update and context)
+    call_args = mock_send_result.call_args
+    stage4_message = call_args[0][2] if len(call_args[0]) > 2 else call_args[1].get('stage4_message', '')
+
+    # Verify prediction info is in the unified message
+    assert "предсказан" in stage4_message.lower() or "результат" in stage4_message.lower(), \
+        "Prediction summary should be included in stage4_message"
 
 
 @pytest.mark.asyncio
