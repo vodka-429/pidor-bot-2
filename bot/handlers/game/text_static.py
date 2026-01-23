@@ -257,7 +257,12 @@ REROLL_ANNOUNCEMENT = """🔄 *ПЕРЕВЫБОРЫ\\!*
 
 👤 {initiator_name} заплатил\\(а\\) 15 💰 за перевыбор\\!
 ❌ Бывший пидор: {old_winner_name}
-✅ Новый пидор дня: {new_winner_name}\\!"""
+✅ Новый пидор дня: {new_winner_name}\\!
+
+💰 *Информация о койнах:*
+• {initiator_name}: \\-15 💰 \\(баланс: {initiator_balance}\\)
+• {old_winner_name}: сохраняет свои койны \\(баланс: {old_winner_balance}\\)
+• {new_winner_name}: \\+{new_winner_coins} 💰 \\(баланс: {new_winner_balance}\\){protection_info}{double_chance_info}{predictions_info}"""
 
 REROLL_ERROR_ALREADY_USED = "❌ Перевыбор уже использован сегодня"
 REROLL_ERROR_INSUFFICIENT_FUNDS = "❌ Недостаточно койнов! Баланс: {balance} 💰"

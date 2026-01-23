@@ -268,9 +268,9 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
 
         # Импорты для работы с эффектами и предсказаниями
         from bot.handlers.game.game_effects_service import (
-            filter_protected_players, build_selection_pool, check_winner_immunity,
             reset_double_chance, is_immunity_enabled
         )
+        from bot.handlers.game.selection_service import select_winner_with_effects
         from bot.handlers.game.prediction_service import (
             process_predictions, format_predictions_summary, award_correct_predictions
         )
@@ -279,60 +279,46 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         # Проверяем, включена ли защита (не последний день года)
         immunity_enabled = is_immunity_enabled(current_dt)
 
-        # Если защита включена, фильтруем защищённых игроков
-        if immunity_enabled:
-            unprotected_players, protected_players = filter_protected_players(
-                context.db_session, context.game.id, players, current_date
-            )
-
-            # Если все игроки защищены - отправляем специальное сообщение
-            if len(unprotected_players) == 0:
-                await update.effective_chat.send_message(
-                    "🛡️ *Невероятно\\!* Все игроки защищены\\! Сегодня пидора дня не будет\\. Наслаждайтесь свободой\\! 🎉",
-                    parse_mode="MarkdownV2"
-                )
-                logger.warning(f"All players are protected in game {context.game.id}")
-                return
-
-        # Создаём пул выбора с учётом двойного шанса
-        selection_pool, players_with_double_chance = build_selection_pool(
-            context.db_session, context.game.id, players, current_date
+        # Выбираем победителя с учётом всех эффектов
+        selection_result = select_winner_with_effects(
+            context.db_session, context.game.id, players, current_date, immunity_enabled
         )
 
-        # Выбираем победителя из пула
-        winner: TGUser = random.choice(selection_pool)
-        logger.info(f"Winner selected: {winner.full_username()}")
+        # Если все игроки защищены - отправляем специальное сообщение
+        if selection_result.all_protected:
+            await update.effective_chat.send_message(
+                "🛡️ *Невероятно\\!* Все игроки защищены\\! Сегодня пидора дня не будет\\. Наслаждайтесь свободой\\! 🎉",
+                parse_mode="MarkdownV2"
+            )
+            logger.warning(f"All players are protected in game {context.game.id}")
+            return
 
-        # Запоминаем, был ли у победителя двойной шанс
-        winner_had_double_chance = winner.id in players_with_double_chance
+        winner = selection_result.winner
+        winner_had_double_chance = selection_result.had_double_chance
 
-        # Проверяем защиту победителя только если она включена
-        if immunity_enabled and check_winner_immunity(context.db_session, context.game.id, winner, current_date):
-            logger.info(f"Winner {winner.id} ({winner.full_username()}) is protected, reselecting")
+        # Если сработала защита - показываем сообщение и начисляем койны
+        if selection_result.had_immunity and selection_result.protected_player:
+            protected_player = selection_result.protected_player
 
             # Начисляем койны защищенному игроку за то, что его выбрали
-            add_coins(context.db_session, context.game.id, winner.id, COINS_PER_WIN, cur_year, "immunity_save", auto_commit=False)
-            logger.debug(f"Awarded {COINS_PER_WIN} coins to protected player {winner.id}")
+            add_coins(context.db_session, context.game.id, protected_player.id, COINS_PER_WIN, cur_year, "immunity_save", auto_commit=False)
+            logger.debug(f"Awarded {COINS_PER_WIN} coins to protected player {protected_player.id}")
 
             # Получаем новый баланс защищенного игрока
-            protected_balance = get_balance(context.db_session, context.game.id, winner.id)
+            protected_balance = get_balance(context.db_session, context.game.id, protected_player.id)
 
             # Показываем сообщение о срабатывании защиты с информацией о койнах
             from html import escape as html_escape
             await update.effective_chat.send_message(
                 IMMUNITY_ACTIVATED_IN_GAME.format(
-                    username=html_escape(winner.full_username()),
-                    username_plain=winner.full_username(),
+                    username=html_escape(protected_player.full_username()),
+                    username_plain=protected_player.full_username(),
                     amount=COINS_PER_WIN,
                     balance=protected_balance
                 ),
                 parse_mode="HTML"
             )
             await asyncio.sleep(GAME_RESULT_TIME_DELAY)
-
-            # Перевыбираем из незащищенных игроков
-            winner = random.choice(unprotected_players)
-            logger.info(f"Reselected winner after immunity: {winner.full_username()}")
 
         # Сбрасываем двойной шанс у победителя (если был активен)
         reset_double_chance(context.db_session, context.game.id, winner.id, current_date)
@@ -403,29 +389,25 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
                 executor_balance=executor_balance
             )
 
-        # Отправляем финальное сообщение с кнопкой перевыбора
-        await send_result_with_reroll_button(update, context, stage4_message, cur_year, cur_day)
-
-        # Если победитель использовал двойной шанс - показываем сообщение
+        # Добавить информацию о двойном шансе (если сработал)
         if winner_had_double_chance:
             from html import escape as html_escape
-            await update.effective_chat.send_message(
-                DOUBLE_CHANCE_ACTIVATED_IN_GAME.format(
-                    username=html_escape(winner.full_username())
-                ),
-                parse_mode="HTML"
-            )
+            stage4_message += f"\n\n🎲 <b>{html_escape(winner.full_username())}</b> использовал(а) двойной шанс и победил(а)! Эффект израсходован."
             logger.info(f"Double chance was used by winner {winner.id} ({winner.full_username()})")
 
-        # Отправляем объединённое сообщение о результатах предсказаний
+        # Добавить информацию о предсказаниях (если есть)
         if predictions_results:
             predictions_summary = format_predictions_summary(predictions_results, context.db_session)
             if predictions_summary:
-                await update.effective_chat.send_message(
-                    predictions_summary,
-                    parse_mode="MarkdownV2"
-                )
-                logger.info(f"Sent predictions summary with {len(predictions_results)} predictions")
+                # Конвертируем MarkdownV2 в HTML для единообразия
+                # Убираем заголовок и экранирование, форматируем для HTML
+                from bot.handlers.game.prediction_service import format_predictions_summary_html
+                predictions_html = format_predictions_summary_html(predictions_results, context.db_session)
+                stage4_message += f"\n\n{predictions_html}"
+                logger.info(f"Added predictions summary with {len(predictions_results)} predictions to stage4 message")
+
+        # Отправляем финальное сообщение с кнопкой перевыбора
+        await send_result_with_reroll_button(update, context, stage4_message, cur_year, cur_day)
 
         # Проверка на tie-breaker в последний день года
         if last_day:
@@ -1956,9 +1938,16 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
 
     # Выполняем перевыбор
     players = context.game.players
+
+    # Получаем текущую дату и проверяем, включена ли защита
+    from bot.handlers.game.game_effects_service import is_immunity_enabled
+    current_dt = current_datetime()
+    current_date = current_dt.date()
+    immunity_enabled = is_immunity_enabled(current_dt)
+
     old_winner, new_winner = execute_reroll(
         context.db_session, game_id, year, day,
-        context.tg_user.id, players
+        context.tg_user.id, players, current_date, immunity_enabled
     )
 
     # Отправляем уведомление о перевыборе
@@ -1967,16 +1956,68 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
     # Удаляем кнопку из сообщения
     await query.edit_message_reply_markup(reply_markup=None)
 
+    # Получаем балансы для отображения
+    initiator_balance = get_balance(context.db_session, game_id, context.tg_user.id)
+    old_winner_balance = get_balance(context.db_session, game_id, old_winner.id)
+    new_winner_balance = get_balance(context.db_session, game_id, new_winner.id)
+
     # Объявляем результат перевыбора
     initiator_name = escape_markdown2(context.tg_user.full_username())
     old_winner_name = escape_markdown2(old_winner.full_username())
     new_winner_name = escape_markdown2(new_winner.full_username())
 
+    # Формируем дополнительную информацию о защите, двойном шансе и предсказаниях
+    protection_info = ""
+    double_chance_info = ""
+    predictions_info = ""
+
+    # Получаем информацию о том, что произошло при перевыборе из reroll_service
+    # Проверяем, была ли активирована защита
+    from bot.handlers.game.selection_service import select_winner_with_effects
+    selection_result = select_winner_with_effects(
+        context.db_session, game_id, players, current_date, immunity_enabled
+    )
+
+    # Информация о защите (если сработала при перевыборе)
+    if selection_result.had_immunity and selection_result.protected_player:
+        protected_player = selection_result.protected_player
+        protection_info = f"\n\n🛡️ *Защита сработала\\!* {escape_markdown2(protected_player.full_username())} был\\(а\\) защищён\\(а\\) и получил\\(а\\) \\+{COINS_PER_WIN} 💰"
+
+    # Информация о двойном шансе (если сработал при перевыборе)
+    if selection_result.had_double_chance:
+        double_chance_info = f"\n\n🎲 *Двойной шанс\\!* {new_winner_name} использовал\\(а\\) двойной шанс при перевыборе\\!"
+
+    # Информация о предсказаниях (если сбылись при перевыборе)
+    from bot.handlers.game.prediction_service import get_predictions_for_day, get_predicted_user_ids
+    predictions = get_predictions_for_day(context.db_session, game_id, year, day)
+
+    if predictions:
+        correct_predictions = []
+        for prediction in predictions:
+            predicted_ids = get_predicted_user_ids(prediction)
+            if new_winner.id in predicted_ids:
+                stmt = select(TGUser).where(TGUser.id == prediction.user_id)
+                predictor = context.db_session.exec(stmt).one()
+                predictor_balance = get_balance(context.db_session, game_id, prediction.user_id)
+                correct_predictions.append(
+                    f"• {escape_markdown2(predictor.full_username())}: \\+30 💰 \\(баланс: {format_number(predictor_balance)}\\)"
+                )
+
+        if correct_predictions:
+            predictions_info = "\n\n🔮 *Предсказания сбылись\\!*\n" + "\n".join(correct_predictions)
+
     await update.effective_chat.send_message(
         REROLL_ANNOUNCEMENT.format(
             initiator_name=initiator_name,
             old_winner_name=old_winner_name,
-            new_winner_name=new_winner_name
+            new_winner_name=new_winner_name,
+            initiator_balance=format_number(initiator_balance),
+            old_winner_balance=format_number(old_winner_balance),
+            new_winner_coins=COINS_PER_WIN,
+            new_winner_balance=format_number(new_winner_balance),
+            protection_info=protection_info,
+            double_chance_info=double_chance_info,
+            predictions_info=predictions_info
         ),
         parse_mode="MarkdownV2"
     )
