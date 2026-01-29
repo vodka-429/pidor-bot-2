@@ -262,12 +262,13 @@ async def test_immunity_message_shown(mock_update, mock_context, mock_game, samp
     # Execute
     await pidor_cmd(mock_update, mock_context)
 
-    # Verify immunity message contains coin information
+    # Verify immunity message contains coin information (without balance)
     calls = mock_update.effective_chat.send_message.call_args_list
     immunity_call_found = False
     for call in calls:
         call_str = str(call)
-        if "+4" in call_str and ("14" in call_str or "balance" in call_str.lower()):
+        # Check for "+4" coins award and HTML parse mode (no balance display)
+        if "+4" in call_str and "пидор-койн" in call_str:
             immunity_call_found = True
             break
 

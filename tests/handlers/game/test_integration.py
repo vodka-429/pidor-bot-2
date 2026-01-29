@@ -427,3 +427,285 @@ async def test_reroll_with_predictions(mock_update, mock_context, mock_game, sam
 
     # Verify commit was called
     mock_context.db_session.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_give_coins_button_appears_after_pidor_selection(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Интеграционный тест: кнопка 'Дайте койнов' появляется после выбора пидора дня."""
+    from bot.handlers.game.commands import pidor_cmd
+    from bot.handlers.game.text_static import GIVE_COINS_BUTTON_TEXT
+
+    # Mock asyncio.sleep
+    mocker.patch('asyncio.sleep', new_callable=AsyncMock)
+
+    # Mock random.choice для выбора победителя
+    mock_choice = mocker.patch('bot.handlers.game.commands.random.choice')
+    winner = sample_players[0]
+    mock_choice.side_effect = [
+        winner,  # winner
+        "Stage 1",
+        "Stage 2",
+        "Stage 3",
+        "Stage 4: {username}",
+    ]
+
+    # Mock datetime
+    mock_dt = MagicMock()
+    mock_dt.year = 2026
+    mock_dt.month = 1
+    mock_dt.day = 29
+    mock_dt.timetuple.return_value.tm_yday = 29
+    mock_dt.date.return_value = MagicMock()
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+
+    # Setup game with players
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+    mock_context.tg_user = sample_players[1]
+
+    # Mock query chain
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+
+    mock_missed_query = MagicMock()
+    mock_missed_query.filter_by.return_value = mock_missed_query
+    mock_missed_query.order_by.return_value = mock_missed_query
+    mock_missed_query.first.return_value = None
+
+    mock_result_query = MagicMock()
+    mock_result_query.filter_by.return_value = mock_result_query
+    mock_result_query.one_or_none.return_value = None
+    mock_result_query.one.return_value = MagicMock(winner_id=winner.id)
+
+    mock_context.db_session.query.side_effect = [
+        mock_game_query,
+        mock_missed_query,
+        mock_result_query,
+        mock_result_query
+    ]
+
+    # Mock send_result_with_reroll_button
+    mock_send_result = mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
+    # Execute
+    await pidor_cmd(mock_update, mock_context)
+
+    # Verify send_result_with_reroll_button was called
+    assert mock_send_result.called
+    call_args = mock_send_result.call_args
+
+    # Проверяем, что функция была вызвана с правильными параметрами
+    assert call_args[0][0] == mock_update
+    assert call_args[0][1] == mock_context
+    # stage4_message содержит имя победителя
+    assert winner.full_username() in call_args[0][2]
+    assert call_args[0][3] == 2026  # year
+    assert call_args[0][4] == 29  # day
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_give_coins_regular_player_gets_1_coin(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Интеграционный тест: обычный игрок получает 1 койн."""
+    from bot.handlers.game.commands import handle_give_coins_callback
+    from bot.handlers.game.give_coins_service import GIVE_COINS_AMOUNT
+
+    # Setup
+    winner = sample_players[0]
+    regular_player = sample_players[1]
+
+    # Важно: используем те же объекты игроков
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+    mock_context.tg_user = regular_player
+
+    # Mock query для ensure_game decorator
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+    mock_context.db_session.query.return_value = mock_game_query
+
+    # Mock callback query
+    query = MagicMock()
+    query.from_user.id = regular_player.tg_id
+    query.data = f"givecoins_{mock_game.id}_2026_29_{winner.id}"
+    query.answer = AsyncMock()
+    mock_update.callback_query = query
+
+    # Mock has_claimed_today - еще не получал
+    mock_result = MagicMock()
+    mock_result.first.return_value = None
+    mock_context.db_session.exec.return_value = mock_result
+
+    # Mock get_balance
+    mocker.patch('bot.handlers.game.commands.get_balance', return_value=10)
+
+    # Execute
+    await handle_give_coins_callback(mock_update, mock_context)
+
+    # Verify
+    assert query.answer.called
+    # query.answer вызывается с позиционным аргументом (текст)
+    answer_text = query.answer.call_args[0][0]
+    assert str(GIVE_COINS_AMOUNT) in answer_text
+    assert "10" in answer_text  # balance
+
+    # Verify add was called (GiveCoinsClick)
+    assert mock_context.db_session.add.called
+
+    # Verify commit was called
+    assert mock_context.db_session.commit.called
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_give_coins_winner_gets_2_coins(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Интеграционный тест: пидор дня получает 2 койна."""
+    from bot.handlers.game.commands import handle_give_coins_callback
+    from bot.handlers.game.give_coins_service import GIVE_COINS_WINNER_AMOUNT
+
+    # Setup
+    winner = sample_players[0]
+
+    # Важно: используем те же объекты игроков
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+    mock_context.tg_user = winner
+
+    # Mock query для ensure_game decorator
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+    mock_context.db_session.query.return_value = mock_game_query
+
+    # Mock callback query
+    query = MagicMock()
+    query.from_user.id = winner.tg_id
+    query.data = f"givecoins_{mock_game.id}_2026_29_{winner.id}"
+    query.answer = AsyncMock()
+    mock_update.callback_query = query
+
+    # Mock has_claimed_today - еще не получал
+    mock_result = MagicMock()
+    mock_result.first.return_value = None
+    mock_context.db_session.exec.return_value = mock_result
+
+    # Mock get_balance
+    mocker.patch('bot.handlers.game.commands.get_balance', return_value=15)
+
+    # Execute
+    await handle_give_coins_callback(mock_update, mock_context)
+
+    # Verify
+    assert query.answer.called
+    # query.answer вызывается с позиционным аргументом (текст)
+    answer_text = query.answer.call_args[0][0]
+    assert str(GIVE_COINS_WINNER_AMOUNT) in answer_text
+    assert "15" in answer_text  # balance
+
+    # Verify add was called (GiveCoinsClick)
+    assert mock_context.db_session.add.called
+    added_click = mock_context.db_session.add.call_args[0][0]
+    assert added_click.is_winner is True
+    assert added_click.amount == GIVE_COINS_WINNER_AMOUNT
+
+    # Verify commit was called
+    assert mock_context.db_session.commit.called
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_give_coins_cannot_claim_twice(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Интеграционный тест: нельзя получить койны дважды в один день."""
+    from bot.handlers.game.commands import handle_give_coins_callback
+    from bot.handlers.game.text_static import GIVE_COINS_ALREADY_CLAIMED
+
+    # Setup
+    winner = sample_players[0]
+    regular_player = sample_players[1]
+
+    # Важно: используем те же объекты игроков
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+    mock_context.tg_user = regular_player
+
+    # Mock query для ensure_game decorator
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+    mock_context.db_session.query.return_value = mock_game_query
+
+    # Mock callback query
+    query = MagicMock()
+    query.from_user.id = regular_player.tg_id
+    query.data = f"givecoins_{mock_game.id}_2026_29_{winner.id}"
+    query.answer = AsyncMock()
+    mock_update.callback_query = query
+
+    # Mock has_claimed_today - уже получал
+    mock_click = MagicMock()
+    mock_result = MagicMock()
+    mock_result.first.return_value = mock_click
+    mock_context.db_session.exec.return_value = mock_result
+
+    # Execute
+    await handle_give_coins_callback(mock_update, mock_context)
+
+    # Verify
+    assert query.answer.called
+    # query.answer вызывается с позиционным аргументом (текст)
+    answer_text = query.answer.call_args[0][0]
+    assert GIVE_COINS_ALREADY_CLAIMED in answer_text
+
+    # Verify add was NOT called
+    assert not mock_context.db_session.add.called
+
+    # Verify commit was NOT called
+    assert not mock_context.db_session.commit.called
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_give_coins_unregistered_player_error(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Интеграционный тест: незарегистрированный игрок не может получить койны."""
+    from bot.handlers.game.commands import handle_give_coins_callback
+    from bot.handlers.game.text_static import GIVE_COINS_ERROR_NOT_REGISTERED
+
+    # Setup
+    winner = sample_players[0]
+    unregistered_player = sample_players[1]
+
+    # Игрок не в списке зарегистрированных
+    mock_game.players = [winner]
+    mock_context.game = mock_game
+    mock_context.tg_user = unregistered_player
+
+    # Mock query для ensure_game decorator
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+    mock_context.db_session.query.return_value = mock_game_query
+
+    # Mock callback query
+    query = MagicMock()
+    query.from_user.id = unregistered_player.tg_id
+    query.data = f"givecoins_{mock_game.id}_2026_29_{winner.id}"
+    query.answer = AsyncMock()
+    mock_update.callback_query = query
+
+    # Execute
+    await handle_give_coins_callback(mock_update, mock_context)
+
+    # Verify
+    assert query.answer.called
+    # query.answer вызывается с позиционным аргументом (текст)
+    answer_text = query.answer.call_args[0][0]
+    assert GIVE_COINS_ERROR_NOT_REGISTERED in answer_text
+
+    # Verify add was NOT called
+    assert not mock_context.db_session.add.called
+
+    # Verify commit was NOT called
+    assert not mock_context.db_session.commit.called

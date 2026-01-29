@@ -20,6 +20,7 @@ from bot.handlers.game.commands import pidor_cmd, pidorules_cmd, pidoreg_cmd, \
     handle_shop_predict_callback, handle_shop_predict_select_callback, \
     handle_shop_predict_confirm_callback, handle_shop_predict_cancel_callback, \
     handle_shop_double_confirm_callback, handle_reroll_callback, \
+    handle_give_coins_callback, \
     handle_shop_transfer_callback, handle_shop_transfer_select_callback, \
     handle_shop_transfer_amount_callback, handle_shop_bank_callback, handle_shop_back_callback
 from bot.handlers.kvstore.commands import get_cmd, set_cmd, del_cmd, list_cmd
@@ -116,6 +117,9 @@ def init_dispatcher(application: Application, db_engine):
 
     # Reroll handler
     application.add_handler(CallbackQueryHandler(handle_reroll_callback, pattern=r'^reroll_'))
+
+    # Give coins handler
+    application.add_handler(CallbackQueryHandler(handle_give_coins_callback, pattern=r'^givecoins_'))
 
     # Регистрируем CallbackQueryHandler для голосования
     # В python-telegram-bot v21+ CallbackQueryHandler не поддерживает filters параметр

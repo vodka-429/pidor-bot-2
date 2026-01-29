@@ -183,9 +183,7 @@ def format_predictions_summary_html(predictions_results: List[Tuple[Prediction, 
         predictor = db_session.exec(stmt).one()
 
         if is_correct:
-            # Получаем новый баланс предсказателя
-            predictor_balance = get_balance(db_session, prediction.game_id, prediction.user_id)
-            line = f"✅ {html_escape(predictor.full_username())} угадал(а)! +30 🪙 (баланс: {predictor_balance})"
+            line = f"✅ {html_escape(predictor.full_username())} угадал(а)! +30 🪙"
         else:
             line = f"❌ {html_escape(predictor.full_username())} не угадал(а)"
 

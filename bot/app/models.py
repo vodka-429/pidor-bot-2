@@ -256,3 +256,22 @@ class CoinTransfer(SQLModel, table=True):
     game: Game = Relationship()
     sender: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[CoinTransfer.sender_id]"})
     receiver: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[CoinTransfer.receiver_id]"})
+
+
+class GiveCoinsClick(SQLModel, table=True):
+    """История нажатий на кнопку 'Дайте койнов'."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    user_id: int = Field(foreign_key="tguser.id", nullable=False)
+    year: int = Field(nullable=False)  # Год нажатия
+    day: int = Field(nullable=False)   # День года нажатия (1-366)
+    is_winner: bool = Field(nullable=False)  # Был ли пользователь пидором дня
+    amount: int = Field(nullable=False)  # Количество полученных койнов
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    game: Game = Relationship()
+    user: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[GiveCoinsClick.user_id]"})
+
+    __table_args__ = (
+        UniqueConstraint('game_id', 'user_id', 'year', 'day', name='unique_give_coins_click'),
+    )
