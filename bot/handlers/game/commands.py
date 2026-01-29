@@ -173,7 +173,7 @@ async def send_result_with_reroll_button(
     cur_day: int
 ):
     """
-    Отправить финальное сообщение с кнопкой перевыбора и запустить таймер на её удаление.
+    Отправить финальное сообщение с кнопками перевыбора и "Дайте койнов", запустить таймер на их удаление.
 
     Args:
         update: Telegram Update объект
@@ -183,15 +183,27 @@ async def send_result_with_reroll_button(
         cur_day: Текущий день года
     """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    from bot.handlers.game.text_static import REROLL_BUTTON_TEXT
+    from bot.handlers.game.text_static import REROLL_BUTTON_TEXT, GIVE_COINS_BUTTON_TEXT
     from bot.handlers.game.reroll_service import remove_reroll_button_after_timeout
 
-    # Создаём кнопку перевыбора
+    # Получаем ID победителя для передачи в callback кнопки "Дайте койнов"
+    game_result = context.db_session.query(GameResult).filter_by(
+        game_id=context.game.id, year=cur_year, day=cur_day
+    ).one()
+    winner_id = game_result.winner_id
+
+    # Создаём кнопки перевыбора и "Дайте койнов" в одном ряду
     reroll_keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(
-            REROLL_BUTTON_TEXT,
-            callback_data=f"reroll_{context.game.id}_{cur_year}_{cur_day}"
-        )]
+        [
+            InlineKeyboardButton(
+                REROLL_BUTTON_TEXT,
+                callback_data=f"reroll_{context.game.id}_{cur_year}_{cur_day}"
+            ),
+            InlineKeyboardButton(
+                GIVE_COINS_BUTTON_TEXT,
+                callback_data=f"givecoins_{context.game.id}_{cur_year}_{cur_day}_{winner_id}"
+            )
+        ]
     ])
 
     # Отправляем финальное сообщение с кнопкой перевыбора
@@ -304,17 +316,13 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
             add_coins(context.db_session, context.game.id, protected_player.id, COINS_PER_WIN, cur_year, "immunity_save", auto_commit=False)
             logger.debug(f"Awarded {COINS_PER_WIN} coins to protected player {protected_player.id}")
 
-            # Получаем новый баланс защищенного игрока
-            protected_balance = get_balance(context.db_session, context.game.id, protected_player.id)
-
             # Показываем сообщение о срабатывании защиты с информацией о койнах
             from html import escape as html_escape
             await update.effective_chat.send_message(
                 IMMUNITY_ACTIVATED_IN_GAME.format(
                     username=html_escape(protected_player.full_username()),
                     username_plain=protected_player.full_username(),
-                    amount=COINS_PER_WIN,
-                    balance=protected_balance
+                    amount=COINS_PER_WIN
                 ),
                 parse_mode="HTML"
             )
@@ -368,25 +376,19 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         await update.effective_chat.send_message(random.choice(stage3.phrases))
         await asyncio.sleep(GAME_RESULT_TIME_DELAY)
         logger.debug("Sending stage 4 message")
-        # Получить баланс койнов победителя
-        winner_balance = get_balance(context.db_session, context.game.id, winner.id)
         stage4_message = random.choice(stage4.phrases).format(
             username=winner.full_username(mention=True))
 
         # Добавить информацию о койнах в зависимости от ситуации
         if is_self_pidor:
             self_pidor_coins = COINS_PER_WIN * SELF_PIDOR_MULTIPLIER
-            stage4_message += COIN_INFO_SELF_PIDOR.format(amount=self_pidor_coins, balance=winner_balance)
+            stage4_message += COIN_INFO_SELF_PIDOR.format(amount=self_pidor_coins)
         else:
-            # Получить баланс койнов игрока, который запустил команду
-            executor_balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
             stage4_message += COIN_INFO.format(
                 winner_username=winner.full_username(),
                 amount=COINS_PER_WIN,
-                balance=winner_balance,
                 executor_username=context.tg_user.full_username(),
-                executor_amount=COINS_PER_COMMAND,
-                executor_balance=executor_balance
+                executor_amount=COINS_PER_COMMAND
             )
 
         # Добавить информацию о двойном шансе (если сработал)
@@ -1956,15 +1958,11 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
     # Удаляем кнопку из сообщения
     await query.edit_message_reply_markup(reply_markup=None)
 
-    # Получаем балансы для отображения
-    initiator_balance = get_balance(context.db_session, game_id, context.tg_user.id)
-    old_winner_balance = get_balance(context.db_session, game_id, old_winner.id)
-    new_winner_balance = get_balance(context.db_session, game_id, new_winner.id)
-
     # Объявляем результат перевыбора
-    initiator_name = escape_markdown2(context.tg_user.full_username())
-    old_winner_name = escape_markdown2(old_winner.full_username())
-    new_winner_name = escape_markdown2(new_winner.full_username())
+    from html import escape as html_escape
+    initiator_name = html_escape(context.tg_user.full_username())
+    old_winner_name = html_escape(old_winner.full_username())
+    new_winner_name = html_escape(new_winner.full_username())
 
     # Формируем дополнительную информацию о защите, двойном шансе и предсказаниях
     protection_info = ""
@@ -1981,11 +1979,11 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
     # Информация о защите (если сработала при перевыборе)
     if selection_result.had_immunity and selection_result.protected_player:
         protected_player = selection_result.protected_player
-        protection_info = f"\n\n🛡️ *Защита сработала\\!* {escape_markdown2(protected_player.full_username())} был\\(а\\) защищён\\(а\\) и получил\\(а\\) \\+{COINS_PER_WIN} 💰"
+        protection_info = f"\n\n🛡️ <b>Защита сработала!</b> {html_escape(protected_player.full_username())} был(а) защищён(а) и получил(а) +{COINS_PER_WIN} 💰"
 
     # Информация о двойном шансе (если сработал при перевыборе)
     if selection_result.had_double_chance:
-        double_chance_info = f"\n\n🎲 *Двойной шанс\\!* {new_winner_name} использовал\\(а\\) двойной шанс при перевыборе\\!"
+        double_chance_info = f"\n\n🎲 <b>Двойной шанс!</b> {new_winner_name} использовал(а) двойной шанс при перевыборе!"
 
     # Информация о предсказаниях (если сбылись при перевыборе)
     from bot.handlers.game.prediction_service import get_predictions_for_day, get_predicted_user_ids
@@ -1998,28 +1996,24 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
             if new_winner.id in predicted_ids:
                 stmt = select(TGUser).where(TGUser.id == prediction.user_id)
                 predictor = context.db_session.exec(stmt).one()
-                predictor_balance = get_balance(context.db_session, game_id, prediction.user_id)
                 correct_predictions.append(
-                    f"• {escape_markdown2(predictor.full_username())}: \\+30 💰 \\(баланс: {format_number(predictor_balance)}\\)"
+                    f"• {html_escape(predictor.full_username())}: +30 💰"
                 )
 
         if correct_predictions:
-            predictions_info = "\n\n🔮 *Предсказания сбылись\\!*\n" + "\n".join(correct_predictions)
+            predictions_info = "\n\n🔮 <b>Предсказания сбылись!</b>\n" + "\n".join(correct_predictions)
 
     await update.effective_chat.send_message(
         REROLL_ANNOUNCEMENT.format(
             initiator_name=initiator_name,
             old_winner_name=old_winner_name,
             new_winner_name=new_winner_name,
-            initiator_balance=format_number(initiator_balance),
-            old_winner_balance=format_number(old_winner_balance),
             new_winner_coins=COINS_PER_WIN,
-            new_winner_balance=format_number(new_winner_balance),
             protection_info=protection_info,
             double_chance_info=double_chance_info,
             predictions_info=predictions_info
         ),
-        parse_mode="MarkdownV2"
+        parse_mode="HTML"
     )
 
     logger.info(
@@ -2028,6 +2022,86 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
     )
 
 
+
+
+@ensure_game
+async def handle_give_coins_callback(update: Update, context: GECallbackContext):
+    """Обработчик нажатия кнопки 'Дайте койнов'."""
+    from bot.handlers.game.give_coins_service import has_claimed_today, claim_coins
+    from bot.handlers.game.text_static import (
+        GIVE_COINS_SUCCESS,
+        GIVE_COINS_ALREADY_CLAIMED,
+        GIVE_COINS_ERROR_NOT_REGISTERED
+    )
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Give coins callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    # Парсим callback_data: givecoins_{game_id}_{year}_{day}_{winner_id}
+    parts = query.data.split('_')
+    if len(parts) != 5:
+        logger.error(f"Invalid callback_data format: {query.data}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    try:
+        game_id = int(parts[1])
+        year = int(parts[2])
+        day = int(parts[3])
+        winner_id = int(parts[4])
+    except (ValueError, IndexError) as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # Проверяем, что игрок зарегистрирован в игре
+    if context.tg_user not in context.game.players:
+        await query.answer(GIVE_COINS_ERROR_NOT_REGISTERED, show_alert=True)
+        logger.info(f"User {context.tg_user.id} is not registered in game {game_id}")
+        return
+
+    # Проверяем, не получал ли уже койны сегодня
+    if has_claimed_today(context.db_session, game_id, context.tg_user.id, year, day):
+        await query.answer(GIVE_COINS_ALREADY_CLAIMED, show_alert=True)
+        logger.info(f"User {context.tg_user.id} already claimed coins today ({year}-{day})")
+        return
+
+    # Определяем, является ли игрок пидором дня
+    is_winner = context.tg_user.id == winner_id
+
+    # Получаем койны
+    success, amount = claim_coins(
+        context.db_session,
+        game_id,
+        context.tg_user.id,
+        year,
+        day,
+        is_winner
+    )
+
+    if success:
+        # Получаем новый баланс
+        balance = get_balance(context.db_session, game_id, context.tg_user.id)
+
+        # Отправляем уведомление
+        await query.answer(
+            GIVE_COINS_SUCCESS.format(amount=amount, balance=balance),
+            show_alert=True
+        )
+        logger.info(
+            f"User {context.tg_user.id} claimed {amount} coins in game {game_id}, "
+            f"new balance: {balance}"
+        )
+    else:
+        # Это не должно произойти, так как мы уже проверили has_claimed_today
+        await query.answer(GIVE_COINS_ALREADY_CLAIMED, show_alert=True)
+        logger.warning(f"Unexpected failure to claim coins for user {context.tg_user.id}")
 
 
 @ensure_game
