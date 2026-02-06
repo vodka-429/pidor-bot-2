@@ -1,6 +1,6 @@
 """Tests for shop service functionality."""
 import pytest
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, patch
 from datetime import date, timedelta
 
 from bot.handlers.game.shop_service import (
@@ -11,12 +11,13 @@ from bot.handlers.game.shop_service import (
     buy_immunity,
     buy_double_chance,
     create_prediction,
+    process_purchase,
     IMMUNITY_PRICE,
     DOUBLE_CHANCE_PRICE,
     PREDICTION_PRICE,
     IMMUNITY_COOLDOWN_DAYS
 )
-from bot.app.models import GamePlayerEffect, Prediction, PidorCoinTransaction
+from bot.app.models import GamePlayerEffect, Prediction, PidorCoinTransaction, ChatBank
 
 
 @pytest.mark.unit
@@ -213,15 +214,13 @@ def test_get_shop_items():
 @pytest.mark.unit
 def test_buy_immunity_success(mock_db_session):
     """Test buy_immunity successfully purchases immunity."""
+    from bot.app.models import ChatBank
+
     # Setup
     game_id = 1
     user_id = 1
     year = 2024
     current_date = date(2024, 6, 15)  # Day 167 of 2024
-
-    # Mock sufficient balance
-    mock_balance_result = MagicMock()
-    mock_balance_result.first.return_value = 20
 
     # Mock no existing effect
     mock_effect = GamePlayerEffect(
@@ -230,27 +229,38 @@ def test_buy_immunity_success(mock_db_session):
         immunity_year=None,
         immunity_day=None
     )
-    mock_effect_result = MagicMock()
-    mock_effect_result.first.return_value = mock_effect
 
-    # Configure exec to return different results
-    call_count = 0
+    # Mock chat bank
+    mock_bank = ChatBank(game_id=game_id, balance=0)
+
+    # Configure exec to return different results based on query
     def exec_side_effect(stmt):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:  # First call for balance
-            return mock_balance_result
-        else:  # Second call for effect
-            return mock_effect_result
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'sum' in stmt_str or 'pidorcointransaction' in stmt_str:
+            # Balance check - return sufficient balance
+            mock_result.first.return_value = 20
+        elif 'gameplayereffect' in stmt_str:
+            # Effect check
+            mock_result.first.return_value = mock_effect
+        elif 'chatbank' in stmt_str:
+            # Bank check
+            mock_result.first.return_value = mock_bank
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
 
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
-    success, message = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+    success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
 
     # Verify
     assert success is True
     assert message == "success"
+    assert commission > 0  # Комиссия должна быть больше 0
 
     # Verify immunity is set for tomorrow (June 16, day 168)
     assert mock_effect.immunity_year == 2024
@@ -269,17 +279,39 @@ def test_buy_immunity_insufficient_funds(mock_db_session):
     year = 2024
     current_date = date(2024, 6, 15)
 
-    # Mock insufficient balance
-    mock_result = MagicMock()
-    mock_result.first.return_value = 5  # Less than IMMUNITY_PRICE
-    mock_db_session.exec.return_value = mock_result
+    # Mock no existing effect
+    mock_effect = GamePlayerEffect(
+        game_id=game_id,
+        user_id=user_id,
+        immunity_year=None,
+        immunity_day=None
+    )
+
+    # Configure exec to return different results
+    def exec_side_effect(stmt):
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'sum' in stmt_str or 'pidorcointransaction' in stmt_str:
+            # Balance check - return insufficient balance
+            mock_result.first.return_value = 5  # Less than IMMUNITY_PRICE
+        elif 'gameplayereffect' in stmt_str:
+            # Effect check
+            mock_result.first.return_value = mock_effect
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
+
+    mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
-    success, message = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+    success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
 
     # Verify
     assert success is False
     assert message == "insufficient_funds"
+    assert commission == 0  # При ошибке комиссия 0
 
 
 @pytest.mark.unit
@@ -291,10 +323,6 @@ def test_buy_immunity_already_active(mock_db_session):
     year = 2024
     current_date = date(2024, 6, 15)  # Day 167
 
-    # Mock sufficient balance
-    mock_balance_result = MagicMock()
-    mock_balance_result.first.return_value = 20
-
     # Mock existing effect with active immunity for tomorrow (June 16 = day 168)
     existing_effect = GamePlayerEffect(
         game_id=game_id,
@@ -303,28 +331,30 @@ def test_buy_immunity_already_active(mock_db_session):
         immunity_day=168,  # Tomorrow (June 16)
         next_win_multiplier=1
     )
-    mock_effect_result = MagicMock()
-    mock_effect_result.first.return_value = existing_effect
 
     # Configure exec
-    call_count = 0
     def exec_side_effect(stmt):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:  # Balance check
-            return mock_balance_result
-        else:  # Effect check
-            return mock_effect_result
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'gameplayereffect' in stmt_str:
+            # Effect check - return effect with active immunity
+            mock_result.first.return_value = existing_effect
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
 
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
-    success, message = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+    success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
 
     # Verify
     assert success is False
     assert message.startswith("already_active:")
     assert "2024:168" in message
+    assert commission == 0  # При ошибке комиссия 0
 
 
 @pytest.mark.unit
@@ -336,10 +366,6 @@ def test_buy_immunity_cooldown(mock_db_session):
     year = 2024
     current_date = date(2024, 6, 15)
 
-    # Mock sufficient balance
-    mock_balance_result = MagicMock()
-    mock_balance_result.first.return_value = 20
-
     # Mock existing effect with recent immunity_last_used (within cooldown)
     existing_effect = GamePlayerEffect(
         game_id=game_id,
@@ -349,35 +375,37 @@ def test_buy_immunity_cooldown(mock_db_session):
         immunity_last_used=date(2024, 6, 10),  # 5 days ago (cooldown is 7 days)
         next_win_multiplier=1
     )
-    mock_effect_result = MagicMock()
-    mock_effect_result.first.return_value = existing_effect
 
     # Configure exec
-    call_count = 0
     def exec_side_effect(stmt):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:  # Balance check
-            return mock_balance_result
-        else:  # Effect check
-            return mock_effect_result
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'gameplayereffect' in stmt_str:
+            # Effect check
+            mock_result.first.return_value = existing_effect
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
 
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
-    success, message = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+    success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
 
     # Verify
     assert success is False
     assert message.startswith("cooldown:")
     expected_cooldown_end = date(2024, 6, 17)  # 10 + 7 days
     assert message == f"cooldown:{expected_cooldown_end.isoformat()}"
+    assert commission == 0  # При ошибке комиссия 0
 
 
 @pytest.mark.unit
 def test_buy_double_chance_for_self(mock_db_session):
     """Test buy_double_chance successfully purchases double chance for self."""
-    from bot.app.models import DoubleChancePurchase
+    from bot.app.models import DoubleChancePurchase, ChatBank
 
     # Setup
     game_id = 1
@@ -386,32 +414,37 @@ def test_buy_double_chance_for_self(mock_db_session):
     year = 2024
     current_date = date(2024, 6, 15)
 
-    # Mock sufficient balance
-    mock_balance_result = MagicMock()
-    mock_balance_result.first.return_value = 10
-
-    # Mock no existing purchase
-    mock_purchase_result = MagicMock()
-    mock_purchase_result.first.return_value = None
+    # Mock chat bank
+    mock_bank = ChatBank(game_id=game_id, balance=0)
 
     # Configure exec
-    call_count = 0
     def exec_side_effect(stmt):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:  # Balance check
-            return mock_balance_result
-        else:  # Purchase check
-            return mock_purchase_result
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'sum' in stmt_str or 'pidorcointransaction' in stmt_str:
+            # Balance check - return sufficient balance
+            mock_result.first.return_value = 10
+        elif 'doublechancepurchase' in stmt_str:
+            # Purchase check - no existing purchase
+            mock_result.first.return_value = None
+        elif 'chatbank' in stmt_str:
+            # Bank check
+            mock_result.first.return_value = mock_bank
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
 
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
-    success, message = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
+    success, message, commission = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
 
     # Verify
     assert success is True
     assert message == "success"
+    assert commission > 0  # Комиссия должна быть больше 0
 
     # Verify DoubleChancePurchase was added
     assert mock_db_session.add.call_count >= 2  # Transaction + DoubleChancePurchase
@@ -423,7 +456,7 @@ def test_buy_double_chance_for_self(mock_db_session):
 @pytest.mark.unit
 def test_buy_double_chance_for_other(mock_db_session):
     """Test buy_double_chance successfully purchases double chance for another player."""
-    from bot.app.models import DoubleChancePurchase
+    from bot.app.models import DoubleChancePurchase, ChatBank
 
     # Setup
     game_id = 1
@@ -432,32 +465,37 @@ def test_buy_double_chance_for_other(mock_db_session):
     year = 2024
     current_date = date(2024, 6, 15)
 
-    # Mock sufficient balance for buyer
-    mock_balance_result = MagicMock()
-    mock_balance_result.first.return_value = 10
-
-    # Mock no existing purchase
-    mock_purchase_result = MagicMock()
-    mock_purchase_result.first.return_value = None
+    # Mock chat bank
+    mock_bank = ChatBank(game_id=game_id, balance=0)
 
     # Configure exec
-    call_count = 0
     def exec_side_effect(stmt):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:  # Balance check
-            return mock_balance_result
-        else:  # Purchase check
-            return mock_purchase_result
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'sum' in stmt_str or 'pidorcointransaction' in stmt_str:
+            # Balance check - return sufficient balance
+            mock_result.first.return_value = 10
+        elif 'doublechancepurchase' in stmt_str:
+            # Purchase check - no existing purchase
+            mock_result.first.return_value = None
+        elif 'chatbank' in stmt_str:
+            # Bank check
+            mock_result.first.return_value = mock_bank
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
 
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
-    success, message = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
+    success, message, commission = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
 
     # Verify
     assert success is True
     assert message == "success"
+    assert commission > 0  # Комиссия должна быть больше 0
 
     # Verify commit was called
     mock_db_session.commit.assert_called()
@@ -466,7 +504,7 @@ def test_buy_double_chance_for_other(mock_db_session):
 @pytest.mark.unit
 def test_buy_double_chance_tracks_buyer(mock_db_session):
     """Test buy_double_chance tracks who bought the double chance."""
-    from bot.app.models import DoubleChancePurchase
+    from bot.app.models import DoubleChancePurchase, ChatBank
 
     # Setup
     game_id = 1
@@ -475,31 +513,36 @@ def test_buy_double_chance_tracks_buyer(mock_db_session):
     year = 2024
     current_date = date(2024, 6, 15)
 
-    # Mock sufficient balance
-    mock_balance_result = MagicMock()
-    mock_balance_result.first.return_value = 10
-
-    # Mock no existing purchase
-    mock_purchase_result = MagicMock()
-    mock_purchase_result.first.return_value = None
+    # Mock chat bank
+    mock_bank = ChatBank(game_id=game_id, balance=0)
 
     # Configure exec
-    call_count = 0
     def exec_side_effect(stmt):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:  # Balance check
-            return mock_balance_result
-        else:  # Purchase check
-            return mock_purchase_result
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'sum' in stmt_str or 'pidorcointransaction' in stmt_str:
+            # Balance check - return sufficient balance
+            mock_result.first.return_value = 10
+        elif 'doublechancepurchase' in stmt_str:
+            # Purchase check - no existing purchase
+            mock_result.first.return_value = None
+        elif 'chatbank' in stmt_str:
+            # Bank check
+            mock_result.first.return_value = mock_bank
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
 
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
-    success, message = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
+    success, message, commission = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
 
     # Verify
     assert success is True
+    assert commission > 0  # Комиссия должна быть больше 0
 
     # Verify that DoubleChancePurchase was created with correct buyer_id and target_id
     added_objects = [call[0][0] for call in mock_db_session.add.call_args_list]
@@ -512,6 +555,8 @@ def test_buy_double_chance_tracks_buyer(mock_db_session):
 @pytest.mark.unit
 def test_create_prediction_success(mock_db_session):
     """Test create_prediction successfully creates prediction."""
+    from bot.app.models import ChatBank
+
     # Setup
     game_id = 1
     user_id = 1
@@ -519,35 +564,40 @@ def test_create_prediction_success(mock_db_session):
     year = 2024
     day = 167
 
-    # Mock sufficient balance
-    mock_balance_result = MagicMock()
-    mock_balance_result.first.return_value = 20
-
-    # Mock no existing prediction
-    mock_prediction_result = MagicMock()
-    mock_prediction_result.first.return_value = None
+    # Mock chat bank
+    mock_bank = ChatBank(game_id=game_id, balance=0)
 
     # Configure exec
-    call_count = 0
     def exec_side_effect(stmt):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:  # Balance check
-            return mock_balance_result
-        else:  # Prediction check
-            return mock_prediction_result
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'sum' in stmt_str or 'pidorcointransaction' in stmt_str:
+            # Balance check - return sufficient balance
+            mock_result.first.return_value = 20
+        elif 'prediction' in stmt_str:
+            # Prediction check - no existing prediction
+            mock_result.first.return_value = None
+        elif 'chatbank' in stmt_str:
+            # Bank check
+            mock_result.first.return_value = mock_bank
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
 
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
-    success, message = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
+    success, message, commission = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
 
     # Verify
     assert success is True
     assert message == "success"
+    assert commission > 0  # Комиссия должна быть больше 0
 
     # Verify prediction was added
-    assert mock_db_session.add.call_count == 2  # Transaction + prediction
+    assert mock_db_session.add.call_count >= 2  # Transaction + bank + prediction
     mock_db_session.commit.assert_called()
 
 
@@ -589,16 +639,19 @@ def test_create_prediction_already_exists(mock_db_session):
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
-    success, message = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
+    success, message, commission = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
 
     # Verify
     assert success is False
     assert message == "already_exists"
+    assert commission == 0  # При ошибке комиссия 0
 
 
 @pytest.mark.unit
 def test_create_prediction_self(mock_db_session):
     """Test create_prediction allows user to predict themselves."""
+    from bot.app.models import ChatBank
+
     # Setup
     game_id = 1
     user_id = 1
@@ -606,36 +659,226 @@ def test_create_prediction_self(mock_db_session):
     year = 2024
     day = 167
 
-    # Mock sufficient balance
-    mock_balance_result = MagicMock()
-    mock_balance_result.first.return_value = 20
-
-    # Mock no existing prediction
-    mock_prediction_result = MagicMock()
-    mock_prediction_result.first.return_value = None
+    # Mock chat bank
+    mock_bank = ChatBank(game_id=game_id, balance=0)
 
     # Configure exec
-    call_count = 0
     def exec_side_effect(stmt):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:  # Balance check
-            return mock_balance_result
-        else:  # Prediction check
-            return mock_prediction_result
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'sum' in stmt_str or 'pidorcointransaction' in stmt_str:
+            # Balance check - return sufficient balance
+            mock_result.first.return_value = 20
+        elif 'prediction' in stmt_str:
+            # Prediction check - no existing prediction
+            mock_result.first.return_value = None
+        elif 'chatbank' in stmt_str:
+            # Bank check
+            mock_result.first.return_value = mock_bank
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
 
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
-    success, message = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
+    success, message, commission = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
 
     # Verify - self-prediction is now allowed
     assert success is True
     assert message == "success"
+    assert commission > 0  # Комиссия должна быть больше 0
 
     # Verify prediction was added
-    assert mock_db_session.add.call_count == 2  # Transaction + prediction
+    assert mock_db_session.add.call_count >= 2  # Transaction + bank + prediction
     mock_db_session.commit.assert_called()
+
+
+@pytest.mark.unit
+def test_process_purchase_success(mock_db_session):
+    """Test process_purchase successfully processes purchase with commission."""
+    # Setup
+    game_id = 1
+    user_id = 1
+    price = 10
+    year = 2024
+    reason = "test_purchase"
+
+    # Mock chat bank
+    mock_bank = ChatBank(game_id=game_id, balance=100)
+
+    # Configure exec
+    def exec_side_effect(stmt):
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'sum' in stmt_str or 'pidorcointransaction' in stmt_str:
+            # Balance check - return sufficient balance
+            mock_result.first.return_value = 20
+        elif 'chatbank' in stmt_str:
+            # Bank check
+            mock_result.first.return_value = mock_bank
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
+
+    mock_db_session.exec.side_effect = exec_side_effect
+
+    # Mock calculate_commission_amount to return predictable value
+    with patch('bot.handlers.game.shop_service.calculate_commission_amount', return_value=2):
+        # Execute
+        success, message, commission = process_purchase(
+            mock_db_session, game_id, user_id, price, year, reason
+        )
+
+    # Verify
+    assert success is True
+    assert message == "success"
+    assert commission == 2
+
+    # Verify transaction was created (spend_coins called)
+    assert mock_db_session.add.call_count >= 1
+
+    # Verify bank balance was updated
+    assert mock_bank.balance == 102  # 100 + 2 commission
+
+
+@pytest.mark.unit
+def test_process_purchase_insufficient_funds(mock_db_session):
+    """Test process_purchase fails when user doesn't have enough coins."""
+    # Setup
+    game_id = 1
+    user_id = 1
+    price = 10
+    year = 2024
+    reason = "test_purchase"
+
+    # Configure exec to return insufficient balance
+    def exec_side_effect(stmt):
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'sum' in stmt_str or 'pidorcointransaction' in stmt_str:
+            # Balance check - return insufficient balance
+            mock_result.first.return_value = 5  # Less than price
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
+
+    mock_db_session.exec.side_effect = exec_side_effect
+
+    # Execute
+    success, message, commission = process_purchase(
+        mock_db_session, game_id, user_id, price, year, reason
+    )
+
+    # Verify
+    assert success is False
+    assert message == "insufficient_funds"
+    assert commission == 0
+
+    # Verify no transaction was created
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.unit
+def test_process_purchase_commission_to_bank(mock_db_session):
+    """Test process_purchase adds commission to chat bank."""
+    # Setup
+    game_id = 1
+    user_id = 1
+    price = 10
+    year = 2024
+    reason = "test_purchase"
+
+    # Mock chat bank with initial balance
+    initial_balance = 50
+    mock_bank = ChatBank(game_id=game_id, balance=initial_balance)
+
+    # Configure exec
+    def exec_side_effect(stmt):
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'sum' in stmt_str or 'pidorcointransaction' in stmt_str:
+            # Balance check - return sufficient balance
+            mock_result.first.return_value = 20
+        elif 'chatbank' in stmt_str:
+            # Bank check
+            mock_result.first.return_value = mock_bank
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
+
+    mock_db_session.exec.side_effect = exec_side_effect
+
+    # Mock calculate_commission_amount to return 3 coins
+    with patch('bot.handlers.game.shop_service.calculate_commission_amount', return_value=3):
+        # Execute
+        success, message, commission = process_purchase(
+            mock_db_session, game_id, user_id, price, year, reason
+        )
+
+    # Verify
+    assert success is True
+    assert commission == 3
+
+    # Verify bank balance increased by commission
+    assert mock_bank.balance == initial_balance + 3  # 50 + 3 = 53
+
+    # Verify bank was added to session (for update)
+    added_objects = [call[0][0] for call in mock_db_session.add.call_args_list]
+    assert mock_bank in added_objects
+
+
+@pytest.mark.unit
+def test_process_purchase_minimum_commission(mock_db_session):
+    """Test process_purchase respects minimum commission of 1 coin."""
+    # Setup
+    game_id = 1
+    user_id = 1
+    price = 3  # Small price
+    year = 2024
+    reason = "test_purchase"
+
+    # Mock chat bank
+    mock_bank = ChatBank(game_id=game_id, balance=0)
+
+    # Configure exec
+    def exec_side_effect(stmt):
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'sum' in stmt_str or 'pidorcointransaction' in stmt_str:
+            # Balance check - return sufficient balance
+            mock_result.first.return_value = 10
+        elif 'chatbank' in stmt_str:
+            # Bank check
+            mock_result.first.return_value = mock_bank
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
+
+    mock_db_session.exec.side_effect = exec_side_effect
+
+    # Mock calculate_commission_amount to return minimum 1 coin
+    with patch('bot.handlers.game.shop_service.calculate_commission_amount', return_value=1):
+        # Execute
+        success, message, commission = process_purchase(
+            mock_db_session, game_id, user_id, price, year, reason
+        )
+
+    # Verify
+    assert success is True
+    assert commission >= 1  # Minimum commission is 1 coin
+    assert mock_bank.balance == 1  # Bank received minimum commission
+
 
 
 @pytest.mark.unit
@@ -647,15 +890,13 @@ def test_effects_isolated_by_game(mock_db_session):
 @pytest.mark.unit
 def test_buy_immunity_year_day_logic(mock_db_session):
     """Test buy_immunity correctly calculates year+day for tomorrow."""
+    from bot.app.models import ChatBank
+
     # Setup - last day of year
     game_id = 1
     user_id = 1
     year = 2024
     current_date = date(2024, 12, 31)  # Последний день года
-
-    # Mock sufficient balance
-    mock_balance_result = MagicMock()
-    mock_balance_result.first.return_value = 20
 
     # Mock no existing effect
     mock_effect = GamePlayerEffect(
@@ -664,26 +905,37 @@ def test_buy_immunity_year_day_logic(mock_db_session):
         immunity_year=None,
         immunity_day=None
     )
-    mock_effect_result = MagicMock()
-    mock_effect_result.first.return_value = mock_effect
+
+    # Mock chat bank
+    mock_bank = ChatBank(game_id=game_id, balance=0)
 
     # Configure exec
-    call_count = 0
     def exec_side_effect(stmt):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:  # Balance check
-            return mock_balance_result
-        else:  # Effect check
-            return mock_effect_result
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'sum' in stmt_str or 'pidorcointransaction' in stmt_str:
+            # Balance check - return sufficient balance
+            mock_result.first.return_value = 20
+        elif 'gameplayereffect' in stmt_str:
+            # Effect check
+            mock_result.first.return_value = mock_effect
+        elif 'chatbank' in stmt_str:
+            # Bank check
+            mock_result.first.return_value = mock_bank
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
 
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
-    success, message = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+    success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
 
     # Verify
     assert success is True
+    assert commission > 0  # Комиссия должна быть больше 0
     # Проверяем, что защита установлена на 1 января следующего года
     assert mock_effect.immunity_year == 2025
     assert mock_effect.immunity_day == 1
@@ -701,10 +953,6 @@ def test_buy_double_chance_already_bought_today(mock_db_session):
     year = 2024
     current_date = date(2024, 6, 15)
 
-    # Mock sufficient balance
-    mock_balance_result = MagicMock()
-    mock_balance_result.first.return_value = 10
-
     # Mock existing purchase for tomorrow
     existing_purchase = DoubleChancePurchase(
         game_id=game_id,
@@ -714,33 +962,35 @@ def test_buy_double_chance_already_bought_today(mock_db_session):
         day=167,  # Tomorrow (June 16)
         is_used=False
     )
-    mock_purchase_result = MagicMock()
-    mock_purchase_result.first.return_value = existing_purchase
 
     # Configure exec
-    call_count = 0
     def exec_side_effect(stmt):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:  # Balance check
-            return mock_balance_result
-        else:  # Purchase check
-            return mock_purchase_result
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'doublechancepurchase' in stmt_str:
+            # Purchase check - existing purchase
+            mock_result.first.return_value = existing_purchase
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
 
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute
-    success, message = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
+    success, message, commission = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
 
     # Verify
     assert success is False
     assert message == "already_bought_today"
+    assert commission == 0  # При ошибке комиссия 0
 
 
 @pytest.mark.unit
 def test_buy_double_chance_multiple_buyers_same_target(mock_db_session):
     """Test multiple buyers can buy double chance for same target."""
-    from bot.app.models import DoubleChancePurchase
+    from bot.app.models import DoubleChancePurchase, ChatBank
 
     # Setup
     game_id = 1
@@ -750,32 +1000,37 @@ def test_buy_double_chance_multiple_buyers_same_target(mock_db_session):
     year = 2024
     current_date = date(2024, 6, 15)
 
-    # Mock sufficient balance
-    mock_balance_result = MagicMock()
-    mock_balance_result.first.return_value = 10
-
-    # Mock no existing purchase for buyer2
-    mock_purchase_result = MagicMock()
-    mock_purchase_result.first.return_value = None
+    # Mock chat bank
+    mock_bank = ChatBank(game_id=game_id, balance=0)
 
     # Configure exec
-    call_count = 0
     def exec_side_effect(stmt):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:  # Balance check
-            return mock_balance_result
-        else:  # Purchase check
-            return mock_purchase_result
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+
+        if 'sum' in stmt_str or 'pidorcointransaction' in stmt_str:
+            # Balance check - return sufficient balance
+            mock_result.first.return_value = 10
+        elif 'doublechancepurchase' in stmt_str:
+            # Purchase check - no existing purchase for buyer2
+            mock_result.first.return_value = None
+        elif 'chatbank' in stmt_str:
+            # Bank check
+            mock_result.first.return_value = mock_bank
+        else:
+            mock_result.first.return_value = None
+
+        return mock_result
 
     mock_db_session.exec.side_effect = exec_side_effect
 
     # Execute - buyer2 buys for same target
-    success, message = buy_double_chance(mock_db_session, game_id, buyer2_id, target_user_id, year, current_date)
+    success, message, commission = buy_double_chance(mock_db_session, game_id, buyer2_id, target_user_id, year, current_date)
 
     # Verify
     assert success is True
     assert message == "success"
+    assert commission > 0  # Комиссия должна быть больше 0
 
 
 @pytest.mark.unit

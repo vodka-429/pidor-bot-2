@@ -8,28 +8,26 @@ from sqlmodel import select
 from bot.app.models import CoinTransfer, ChatBank
 from bot.handlers.game.coin_service import add_coins
 from bot.handlers.game.shop_service import spend_coins
+from bot.handlers.game.cbr_service import calculate_commission_amount
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
 
 # Константы передачи койнов
-TRANSFER_COMMISSION_PERCENT = 10
-TRANSFER_MIN_COMMISSION = 1
 TRANSFER_MIN_AMOUNT = 2
 
 
 def calculate_commission(amount: int) -> int:
     """
-    Рассчитать комиссию за перевод.
+    Рассчитать комиссию за перевод по ключевой ставке ЦБ РФ.
 
     Args:
         amount: Сумма перевода
 
     Returns:
-        Размер комиссии (минимум TRANSFER_MIN_COMMISSION)
+        Размер комиссии (минимум 1 койн, определяется в cbr_service)
     """
-    commission = amount * TRANSFER_COMMISSION_PERCENT // 100
-    return max(commission, TRANSFER_MIN_COMMISSION)
+    return calculate_commission_amount(amount)
 
 
 def has_transferred_today(db_session, game_id: int, sender_id: int, year: int, day: int) -> bool:

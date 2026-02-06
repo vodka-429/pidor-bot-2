@@ -338,6 +338,10 @@ def format_shop_menu_message(balance: int, user_name: str = None, active_effects
     """
     from bot.utils import escape_markdown2, format_number
     from bot.handlers.game.shop_service import get_shop_items
+    from bot.handlers.game.cbr_service import calculate_commission_percent
+
+    # Получаем текущую ключевую ставку для отображения
+    commission_rate = calculate_commission_percent()
 
     # Формируем заголовок с балансом и именем пользователя
     balance_str = format_number(balance)
@@ -347,6 +351,9 @@ def format_shop_menu_message(balance: int, user_name: str = None, active_effects
         header = f"🏪 *Магазин пидор\\-койнов*\n👤 Владелец: *{user_name_escaped}*\n\n💰 Баланс: *{balance_str}* 🪙\n\n"
     else:
         header = f"🏪 *Магазин пидор\\-койнов*\n\n💰 Ваш баланс: *{balance_str}* 🪙\n\n"
+
+    # Добавляем информацию о комиссии
+    commission_info = f"ℹ️ _Комиссия на покупки: {escape_markdown2(str(commission_rate))}% \\(ключевая ставка ЦБ РФ\\)_\n_Комиссия идёт в банк чата \\(минимум 1 🪙\\)_\n\n"
 
     # Формируем список товаров с информацией об активности
     items = get_shop_items()

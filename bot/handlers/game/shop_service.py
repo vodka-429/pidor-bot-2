@@ -7,6 +7,7 @@ from sqlmodel import select
 
 from bot.app.models import GamePlayerEffect, Prediction, PidorCoinTransaction
 from bot.utils import to_date
+from bot.handlers.game.cbr_service import calculate_commission_amount
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
@@ -145,6 +146,61 @@ def can_afford(db_session, game_id: int, user_id: int, price: int) -> bool:
     return balance >= price
 
 
+def process_purchase(db_session, game_id: int, user_id: int, price: int, year: int, reason: str) -> tuple[bool, str, int]:
+    """
+    Универсальная функция для обработки покупки с комиссией.
+
+    Проверяет баланс, списывает полную цену, рассчитывает и добавляет комиссию в банк чата.
+
+    Args:
+        db_session: Сессия базы данных
+        game_id: ID игры (чата)
+        user_id: ID пользователя
+        price: Цена покупки
+        year: Год транзакции
+        reason: Причина покупки (для транзакции)
+
+    Returns:
+        Кортеж (success, error_message, commission_amount):
+        - success: True если покупка успешна, False иначе
+        - error_message: "success" при успехе или код ошибки при неудаче
+        - commission_amount: Размер комиссии в койнах (0 при ошибке)
+    """
+    # Локальный импорт для избежания циклической зависимости
+    from bot.handlers.game.transfer_service import get_or_create_chat_bank
+
+    # Проверяем баланс
+    if not can_afford(db_session, game_id, user_id, price):
+        logger.debug(f"User {user_id} cannot afford price {price} in game {game_id}")
+        return False, "insufficient_funds", 0
+
+    # Рассчитываем комиссию
+    commission = calculate_commission_amount(price)
+
+    logger.info(
+        f"Processing purchase: user={user_id}, game={game_id}, "
+        f"price={price}, commission={commission}, reason={reason}"
+    )
+
+    # Списываем полную цену с пользователя
+    spend_coins(db_session, game_id, user_id, price, year, reason, auto_commit=False)
+
+    # Добавляем комиссию в банк чата
+    bank = get_or_create_chat_bank(db_session, game_id)
+    bank.balance += commission
+    bank.updated_at = datetime.utcnow()
+    db_session.add(bank)
+
+    # НЕ делаем коммит здесь - вызывающая функция должна добавить свои данные
+    # (эффекты, покупки, предсказания) и сделать коммит сама для атомарности
+    logger.info(
+        f"Purchase processed successfully: {price} coins spent, "
+        f"{commission} coins to bank (pending commit), user {user_id}, game {game_id}"
+    )
+
+    return True, "success", commission
+
+
 def get_shop_items() -> List[Dict[str, any]]:
     """
     Получить список доступных товаров в магазине.
@@ -190,12 +246,13 @@ def get_shop_items() -> List[Dict[str, any]]:
     ]
 
 
-def buy_immunity(db_session, game_id: int, user_id: int, year: int, current_date: date) -> tuple[bool, str]:
-    """Купить защиту от пидора. Защита действует на СЛЕДУЮЩИЙ день."""
-    # Проверяем баланс
-    if not can_afford(db_session, game_id, user_id, IMMUNITY_PRICE):
-        return False, "insufficient_funds"
+def buy_immunity(db_session, game_id: int, user_id: int, year: int, current_date: date) -> tuple[bool, str, int]:
+    """
+    Купить защиту от пидора. Защита действует на СЛЕДУЮЩИЙ день.
 
+    Returns:
+        Кортеж (success, message, commission_amount)
+    """
     effect = get_or_create_player_effects(db_session, game_id, user_id)
 
     # Вычисляем завтрашний день (день действия защиты)
@@ -204,7 +261,7 @@ def buy_immunity(db_session, game_id: int, user_id: int, year: int, current_date
     # Проверяем, не активна ли уже защита на завтра
     if effect.immunity_year == target_year and effect.immunity_day == target_day:
         logger.debug(f"Immunity already active for {target_year}-{target_day}")
-        return False, f"already_active:{target_year}:{target_day}"
+        return False, f"already_active:{target_year}:{target_day}", 0
 
     # Проверяем кулдаун (7 дней с последнего использования)
     if effect.immunity_last_used:
@@ -212,10 +269,15 @@ def buy_immunity(db_session, game_id: int, user_id: int, year: int, current_date
         last_used_date = effect.immunity_last_used.date() if isinstance(effect.immunity_last_used, datetime) else effect.immunity_last_used
         cooldown_end = last_used_date + timedelta(days=IMMUNITY_COOLDOWN_DAYS)
         if current_date < cooldown_end:
-            return False, f"cooldown:{cooldown_end.isoformat()}"
+            return False, f"cooldown:{cooldown_end.isoformat()}", 0
 
-    # Списываем койны
-    spend_coins(db_session, game_id, user_id, IMMUNITY_PRICE, year, "shop_immunity", auto_commit=False)
+    # Обрабатываем покупку с комиссией
+    success, message, commission = process_purchase(
+        db_session, game_id, user_id, IMMUNITY_PRICE, year, "shop_immunity"
+    )
+
+    if not success:
+        return False, message, 0
 
     # Устанавливаем защиту на завтра
     effect.immunity_year = target_year
@@ -224,23 +286,22 @@ def buy_immunity(db_session, game_id: int, user_id: int, year: int, current_date
 
     db_session.commit()
 
-    logger.info(f"User {user_id} bought immunity in game {game_id} for {target_year}-{target_day}")
-    return True, "success"
+    logger.info(f"User {user_id} bought immunity in game {game_id} for {target_year}-{target_day}, commission: {commission}")
+    return True, "success", commission
 
 
-def buy_double_chance(db_session, game_id: int, user_id: int, target_user_id: int, year: int, current_date: date) -> tuple[bool, str]:
+def buy_double_chance(db_session, game_id: int, user_id: int, target_user_id: int, year: int, current_date: date) -> tuple[bool, str, int]:
     """
     Купить двойной шанс стать пидором для указанного игрока.
 
     Двойной шанс действует на СЛЕДУЮЩИЙ день после покупки.
     Один покупатель может купить только один двойной шанс в день.
     Несколько игроков могут купить двойной шанс одному игроку.
+
+    Returns:
+        Кортеж (success, message, commission_amount)
     """
     from bot.app.models import DoubleChancePurchase
-
-    # Проверяем баланс
-    if not can_afford(db_session, game_id, user_id, DOUBLE_CHANCE_PRICE):
-        return False, "insufficient_funds"
 
     # Вычисляем завтрашний день (день действия)
     target_year, target_day = calculate_next_day(current_date, year)
@@ -255,11 +316,16 @@ def buy_double_chance(db_session, game_id: int, user_id: int, target_user_id: in
     existing_purchase = db_session.exec(stmt).first()
 
     if existing_purchase:
-        return False, "already_bought_today"
+        return False, "already_bought_today", 0
 
-    # Списываем койны
-    spend_coins(db_session, game_id, user_id, DOUBLE_CHANCE_PRICE, year,
-               f"shop_double_chance_for_{target_user_id}", auto_commit=False)
+    # Обрабатываем покупку с комиссией
+    success, message, commission = process_purchase(
+        db_session, game_id, user_id, DOUBLE_CHANCE_PRICE, year,
+        f"shop_double_chance_for_{target_user_id}"
+    )
+
+    if not success:
+        return False, message, 0
 
     # Создаём запись о покупке
     purchase = DoubleChancePurchase(
@@ -273,11 +339,11 @@ def buy_double_chance(db_session, game_id: int, user_id: int, target_user_id: in
     db_session.add(purchase)
     db_session.commit()
 
-    logger.info(f"User {user_id} bought double chance for user {target_user_id} in game {game_id} for {target_year}-{target_day}")
-    return True, "success"
+    logger.info(f"User {user_id} bought double chance for user {target_user_id} in game {game_id} for {target_year}-{target_day}, commission: {commission}")
+    return True, "success", commission
 
 
-def create_prediction(db_session, game_id: int, user_id: int, predicted_user_ids: List[int], year: int, day: int) -> tuple[bool, str]:
+def create_prediction(db_session, game_id: int, user_id: int, predicted_user_ids: List[int], year: int, day: int) -> tuple[bool, str, int]:
     """
     Создать предсказание пидора дня с несколькими кандидатами.
 
@@ -290,13 +356,9 @@ def create_prediction(db_session, game_id: int, user_id: int, predicted_user_ids
         day: День предсказания
 
     Returns:
-        Кортеж (успех, сообщение об ошибке или успехе)
+        Кортеж (success, message, commission_amount)
     """
     import json
-
-    # Проверяем баланс
-    if not can_afford(db_session, game_id, user_id, PREDICTION_PRICE):
-        return False, "insufficient_funds"
 
     # Проверяем, нет ли уже предсказания на этот день
     stmt = select(Prediction).where(
@@ -308,10 +370,15 @@ def create_prediction(db_session, game_id: int, user_id: int, predicted_user_ids
     existing_prediction = db_session.exec(stmt).first()
 
     if existing_prediction:
-        return False, "already_exists"
+        return False, "already_exists", 0
 
-    # Списываем койны
-    spend_coins(db_session, game_id, user_id, PREDICTION_PRICE, year, "shop_prediction", auto_commit=False)
+    # Обрабатываем покупку с комиссией
+    success, message, commission = process_purchase(
+        db_session, game_id, user_id, PREDICTION_PRICE, year, "shop_prediction"
+    )
+
+    if not success:
+        return False, message, 0
 
     # Создаем предсказание с JSON-списком кандидатов
     prediction = Prediction(
@@ -326,9 +393,9 @@ def create_prediction(db_session, game_id: int, user_id: int, predicted_user_ids
     db_session.add(prediction)
     db_session.commit()
 
-    logger.info(f"User {user_id} created prediction for users {predicted_user_ids} in game {game_id} for day {year}-{day}")
+    logger.info(f"User {user_id} created prediction for users {predicted_user_ids} in game {game_id} for day {year}-{day}, commission: {commission}")
 
-    return True, "success"
+    return True, "success", commission
 
 
 def get_active_effects(db_session, game_id: int, user_id: int, current_date: date) -> dict:

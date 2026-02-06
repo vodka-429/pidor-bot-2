@@ -453,8 +453,12 @@ async def pidorules_cmd(update: Update, _context: CallbackContext):
         "запустивший команду - 1 койн. Если ты сам стал пидором дня - получаешь 8 койнов! "
         "Потратить койны можно в магазине: /pidorshop\n"
         "• <b>Защита от пидора</b> (10 койнов) - защита на следующий день, если тебя выберут - перевыбор. Кулдаун 7 дней.\n"
-        "• <b>Двойной шанс</b> (5 койнов) - удваивает шанс стать пидором дня на следующий розыгрыш. Можно купить для любого игрока!\n"
-        "• <b>Предсказание</b> (15 койнов) - угадай пидора дня и получи 30 койнов!\n"
+        "• <b>Двойной шанс</b> (8 койнов) - удваивает шанс стать пидором дня на следующий розыгрыш. Можно купить для любого игрока!\n"
+        "• <b>Предсказание</b> (3 койна) - угадай пидора дня и получи 30 койнов!\n"
+        "• <b>Перевод койнов</b> - передай койны другому игроку (комиссия по ключевой ставке ЦБ РФ).\n"
+        "• <b>Банк чата</b> - общий банк, куда идут комиссии с покупок и переводов.\n\n"
+        "<b>Комиссия:</b> При каждой покупке в магазине и переводе койнов часть денег (по ключевой ставке ЦБ РФ) идёт в банк чата. "
+        "Минимальная комиссия - 1 койн.\n"
         "Баланс койнов: /pidorcoinsme, топ по койнам: /pidorcoinsstats\n\n"
         "<b>Финальное голосование:</b> В конце года (29-30 декабря) можно запустить взвешенное голосование "
         "для распределения пропущенных дней. Финальное голосование с кастомными кнопками (поддерживает любое количество участников). "
@@ -1295,7 +1299,7 @@ async def handle_shop_immunity_callback(update: Update, context: GECallbackConte
     cur_year = current_dt.year
 
     # Вызываем функцию покупки защиты
-    success, message = buy_immunity(
+    success, message, commission = buy_immunity(
         context.db_session,
         context.game.id,
         context.tg_user.id,
@@ -1313,7 +1317,11 @@ async def handle_shop_immunity_callback(update: Update, context: GECallbackConte
         effect = get_or_create_player_effects(context.db_session, context.game.id, context.tg_user.id)
         date_str = escape_markdown2(format_date_readable(effect.immunity_year, effect.immunity_day))
 
-        response_text = IMMUNITY_PURCHASE_SUCCESS.format(date=date_str, balance=format_number(balance))
+        response_text = IMMUNITY_PURCHASE_SUCCESS.format(
+            date=date_str,
+            balance=format_number(balance),
+            commission=format_number(commission)
+        )
         await query.answer("✅ Защита куплена!", show_alert=True)
         logger.info(f"User {context.tg_user.id} bought immunity in game {context.game.id}")
     else:
@@ -1677,7 +1685,7 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
     target_year, target_day = calculate_next_day(current_date, cur_year)
 
     # Вызываем функцию создания предсказания со списком кандидатов
-    success, message = create_prediction(
+    success, message, commission = create_prediction(
         context.db_session,
         context.game.id,
         context.tg_user.id,
@@ -1710,6 +1718,8 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
             f"Ваши кандидаты на {date_str}:\n"
             + '\n'.join(f"• {name}" for name in candidate_names) +
             f"\n\nЕсли любой из них станет пидором — вы получите *\\+30* 💰\\!\n\n"
+            f"Списано: 3 койна\n"
+            f"Комиссия в банк: {format_number(commission)} 🪙\n"
             f"💰 Ваш баланс: *{format_number(balance)}* 🪙"
         )
 
@@ -1814,7 +1824,7 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
     cur_year = current_dt.year
 
     # Вызываем функцию покупки двойного шанса с target_user_id
-    success, message = buy_double_chance(
+    success, message, commission = buy_double_chance(
         context.db_session,
         context.game.id,
         context.tg_user.id,
@@ -1837,7 +1847,8 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
         if target_user_id == context.tg_user.id:
             response_text = DOUBLE_CHANCE_PURCHASE_SUCCESS_SELF.format(
                 date=date_str,
-                balance=format_number(balance)
+                balance=format_number(balance),
+                commission=format_number(commission)
             )
             await query.answer("✅ Двойной шанс куплен!", show_alert=True)
         else:
@@ -1849,7 +1860,8 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
                 buyer_username=buyer_username,
                 target_username=target_username,
                 date=date_str,
-                balance=format_number(balance)
+                balance=format_number(balance),
+                commission=format_number(commission)
             )
             await query.answer("✅ Двойной шанс подарен!", show_alert=True)
 
