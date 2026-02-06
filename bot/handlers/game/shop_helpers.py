@@ -386,4 +386,4 @@ def format_shop_menu_message(balance: int, user_name: str = None, active_effects
     # Формируем полное сообщение
     footer = "\n\n_Выберите товар для покупки:_"
 
-    return header + items_text + footer
+    return header + commission_info + items_text + footer
