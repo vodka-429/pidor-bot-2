@@ -22,27 +22,27 @@ class TestFetchKeyRateFromAPI:
     def test_fetch_success_comma_format(self):
         """Успешное получение ставки (формат с запятой: 21,00)."""
         mock_response = MagicMock()
-        mock_response.text = '<html><body>Ключевая ставка составляет 21,00%</body></html>'
+        mock_response.text = '<html><body><table><tr><td>21,00</td></tr></table></body></html>'
         mock_response.raise_for_status = MagicMock()
 
         with patch('requests.get', return_value=mock_response):
             rate = _fetch_key_rate_from_api()
             assert rate == 21.0
 
-    def test_fetch_success_dot_format(self):
-        """Успешное получение ставки (формат с точкой: 21.00)."""
+    def test_fetch_success_single_digit(self):
+        """Успешное получение ставки (однозначное число: 9,50)."""
         mock_response = MagicMock()
-        mock_response.text = '<html><body>Ключевая ставка составляет 21.00%</body></html>'
+        mock_response.text = '<html><body><table><tr><td>9,50</td></tr></table></body></html>'
         mock_response.raise_for_status = MagicMock()
 
         with patch('requests.get', return_value=mock_response):
             rate = _fetch_key_rate_from_api()
-            assert rate == 21.0
+            assert rate == 9.5
 
-    def test_fetch_success_with_html_tags(self):
-        """Успешное получение ставки с HTML тегами между текстом."""
+    def test_fetch_success_with_other_content(self):
+        """Успешное получение ставки с другим контентом на странице."""
         mock_response = MagicMock()
-        mock_response.text = '<html><body><div>Ключевая ставка</div><span>16,00</span></body></html>'
+        mock_response.text = '<html><body><h1>История ключевой ставки</h1><table><tr><td>16,00</td><td>01.01.2024</td></tr></table></body></html>'
         mock_response.raise_for_status = MagicMock()
 
         with patch('requests.get', return_value=mock_response):
