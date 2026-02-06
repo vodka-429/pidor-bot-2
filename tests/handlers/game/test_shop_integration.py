@@ -1650,3 +1650,155 @@ async def test_prediction_self_prediction_allowed(mock_update, mock_context, moc
 
     # Verify prediction was created - проверяем через commit
     assert mock_context.db_session.commit.called, "Self-prediction should be created successfully"
+
+
+@pytest.mark.unit
+def test_immunity_purchase_adds_commission_to_bank(mock_db_session, mock_game, sample_players, mocker):
+    """Test that immunity purchase adds commission to chat bank."""
+    from bot.app.models import ChatBank, GamePlayerEffect
+    from bot.handlers.game.shop_service import buy_immunity, IMMUNITY_PRICE, process_purchase
+    from bot.handlers.game.cbr_service import calculate_commission_amount
+    from datetime import date
+
+    # Setup
+    game_id = mock_game.id
+    user_id = sample_players[0].id
+    year = 2024
+    current_date = date(2024, 6, 15)
+
+    # Mock bank
+    mock_bank = ChatBank(game_id=game_id, balance=0)
+
+    # Mock player effects (no immunity yet)
+    mock_effect = GamePlayerEffect(game_id=game_id, user_id=user_id)
+
+    # Mock get_or_create_player_effects
+    mocker.patch('bot.handlers.game.shop_service.get_or_create_player_effects', return_value=mock_effect)
+
+    # Mock get_or_create_chat_bank to return our mock bank
+    mocker.patch('bot.handlers.game.transfer_service.get_or_create_chat_bank', return_value=mock_bank)
+
+    # Mock can_afford to return True
+    mocker.patch('bot.handlers.game.shop_service.can_afford', return_value=True)
+
+    # Mock spend_coins
+    mocker.patch('bot.handlers.game.shop_service.spend_coins')
+
+    # Calculate expected commission
+    expected_commission = calculate_commission_amount(IMMUNITY_PRICE)
+    initial_balance = mock_bank.balance
+
+    # Buy immunity
+    success, message, commission = buy_immunity(
+        mock_db_session, game_id, user_id, year, current_date
+    )
+
+    # Verify purchase was successful
+    assert success is True, f"Immunity purchase should succeed, got: {message}"
+    assert message == "success"
+    assert commission == expected_commission, f"Commission should be {expected_commission}"
+
+    # Verify bank balance increased by commission
+    assert mock_bank.balance == initial_balance + commission, \
+        f"Bank balance should increase by {commission} (from {initial_balance} to {initial_balance + commission})"
+
+
+@pytest.mark.unit
+def test_double_chance_purchase_adds_commission_to_bank(mock_db_session, mock_game, sample_players, mocker):
+    """Test that double chance purchase adds commission to chat bank."""
+    from bot.app.models import ChatBank
+    from bot.handlers.game.shop_service import buy_double_chance, DOUBLE_CHANCE_PRICE
+    from bot.handlers.game.cbr_service import calculate_commission_amount
+    from datetime import date
+
+    # Setup
+    game_id = mock_game.id
+    buyer_id = sample_players[0].id
+    target_id = sample_players[1].id
+    year = 2024
+    current_date = date(2024, 6, 15)
+
+    # Mock bank
+    mock_bank = ChatBank(game_id=game_id, balance=0)
+
+    # Mock exec to return no existing purchase
+    mock_result = MagicMock()
+    mock_result.first.return_value = None
+    mock_db_session.exec.return_value = mock_result
+
+    # Mock get_or_create_chat_bank
+    mocker.patch('bot.handlers.game.transfer_service.get_or_create_chat_bank', return_value=mock_bank)
+
+    # Mock can_afford
+    mocker.patch('bot.handlers.game.shop_service.can_afford', return_value=True)
+
+    # Mock spend_coins
+    mocker.patch('bot.handlers.game.shop_service.spend_coins')
+
+    # Calculate expected commission
+    expected_commission = calculate_commission_amount(DOUBLE_CHANCE_PRICE)
+    initial_balance = mock_bank.balance
+
+    # Buy double chance
+    success, message, commission = buy_double_chance(
+        mock_db_session, game_id, buyer_id, target_id, year, current_date
+    )
+
+    # Verify purchase was successful
+    assert success is True, f"Double chance purchase should succeed, got: {message}"
+    assert message == "success"
+    assert commission == expected_commission, f"Commission should be {expected_commission}"
+
+    # Verify bank balance increased by commission
+    assert mock_bank.balance == initial_balance + commission, \
+        f"Bank balance should increase by {commission} (from {initial_balance} to {initial_balance + commission})"
+
+
+@pytest.mark.unit
+def test_prediction_purchase_adds_commission_to_bank(mock_db_session, mock_game, sample_players, mocker):
+    """Test that prediction purchase adds commission to chat bank."""
+    from bot.app.models import ChatBank
+    from bot.handlers.game.shop_service import create_prediction, PREDICTION_PRICE
+    from bot.handlers.game.cbr_service import calculate_commission_amount
+
+    # Setup
+    game_id = mock_game.id
+    user_id = sample_players[0].id
+    predicted_user_ids = [sample_players[1].id]
+    year = 2024
+    day = 167  # June 15
+
+    # Mock bank
+    mock_bank = ChatBank(game_id=game_id, balance=0)
+
+    # Mock exec to return no existing prediction
+    mock_result = MagicMock()
+    mock_result.first.return_value = None
+    mock_db_session.exec.return_value = mock_result
+
+    # Mock get_or_create_chat_bank
+    mocker.patch('bot.handlers.game.transfer_service.get_or_create_chat_bank', return_value=mock_bank)
+
+    # Mock can_afford
+    mocker.patch('bot.handlers.game.shop_service.can_afford', return_value=True)
+
+    # Mock spend_coins
+    mocker.patch('bot.handlers.game.shop_service.spend_coins')
+
+    # Calculate expected commission
+    expected_commission = calculate_commission_amount(PREDICTION_PRICE)
+    initial_balance = mock_bank.balance
+
+    # Create prediction
+    success, message, commission = create_prediction(
+        mock_db_session, game_id, user_id, predicted_user_ids, year, day
+    )
+
+    # Verify purchase was successful
+    assert success is True, f"Prediction purchase should succeed, got: {message}"
+    assert message == "success"
+    assert commission == expected_commission, f"Commission should be {expected_commission}"
+
+    # Verify bank balance increased by commission
+    assert mock_bank.balance == initial_balance + commission, \
+        f"Bank balance should increase by {commission} (from {initial_balance} to {initial_balance + commission})"

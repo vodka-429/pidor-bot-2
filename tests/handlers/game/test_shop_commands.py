@@ -279,8 +279,8 @@ async def test_handle_shop_double_confirm_callback_success(mock_update, mock_cal
 
     # Mock get_balance to return sufficient funds
     with patch('bot.handlers.game.coin_service.get_balance', return_value=50):
-        # Mock shop_service.buy_double_chance to return success
-        with patch('bot.handlers.game.shop_service.buy_double_chance', return_value=(True, "success")):
+        # Mock shop_service.buy_double_chance to return success with commission
+        with patch('bot.handlers.game.shop_service.buy_double_chance', return_value=(True, "success", 1)):
             # Mock query for target user
             mock_db_session.query.return_value.filter_by.return_value.one.return_value = sample_players[0]
 
@@ -307,8 +307,8 @@ async def test_handle_shop_double_confirm_callback_for_other(mock_update, mock_c
 
     # Mock get_balance to return sufficient funds
     with patch('bot.handlers.game.coin_service.get_balance', return_value=50):
-        # Mock shop_service.buy_double_chance to return success
-        with patch('bot.handlers.game.shop_service.buy_double_chance', return_value=(True, "success")):
+        # Mock shop_service.buy_double_chance to return success with commission
+        with patch('bot.handlers.game.shop_service.buy_double_chance', return_value=(True, "success", 1)):
             # Mock query for target user
             mock_db_session.query.return_value.filter_by.return_value.one.return_value = sample_players[1]
 
@@ -393,8 +393,8 @@ async def test_handle_shop_predict_confirm_callback_success(mock_update, mock_ca
             )
             mock_get_draft.return_value = mock_draft
 
-            # Mock shop_service.create_prediction to return success
-            with patch('bot.handlers.game.shop_service.create_prediction', return_value=(True, "success")):
+            # Mock shop_service.create_prediction to return success with commission
+            with patch('bot.handlers.game.shop_service.create_prediction', return_value=(True, "success", 1)):
                 # Mock delete_prediction_draft
                 with patch('bot.handlers.game.prediction_service.delete_prediction_draft'):
                     with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
@@ -429,8 +429,8 @@ async def test_handle_shop_predict_confirm_callback_already_exists(mock_update, 
             )
             mock_get_draft.return_value = mock_draft
 
-            # Mock shop_service.create_prediction to return error
-            with patch('bot.handlers.game.shop_service.create_prediction', return_value=(False, "already_exists")):
+            # Mock shop_service.create_prediction to return error with 0 commission
+            with patch('bot.handlers.game.shop_service.create_prediction', return_value=(False, "already_exists", 0)):
                 with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
                     mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
 
@@ -463,8 +463,8 @@ async def test_handle_shop_predict_confirm_callback_self(mock_update, mock_callb
             )
             mock_get_draft.return_value = mock_draft
 
-            # Mock shop_service.create_prediction to return success (self-prediction now allowed)
-            with patch('bot.handlers.game.shop_service.create_prediction', return_value=(True, "success")):
+            # Mock shop_service.create_prediction to return success with commission (self-prediction now allowed)
+            with patch('bot.handlers.game.shop_service.create_prediction', return_value=(True, "success", 1)):
                 # Mock delete_prediction_draft
                 with patch('bot.handlers.game.prediction_service.delete_prediction_draft'):
                     with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
@@ -499,8 +499,8 @@ async def test_handle_shop_predict_confirm_callback_insufficient_funds(mock_upda
             )
             mock_get_draft.return_value = mock_draft
 
-            # Mock shop_service.create_prediction to return error
-            with patch('bot.handlers.game.shop_service.create_prediction', return_value=(False, "insufficient_funds")):
+            # Mock shop_service.create_prediction to return error with 0 commission
+            with patch('bot.handlers.game.shop_service.create_prediction', return_value=(False, "insufficient_funds", 0)):
                 with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
                     mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
 

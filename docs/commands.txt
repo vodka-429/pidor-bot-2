@@ -19,6 +19,6 @@ pidorfinalstatus - show final voting status
 pidorfinalclose - close final voting (admins only)
 pidorcoinsme - show your pidorcoin balance
 pidorcoinsstats - pidorcoin leaderboard for current year
-pidorshop - open pidorcoin shop (buy immunity, double chance, predictions, transfer coins, view bank)
+pidorshop - open pidorcoin shop (buy immunity, double chance, predictions, transfer coins, view bank). All purchases include commission to chat bank based on CBR key rate
 credits - report issue to github repo
 meme - get some random meme
