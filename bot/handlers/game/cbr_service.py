@@ -9,7 +9,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 # Константы для работы с ключевой ставкой ЦБ РФ
-CBR_MAIN_PAGE_URL = "https://cbr.ru"
+CBR_KEY_RATE_URL = "https://www.cbr.ru/hd_base/KeyRate/"
 FALLBACK_COMMISSION_PERCENT = 10.0
 CACHE_DURATION_HOURS = 1
 MIN_COMMISSION = 1
@@ -35,36 +35,38 @@ def _is_cache_valid() -> bool:
 
 def _fetch_key_rate_from_api() -> Optional[float]:
     """
-    Получить ключевую ставку с главной страницы сайта ЦБ РФ.
+    Получить ключевую ставку со страницы истории ставок ЦБ РФ.
 
-    Парсит HTML главной страницы cbr.ru и извлекает значение ключевой ставки
-    из текста "Ключевая ставка".
+    Парсит HTML страницы hd_base/KeyRate/ и извлекает значение ключевой ставки
+    из первой строки таблицы (актуальная ставка всегда первая).
 
     Returns:
         Ключевая ставка в процентах или None при ошибке
     """
     try:
-        logger.info(f"Fetching key rate from CBR main page: {CBR_MAIN_PAGE_URL}")
+        logger.info(f"Fetching key rate from CBR key rate page: {CBR_KEY_RATE_URL}")
 
+        # Обязательно притворяемся браузером (иначе ЦБ может разорвать соединение)
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
 
-        response = requests.get(CBR_MAIN_PAGE_URL, headers=headers, timeout=5.0)
+        response = requests.get(CBR_KEY_RATE_URL, headers=headers, timeout=10.0)
         response.raise_for_status()
 
-        # Ищем текст "Ключевая ставка" и берем ближайшие цифры после него
-        # Формат: "Ключевая ставка ... 16,00" или "Ключевая ставка ... 16.00"
-        match = re.search(r'Ключевая ставка.*?(\d+[,\.]\d{2})', response.text, re.DOTALL)
+        # Как выглядит ячейка со ставкой в HTML: <td>16,00</td>
+        # Находим первое попавшееся число формата XX,XX внутри тега td
+        # (На странице hd_base первое число в таблице — это всегда актуальная ставка)
+        match = re.search(r'<td>(\d{1,2},\d{2})</td>', response.text)
 
         if match:
-            # Меняем запятую на точку для float: "16,00" -> "16.00"
+            # Заменяем русскую запятую на точку и превращаем в число
             rate_str = match.group(1).replace(',', '.')
             rate = float(rate_str)
-            logger.info(f"Successfully fetched key rate from CBR main page: {rate}%")
+            logger.info(f"Successfully fetched key rate from CBR key rate page: {rate}%")
             return rate
         else:
-            logger.warning("Could not find key rate on CBR main page")
+            logger.warning("Could not find key rate on CBR key rate page")
             return None
 
     except requests.RequestException as e:
