@@ -1,3 +1,9 @@
+"""Статические текстовые сообщения для игры."""
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from bot.handlers.game.config import ChatConfig
+
 REGISTRATION_SUCCESS = """*OK\!* Ты теперь участвуешь в игре "*Пидор Дня*"\!"""
 REGISTRATION_MANY_SUCCESS = """*OK\!* {username} теперь участвует в игре "*Пидор Дня*"\!"""
 ERROR_ALREADY_REGISTERED = """Эй\, ты уже в игре\!"""
@@ -330,3 +336,327 @@ BANK_INFO = """🏦 *Банк чата*
 
 _Комиссии от переводов накапливаются здесь\\._
 _В будущем банк будет использоваться для розыгрышей\\!_"""
+
+
+# ============================================================================
+# Функции-генераторы сообщений с динамическими ценами
+# ============================================================================
+
+def get_shop_menu(config: 'ChatConfig') -> str:
+    """
+    Генерирует меню магазина с актуальными ценами из конфигурации.
+
+    Args:
+        config: Конфигурация чата
+
+    Returns:
+        str: Отформатированное меню магазина
+    """
+    items = []
+
+    if config.constants.immunity_enabled:
+        items.append(
+            f"🛡️ *Защита от пидора* \\({config.constants.immunity_price} койнов\\)\n"
+            f"Защищает от выбора пидором на следующий день\\.\n"
+            f"Кулдаун: {config.constants.immunity_cooldown_days} дней после использования\\."
+        )
+
+    if config.constants.double_chance_enabled:
+        items.append(
+            f"🎲 *Двойной шанс* \\({config.constants.double_chance_price} койнов\\)\n"
+            f"Удваивает ваш шанс стать пидором дня\\.\n"
+            f"Действует до следующей победы\\."
+        )
+
+    if config.constants.prediction_enabled:
+        items.append(
+            f"🔮 *Предсказание* \\({config.constants.prediction_price} койна\\)\n"
+            f"Предскажите\\, кто станет пидором дня\\.\n"
+            f"Если угадаете \\- получите {config.constants.prediction_reward} койнов\\!"
+        )
+
+    items_text = "\n\n".join(items)
+
+    return f"""🏪 *Магазин пидор\\-койнов*
+
+💰 Ваш баланс: *{{balance}}* койн\\(ов\\)
+
+*Доступные товары:*
+
+{items_text}
+
+_Выберите товар нажатием на кнопку ниже\\._"""
+
+
+def get_immunity_messages(config: 'ChatConfig') -> dict:
+    """
+    Генерирует сообщения о защите с актуальными ценами.
+
+    Args:
+        config: Конфигурация чата
+
+    Returns:
+        dict: Словарь с сообщениями о защите
+    """
+    return {
+        'purchase_success': f"""✅ *Защита куплена\\!*
+
+Вы защищены от выбора пидором *{{date}}*\\.
+Списано: {config.constants.immunity_price} койнов
+Комиссия в банк: {{commission}} 🪙
+Новый баланс: {{balance}} койн\\(ов\\)""",
+
+        'error_insufficient_funds': f"❌ Недостаточно средств\\! Нужно {config.constants.immunity_price} койнов\\, у вас: {{balance}}",
+
+        'error_already_active': "❌ Защита уже активна на *{date}*\\!",
+
+        'error_cooldown': "❌ Защита на кулдауне\\! Можно использовать снова с *{date}*",
+
+        'item_desc': f"🛡️ Защита ({config.constants.immunity_price} койнов)"
+    }
+
+
+def get_double_chance_messages(config: 'ChatConfig') -> dict:
+    """
+    Генерирует сообщения о двойном шансе с актуальными ценами.
+
+    Args:
+        config: Конфигурация чата
+
+    Returns:
+        dict: Словарь с сообщениями о двойном шансе
+    """
+    return {
+        'purchase_success_self': f"""✅ *Двойной шанс куплен\\!*
+
+Ваш шанс стать пидором удвоен на *{{date}}*\\.
+Списано: {config.constants.double_chance_price} койнов
+Комиссия в банк: {{commission}} 🪙
+Новый баланс: {{balance}} койн\\(ов\\)""",
+
+        'purchase_success_other': f"""✅ *Двойной шанс куплен\\!*
+
+*{{buyer_username}}* подарил\\(а\\) двойной шанс игроку *{{target_username}}* на *{{date}}*\\.
+Списано: {config.constants.double_chance_price} койнов
+Комиссия в банк: {{commission}} 🪙
+Новый баланс: {{balance}} койн\\(ов\\)""",
+
+        'error_insufficient_funds': f"❌ Недостаточно средств\\! Нужно {config.constants.double_chance_price} койнов\\, у вас: {{balance}}",
+
+        'error_already_bought_today': "❌ Вы уже купили двойной шанс сегодня\\! Можно купить только один раз в день\\.",
+
+        'item_desc': f"🎲 Двойной шанс ({config.constants.double_chance_price} койнов)"
+    }
+
+
+def get_prediction_messages(config: 'ChatConfig') -> dict:
+    """
+    Генерирует сообщения о предсказаниях с актуальными ценами.
+
+    Args:
+        config: Конфигурация чата
+
+    Returns:
+        dict: Словарь с сообщениями о предсказаниях
+    """
+    return {
+        'select_player': f"""🔮 *Выберите игрока для предсказания*
+
+Кто\\, по вашему мнению\\, станет пидором дня\\?
+
+_Если угадаете \\- получите {config.constants.prediction_reward} койнов\\!_""",
+
+        'purchase_success': f"""✅ *Предсказание создано\\!*
+
+*{{buyer_username}}* предсказал\\(а\\)\\, что *{{predicted_username}}* станет пидором дня *{{date}}*\\.
+Списано: {config.constants.prediction_price} койна
+Комиссия в банк: {{commission}} 🪙
+Новый баланс: {{balance}} койн\\(ов\\)
+
+Результат узнаете после розыгрыша\\!""",
+
+        'error_insufficient_funds': f"❌ Недостаточно средств\\! Нужно {config.constants.prediction_price} койна\\, у вас: {{balance}}",
+
+        'error_already_exists': "❌ Вы уже сделали предсказание на сегодня\\!",
+
+        'error_self': "❌ Нельзя предсказать самого себя\\!",
+
+        'result_correct': f"""🎉 *Ваше предсказание сбылось\\!*
+
+Вы правильно предсказали\\, что *{{predicted_username}}* станет пидором дня\\.
+Награда: \\+{config.constants.prediction_reward} койнов
+Новый баланс: {{balance}} койн\\(ов\\)""",
+
+        'result_incorrect': """😔 *Ваше предсказание не сбылось*
+
+Вы предсказали *{predicted_username}*\\, но пидором дня стал\\(а\\) *{actual_username}*\\.
+Удачи в следующий раз\\!""",
+
+        'item_desc': f"🔮 Предсказание ({config.constants.prediction_price} койна)"
+    }
+
+
+def get_reroll_messages(config: 'ChatConfig') -> dict:
+    """
+    Генерирует сообщения о перевыборах с актуальными ценами.
+
+    Args:
+        config: Конфигурация чата
+
+    Returns:
+        dict: Словарь с сообщениями о перевыборах
+    """
+    return {
+        'button_text': f"🔄 Перевыборы ({config.constants.reroll_price} 💰)",
+
+        'announcement': f"""🔄 <b>ПЕРЕВЫБОРЫ!</b>
+
+👤 {{initiator_name}} заплатил(а) {config.constants.reroll_price} 💰 за перевыбор!
+❌ Бывший пидор: {{old_winner_name}}
+✅ Новый пидор дня: {{new_winner_name}}!
+
+<code>🎉 {{initiator_name}}: -{config.constants.reroll_price} пидор-койн(ов)</code>
+<code>🎉 {{old_winner_name}}: сохраняет свои койны</code>
+<code>🎉 {{new_winner_name}}: +{{new_winner_coins}} пидор-койн(ов)</code>{{protection_info}}{{double_chance_info}}{{predictions_info}}""",
+
+        'error_already_used': "❌ Перевыбор уже использован сегодня",
+
+        'error_insufficient_funds': "❌ Недостаточно койнов! Баланс: {balance} 💰",
+
+        'success_notification': "🔄 Перевыбор запущен!"
+    }
+
+
+def get_transfer_messages(config: 'ChatConfig') -> dict:
+    """
+    Генерирует сообщения о переводах с актуальными параметрами.
+
+    Args:
+        config: Конфигурация чата
+
+    Returns:
+        dict: Словарь с сообщениями о переводах
+    """
+    return {
+        'select_player': f"""💸 *Выберите получателя*
+
+Кому вы хотите передать койны\\?
+
+_Комиссия: 10% \\(минимум 1 койн\\)_
+_Минимальная сумма: {config.constants.transfer_min_amount} койна_""",
+
+        'select_amount': """💸 *Выберите сумму перевода*
+
+👤 Получатель: {receiver_name}
+💰 Ваш баланс: {balance} 💰
+
+_Комиссия 10% пойдёт в банк чата_""",
+
+        'enter_amount': f"""💸 *Введите сумму перевода*
+
+Получатель: *{{receiver_name}}*
+
+Введите сумму койнов для перевода \\(минимум {config.constants.transfer_min_amount}\\):
+
+_Комиссия 10% пойдёт в банк чата_""",
+
+        'success': """💸 *Перевод выполнен\\!*
+
+👤 Отправитель: {sender_name}
+👤 Получатель: {receiver_name}
+
+📤 Отправлено: {amount_sent} 💰
+📥 Получено: {amount_received} 💰
+🏦 Комиссия в банк: {commission} 💰
+
+💰 Баланс {sender_name}: {sender_balance} 💰
+💰 Баланс {receiver_name}: {receiver_balance} 💰
+🏦 Баланс банка: {bank_balance} 💰""",
+
+        'error_cooldown': """❌ Вы уже совершали перевод сегодня\\.
+Следующий перевод будет доступен завтра\\.""",
+
+        'error_insufficient_funds': """❌ Недостаточно койнов\\!
+Ваш баланс: {balance} 💰
+Требуется: {amount} 💰""",
+
+        'error_min_amount': f"❌ Минимальная сумма перевода: {config.constants.transfer_min_amount} 💰",
+
+        'error_self_transfer': "❌ Нельзя передавать койны себе"
+    }
+
+
+def get_rules_message(config: 'ChatConfig') -> str:
+    """
+    Генерирует сообщение с правилами игры с актуальными ценами.
+
+    Args:
+        config: Конфигурация чата
+
+    Returns:
+        str: Отформатированное сообщение с правилами (HTML формат)
+    """
+    # Вычисляем значение для self-pidor
+    self_pidor_coins = config.constants.coins_per_win * config.constants.self_pidor_multiplier
+
+    rules_parts = [
+        "<b>Правила игры «Пидор Дня»</b> (только для групповых чатов):\n",
+        "<b>1.</b> Зарегистрируйтесь в игру по команде /pidoreg",
+        "<b>2.</b> Подождите пока зарегиструются все (или большинство :)",
+        "<b>3.</b> Запустите розыгрыш по команде /pidor",
+        "<b>4.</b> Просмотр статистики канала по команде /pidorstats, /pidorall",
+        "<b>5.</b> Личная статистика по команде /pidorme",
+        "<b>6.</b> Статистика за последний год по команде /pidor2020 (так же есть за 2016-2020)",
+        "<b>7.</b> Просмотр пропущенных дней в текущем году: /pidormissed",
+        "<b>8.</b> Финальное голосование за пропущенные дни (29-30 декабря): /pidorfinal",
+        "<b>9.</b> Статус финального голосования: /pidorfinalstatus",
+        "<b>10. (!!! Только для администраторов чатов)</b>: удалить из игры может только Админ канала, "
+        "сначала выведя по команде список игроков: /pidormin list",
+        "Удалить же игрока можно по команде (используйте идентификатор пользователя - цифры из списка пользователей): "
+        "/pidormin del 123456\n",
+        "<b>Важно</b>, розыгрыш проходит только <b>раз в день</b>, повторная команда выведет <b>результат</b> игры.\n",
+        f"<b>Пидор-койны:</b> За участие в игре начисляются пидор-койны! Победитель получает {config.constants.coins_per_win} койна, "
+        f"запустивший команду - {config.constants.coins_per_command} койн. Если ты сам стал пидором дня - получаешь {self_pidor_coins} койнов! "
+        "Потратить койны можно в магазине: /pidorshop"
+    ]
+
+    # Добавляем информацию о товарах магазина в зависимости от feature flags
+    if config.constants.immunity_enabled:
+        rules_parts.append(
+            f"• <b>Защита от пидора</b> ({config.constants.immunity_price} койнов) - защита на следующий день, если тебя выберут - перевыбор. Кулдаун {config.constants.immunity_cooldown_days} дней."
+        )
+
+    if config.constants.double_chance_enabled:
+        rules_parts.append(
+            f"• <b>Двойной шанс</b> ({config.constants.double_chance_price} койнов) - удваивает шанс стать пидором дня на следующий розыгрыш. Можно купить для любого игрока!"
+        )
+
+    if config.constants.prediction_enabled:
+        rules_parts.append(
+            f"• <b>Предсказание</b> ({config.constants.prediction_price} койна) - угадай пидора дня и получи {config.constants.prediction_reward} койнов!"
+        )
+
+    if config.constants.transfer_enabled:
+        rules_parts.append(
+            "• <b>Перевод койнов</b> - передай койны другому игроку (комиссия по ключевой ставке ЦБ РФ)."
+        )
+
+    rules_parts.append("• <b>Банк чата</b> - общий банк, куда идут комиссии с покупок и переводов.\n")
+
+    rules_parts.append(
+        "<b>Комиссия:</b> При каждой покупке в магазине и переводе койнов часть денег (по ключевой ставке ЦБ РФ) идёт в банк чата. "
+        "Минимальная комиссия - 1 койн."
+    )
+    rules_parts.append("Баланс койнов: /pidorcoinsme, топ по койнам: /pidorcoinsstats\n")
+
+    rules_parts.append(
+        "<b>Финальное голосование:</b> В конце года (29-30 декабря) можно запустить взвешенное голосование "
+        "для распределения пропущенных дней. Финальное голосование с кастомными кнопками (поддерживает любое количество участников). "
+        "Результаты скрыты до завершения. Вес каждого голоса равен количеству побед игрока в текущем году. "
+        f"Голосование доступно только если пропущено менее {config.constants.max_missed_days_for_final_voting} дней. Завершить голосование могут администраторы чата: /pidorfinalclose\n"
+    )
+
+    rules_parts.append("Сброс розыгрыша происходит каждый день в 12 часов ночи по Москве.\n")
+    rules_parts.append('Поддержать бота можно по <a href="https://github.com/vodka-429/pidor-bot-2/">ссылке</a> :)')
+
+    return "\n".join(rules_parts)

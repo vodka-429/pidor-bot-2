@@ -12,9 +12,12 @@ from bot.handlers.game.prediction_service import (
     award_correct_predictions,
     calculate_candidates_count,
     get_predicted_user_ids,
-    PREDICTION_REWARD
 )
+from bot.handlers.game.config import get_config
 from bot.app.models import Prediction, TGUser
+
+# Получаем значение награды из конфигурации по умолчанию
+DEFAULT_PREDICTION_REWARD = get_config(0).constants.prediction_reward
 
 
 @pytest.mark.unit
@@ -360,7 +363,7 @@ def test_award_correct_predictions(mock_add_coins, mock_db_session):
     assert call_args_1[0][0] == mock_db_session
     assert call_args_1[0][1] == game_id
     assert call_args_1[0][2] == 1  # user_id
-    assert call_args_1[0][3] == PREDICTION_REWARD
+    assert call_args_1[0][3] == DEFAULT_PREDICTION_REWARD
     assert call_args_1[0][4] == year
     assert call_args_1[0][5] == "prediction_correct"
     assert call_args_1[1]['auto_commit'] is False
@@ -460,7 +463,7 @@ def test_process_predictions_for_reroll_incorrect_in_main_correct_in_reroll(mock
     assert call_args[0][0] == mock_db_session
     assert call_args[0][1] == game_id
     assert call_args[0][2] == 1  # user_id
-    assert call_args[0][3] == PREDICTION_REWARD
+    assert call_args[0][3] == DEFAULT_PREDICTION_REWARD
     assert call_args[0][4] == year
     assert call_args[0][5] == "prediction_correct_reroll"
     assert call_args[1]['auto_commit'] is False
@@ -512,7 +515,7 @@ def test_process_predictions_for_reroll_correct_in_both(mock_add_coins, mock_db_
     assert call_args[0][0] == mock_db_session
     assert call_args[0][1] == game_id
     assert call_args[0][2] == 1  # user_id
-    assert call_args[0][3] == PREDICTION_REWARD
+    assert call_args[0][3] == DEFAULT_PREDICTION_REWARD
     assert call_args[0][4] == year
     assert call_args[0][5] == "prediction_correct_reroll"
     assert call_args[1]['auto_commit'] is False

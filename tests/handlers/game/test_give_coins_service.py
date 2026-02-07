@@ -6,9 +6,8 @@ from bot.app.models import GiveCoinsClick
 from bot.handlers.game.give_coins_service import (
     has_claimed_today,
     claim_coins,
-    GIVE_COINS_AMOUNT,
-    GIVE_COINS_WINNER_AMOUNT,
 )
+from bot.handlers.game.config import get_config
 
 
 @pytest.mark.unit
@@ -64,17 +63,21 @@ class TestClaimCoins:
         mock_result.first.return_value = None
         mock_db_session.exec.return_value = mock_result
 
+        # Получаем значения из конфигурации
+        config = get_config(1)
+        expected_amount = config.constants.give_coins_amount
+
         with patch('bot.handlers.game.give_coins_service.add_coins') as mock_add:
             success, amount = claim_coins(
                 mock_db_session, 1, 1, 2026, 22, is_winner=False
             )
 
         assert success is True
-        assert amount == GIVE_COINS_AMOUNT
+        assert amount == expected_amount
 
         # Verify add_coins called
         mock_add.assert_called_once_with(
-            mock_db_session, 1, 1, GIVE_COINS_AMOUNT, 2026,
+            mock_db_session, 1, 1, expected_amount, 2026,
             "give_coins_button", auto_commit=False
         )
 
@@ -87,7 +90,7 @@ class TestClaimCoins:
         assert added_click.year == 2026
         assert added_click.day == 22
         assert added_click.is_winner is False
-        assert added_click.amount == GIVE_COINS_AMOUNT
+        assert added_click.amount == expected_amount
 
         # Verify commit called
         mock_db_session.commit.assert_called_once()
@@ -99,24 +102,28 @@ class TestClaimCoins:
         mock_result.first.return_value = None
         mock_db_session.exec.return_value = mock_result
 
+        # Получаем значения из конфигурации
+        config = get_config(1)
+        expected_amount = config.constants.give_coins_winner_amount
+
         with patch('bot.handlers.game.give_coins_service.add_coins') as mock_add:
             success, amount = claim_coins(
                 mock_db_session, 1, 2, 2026, 22, is_winner=True
             )
 
         assert success is True
-        assert amount == GIVE_COINS_WINNER_AMOUNT
+        assert amount == expected_amount
 
         # Verify add_coins called with winner amount
         mock_add.assert_called_once_with(
-            mock_db_session, 1, 2, GIVE_COINS_WINNER_AMOUNT, 2026,
+            mock_db_session, 1, 2, expected_amount, 2026,
             "give_coins_button", auto_commit=False
         )
 
         # Verify GiveCoinsClick created with winner flag
         added_click = mock_db_session.add.call_args[0][0]
         assert added_click.is_winner is True
-        assert added_click.amount == GIVE_COINS_WINNER_AMOUNT
+        assert added_click.amount == expected_amount
 
     def test_claim_coins_already_claimed(self, mock_db_session):
         """Койны уже получены сегодня."""
@@ -150,17 +157,21 @@ class TestClaimCoins:
         mock_result.first.return_value = None
         mock_db_session.exec.return_value = mock_result
 
+        # Получаем значения из конфигурации
+        config = get_config(2)
+        expected_amount = config.constants.give_coins_amount
+
         with patch('bot.handlers.game.give_coins_service.add_coins') as mock_add:
             success, amount = claim_coins(
                 mock_db_session, 2, 1, 2026, 22, is_winner=False
             )
 
         assert success is True
-        assert amount == GIVE_COINS_AMOUNT
+        assert amount == expected_amount
 
         # Verify add_coins called for game 2
         mock_add.assert_called_once_with(
-            mock_db_session, 2, 1, GIVE_COINS_AMOUNT, 2026,
+            mock_db_session, 2, 1, expected_amount, 2026,
             "give_coins_button", auto_commit=False
         )
 
@@ -171,13 +182,17 @@ class TestClaimCoins:
         mock_result.first.return_value = None
         mock_db_session.exec.return_value = mock_result
 
+        # Получаем значения из конфигурации
+        config = get_config(1)
+        expected_amount = config.constants.give_coins_amount
+
         with patch('bot.handlers.game.give_coins_service.add_coins') as mock_add:
             success, amount = claim_coins(
                 mock_db_session, 1, 1, 2026, 23, is_winner=False
             )
 
         assert success is True
-        assert amount == GIVE_COINS_AMOUNT
+        assert amount == expected_amount
 
         # Verify GiveCoinsClick created for day 23
         added_click = mock_db_session.add.call_args[0][0]
@@ -185,7 +200,8 @@ class TestClaimCoins:
 
     def test_claim_coins_winner_amount_is_double(self):
         """Пидор дня получает в 2 раза больше."""
-        assert GIVE_COINS_WINNER_AMOUNT == GIVE_COINS_AMOUNT * 2
+        config = get_config(1)
+        assert config.constants.give_coins_winner_amount == config.constants.give_coins_amount * 2
 
     def test_claim_coins_multiple_users_same_day(self, mock_db_session):
         """Несколько пользователей могут получить койны в один день."""
@@ -194,13 +210,17 @@ class TestClaimCoins:
         mock_result.first.return_value = None
         mock_db_session.exec.return_value = mock_result
 
+        # Получаем значения из конфигурации
+        config = get_config(1)
+        expected_amount = config.constants.give_coins_amount
+
         with patch('bot.handlers.game.give_coins_service.add_coins') as mock_add:
             success, amount = claim_coins(
                 mock_db_session, 1, 3, 2026, 22, is_winner=False
             )
 
         assert success is True
-        assert amount == GIVE_COINS_AMOUNT
+        assert amount == expected_amount
 
         # Verify GiveCoinsClick created for user 3
         added_click = mock_db_session.add.call_args[0][0]

@@ -1656,9 +1656,14 @@ async def test_prediction_self_prediction_allowed(mock_update, mock_context, moc
 def test_immunity_purchase_adds_commission_to_bank(mock_db_session, mock_game, sample_players, mocker):
     """Test that immunity purchase adds commission to chat bank."""
     from bot.app.models import ChatBank, GamePlayerEffect
-    from bot.handlers.game.shop_service import buy_immunity, IMMUNITY_PRICE, process_purchase
+    from bot.handlers.game.shop_service import buy_immunity, process_purchase
     from bot.handlers.game.cbr_service import calculate_commission_amount
+    from bot.handlers.game.config import get_config
     from datetime import date
+
+    # Получаем конфигурацию для получения цены
+    config = get_config(mock_game.chat_id)
+    IMMUNITY_PRICE = config.constants.immunity_price
 
     # Setup
     game_id = mock_game.id
@@ -1707,9 +1712,14 @@ def test_immunity_purchase_adds_commission_to_bank(mock_db_session, mock_game, s
 def test_double_chance_purchase_adds_commission_to_bank(mock_db_session, mock_game, sample_players, mocker):
     """Test that double chance purchase adds commission to chat bank."""
     from bot.app.models import ChatBank
-    from bot.handlers.game.shop_service import buy_double_chance, DOUBLE_CHANCE_PRICE
+    from bot.handlers.game.shop_service import buy_double_chance
     from bot.handlers.game.cbr_service import calculate_commission_amount
+    from bot.handlers.game.config import get_config
     from datetime import date
+
+    # Получаем конфигурацию для получения цены
+    config = get_config(mock_game.chat_id)
+    DOUBLE_CHANCE_PRICE = config.constants.double_chance_price
 
     # Setup
     game_id = mock_game.id
@@ -1758,8 +1768,13 @@ def test_double_chance_purchase_adds_commission_to_bank(mock_db_session, mock_ga
 def test_prediction_purchase_adds_commission_to_bank(mock_db_session, mock_game, sample_players, mocker):
     """Test that prediction purchase adds commission to chat bank."""
     from bot.app.models import ChatBank
-    from bot.handlers.game.shop_service import create_prediction, PREDICTION_PRICE
+    from bot.handlers.game.shop_service import create_prediction
     from bot.handlers.game.cbr_service import calculate_commission_amount
+    from bot.handlers.game.config import get_config
+
+    # Получаем конфигурацию для получения цены
+    config = get_config(mock_game.chat_id)
+    PREDICTION_PRICE = config.constants.prediction_price
 
     # Setup
     game_id = mock_game.id

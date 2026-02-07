@@ -10,9 +10,9 @@ from bot.handlers.game.transfer_service import (
     can_transfer,
     get_or_create_chat_bank,
     execute_transfer,
-    TRANSFER_MIN_AMOUNT,
 )
 from bot.handlers.game.cbr_service import MIN_COMMISSION as TRANSFER_MIN_COMMISSION
+from bot.handlers.game.config import get_config
 
 
 @pytest.mark.unit
@@ -182,6 +182,10 @@ class TestExecuteTransfer:
         """Передача минимальной суммы."""
         mock_calc.return_value = TRANSFER_MIN_COMMISSION
 
+        # Получаем минимальную сумму из конфигурации
+        config = get_config(1)
+        transfer_min_amount = config.constants.transfer_min_amount
+
         mock_bank = MagicMock()
         mock_bank.balance = 0
         mock_result = MagicMock()
@@ -192,12 +196,12 @@ class TestExecuteTransfer:
              patch('bot.handlers.game.transfer_service.add_coins'):
 
             amount_sent, amount_received, commission = execute_transfer(
-                mock_db_session, 1, 1, 2, TRANSFER_MIN_AMOUNT, 2026, 22
+                mock_db_session, 1, 1, 2, transfer_min_amount, 2026, 22
             )
 
-        assert amount_sent == TRANSFER_MIN_AMOUNT
+        assert amount_sent == transfer_min_amount
         assert commission == TRANSFER_MIN_COMMISSION
-        assert amount_received == TRANSFER_MIN_AMOUNT - TRANSFER_MIN_COMMISSION
+        assert amount_received == transfer_min_amount - TRANSFER_MIN_COMMISSION
 
     @patch('bot.handlers.game.transfer_service.calculate_commission_amount')
     def test_transfer_large_amount(self, mock_calc, mock_db_session):
@@ -232,3 +236,14 @@ class TestExecuteTransfer:
         """Нельзя передавать меньше минимума."""
         with pytest.raises(ValueError, match="Amount must be at least"):
             execute_transfer(mock_db_session, 1, 1, 2, 1, 2026, 22)
+
+    def test_transfer_disabled_raises_error(self, mock_db_session):
+        """Нельзя передавать, если трансферы отключены."""
+        # Мокаем конфигурацию с отключенными трансферами
+        with patch('bot.handlers.game.transfer_service.get_config') as mock_get_config:
+            mock_config = MagicMock()
+            mock_config.constants.transfer_enabled = False
+            mock_get_config.return_value = mock_config
+
+            with pytest.raises(ValueError, match="Transfers are disabled"):
+                execute_transfer(mock_db_session, 1, 1, 2, 10, 2026, 22)
