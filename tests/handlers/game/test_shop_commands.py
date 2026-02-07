@@ -68,6 +68,9 @@ async def test_pidorshop_cmd_shows_menu(mock_update, mock_context, mock_db_sessi
     # Mock get_balance to return 100 coins
     mock_db_session.exec.return_value.first.return_value = (100,)
 
+    # Set chat_id for the test
+    mock_update.effective_chat.id = -1001392307997
+
     await pidorshop_cmd(mock_update, mock_context)
 
     # Verify that send_message was called
@@ -88,6 +91,9 @@ async def test_pidorshop_cmd_shows_balance(mock_update, mock_context, mock_db_se
     """Test that pidorshop_cmd shows user's balance."""
     # Mock get_balance to return 250 coins
     mock_db_session.exec.return_value.first.return_value = (250,)
+
+    # Set chat_id for the test
+    mock_update.effective_chat.id = -1001392307997
 
     await pidorshop_cmd(mock_update, mock_context)
 

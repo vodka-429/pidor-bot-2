@@ -8,3 +8,16 @@ image:
   pullPolicy: IfNotPresent
   repository: cr.yandex/crpr9jlf6k4254l80050/pidor_bot
   version: 103-26e6398dd2b3e44b272c462b40e2aa201bb91422
+
+# Game configuration (replaces CHAT_WHITELIST and TEST_CHAT_ID)
+gameConfig:
+  enabled_chats:
+    - -1001392307997
+    - -4608252738
+    - -1002189152002
+    - -1003671793100
+  test_chat_id: -4608252738
+  defaults: {}
+  chat_overrides:
+    "-4608252738":
+      max_missed_days_for_final_voting: 100

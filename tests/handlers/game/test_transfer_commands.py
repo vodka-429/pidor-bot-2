@@ -169,6 +169,9 @@ class TestShopTransferSelectCallback:
         receiver = mock_context.game.players[1]
         mock_db_session.query.return_value.filter_by.return_value.one.return_value = receiver
 
+        # Set chat_id for the test
+        mock_update.effective_chat.id = -100123456789
+
         # Настраиваем callback_data (receiver_id=2, owner_id=123456)
         mock_update.callback_query.data = "shop_transfer_select_2_123456"
 
@@ -441,6 +444,9 @@ class TestShopBackCallback:
             'double_chance': None,
             'prediction': None
         }
+
+        # Set chat_id for the test
+        mock_update.effective_chat.id = -100123456789
 
         # Настраиваем callback_data
         mock_update.callback_query.data = "shop_back_123456"

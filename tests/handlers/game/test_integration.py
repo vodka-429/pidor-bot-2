@@ -5,6 +5,13 @@ from datetime import datetime
 from unittest.mock import MagicMock, call, AsyncMock
 
 from bot.handlers.game.commands import pidor_cmd, pidoreg_cmd, pidorstats_cmd
+from bot.handlers.game.config import GameConstants
+
+# Константы для тестов
+_default_constants = GameConstants()
+COINS_PER_WIN = _default_constants.coins_per_win
+PREDICTION_REWARD = _default_constants.prediction_reward
+REROLL_PRICE = _default_constants.reroll_price
 
 
 @pytest.mark.asyncio
@@ -140,8 +147,7 @@ async def test_full_game_flow(mock_update, mock_context, mock_game, sample_playe
 async def test_reroll_with_immunity_protection(mock_update, mock_context, mock_game, sample_players, mocker):
     """Integration test: full scenario with immunity protection during reroll."""
     from datetime import date
-    from bot.handlers.game.reroll_service import execute_reroll, REROLL_PRICE
-    from bot.handlers.game.commands import COINS_PER_WIN
+    from bot.handlers.game.reroll_service import execute_reroll
 
     # Setup
     game_id = 1
@@ -183,6 +189,14 @@ async def test_reroll_with_immunity_protection(mock_update, mock_context, mock_g
         return mock_result
 
     mock_context.db_session.exec.side_effect = exec_side_effect
+
+    # Mock config
+    mock_get_config = mocker.patch('bot.handlers.game.reroll_service.get_config_by_game_id')
+    mock_config = MagicMock()
+    mock_config.constants.reroll_enabled = True
+    mock_config.constants.reroll_price = REROLL_PRICE
+    mock_config.constants.coins_per_win = COINS_PER_WIN
+    mock_get_config.return_value = mock_config
 
     # Mock coin operations
     mock_spend = mocker.patch('bot.handlers.game.reroll_service.spend_coins')
@@ -236,8 +250,7 @@ async def test_reroll_with_immunity_protection(mock_update, mock_context, mock_g
 async def test_reroll_with_double_chance(mock_update, mock_context, mock_game, sample_players, mocker):
     """Integration test: full scenario with double chance during reroll."""
     from datetime import date
-    from bot.handlers.game.reroll_service import execute_reroll, REROLL_PRICE
-    from bot.handlers.game.commands import COINS_PER_WIN
+    from bot.handlers.game.reroll_service import execute_reroll
 
     # Setup
     game_id = 1
@@ -275,6 +288,14 @@ async def test_reroll_with_double_chance(mock_update, mock_context, mock_game, s
         return mock_result
 
     mock_context.db_session.exec.side_effect = exec_side_effect
+
+    # Mock config
+    mock_get_config = mocker.patch('bot.handlers.game.reroll_service.get_config_by_game_id')
+    mock_config = MagicMock()
+    mock_config.constants.reroll_enabled = True
+    mock_config.constants.reroll_price = REROLL_PRICE
+    mock_config.constants.coins_per_win = COINS_PER_WIN
+    mock_get_config.return_value = mock_config
 
     # Mock coin operations
     mock_spend = mocker.patch('bot.handlers.game.reroll_service.spend_coins')
@@ -325,9 +346,7 @@ async def test_reroll_with_double_chance(mock_update, mock_context, mock_game, s
 async def test_reroll_with_predictions(mock_update, mock_context, mock_game, sample_players, mocker):
     """Integration test: full scenario with predictions during reroll."""
     from datetime import date
-    from bot.handlers.game.reroll_service import execute_reroll, REROLL_PRICE
-    from bot.handlers.game.commands import COINS_PER_WIN
-    from bot.handlers.game.prediction_service import PREDICTION_REWARD
+    from bot.handlers.game.reroll_service import execute_reroll
     from bot.app.models import Prediction
 
     # Setup
@@ -376,6 +395,14 @@ async def test_reroll_with_predictions(mock_update, mock_context, mock_game, sam
         return mock_result
 
     mock_context.db_session.exec.side_effect = exec_side_effect
+
+    # Mock config
+    mock_get_config = mocker.patch('bot.handlers.game.reroll_service.get_config_by_game_id')
+    mock_config = MagicMock()
+    mock_config.constants.reroll_enabled = True
+    mock_config.constants.reroll_price = REROLL_PRICE
+    mock_config.constants.coins_per_win = COINS_PER_WIN
+    mock_get_config.return_value = mock_config
 
     # Mock coin operations and predictions
     mock_spend = mocker.patch('bot.handlers.game.reroll_service.spend_coins')
@@ -510,7 +537,10 @@ async def test_give_coins_button_appears_after_pidor_selection(mock_update, mock
 async def test_give_coins_regular_player_gets_1_coin(mock_update, mock_context, mock_game, sample_players, mocker):
     """Интеграционный тест: обычный игрок получает 1 койн."""
     from bot.handlers.game.commands import handle_give_coins_callback
-    from bot.handlers.game.give_coins_service import GIVE_COINS_AMOUNT
+    from bot.handlers.game.config import GameConstants
+
+    # Получаем значение по умолчанию из конфигурации
+    GIVE_COINS_AMOUNT = GameConstants().give_coins_amount
 
     # Setup
     winner = sample_players[0]
@@ -542,6 +572,13 @@ async def test_give_coins_regular_player_gets_1_coin(mock_update, mock_context, 
     # Mock get_balance
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=10)
 
+    # Mock get_config_by_game_id
+    mock_config = MagicMock()
+    mock_config.constants.give_coins_enabled = True
+    mock_config.constants.give_coins_amount = GIVE_COINS_AMOUNT
+    mock_config.constants.give_coins_winner_amount = GameConstants().give_coins_winner_amount
+    mocker.patch('bot.handlers.game.give_coins_service.get_config_by_game_id', return_value=mock_config)
+
     # Execute
     await handle_give_coins_callback(mock_update, mock_context)
 
@@ -564,7 +601,10 @@ async def test_give_coins_regular_player_gets_1_coin(mock_update, mock_context, 
 async def test_give_coins_winner_gets_2_coins(mock_update, mock_context, mock_game, sample_players, mocker):
     """Интеграционный тест: пидор дня получает 2 койна."""
     from bot.handlers.game.commands import handle_give_coins_callback
-    from bot.handlers.game.give_coins_service import GIVE_COINS_WINNER_AMOUNT
+    from bot.handlers.game.config import GameConstants
+
+    # Получаем значение по умолчанию из конфигурации
+    GIVE_COINS_WINNER_AMOUNT = GameConstants().give_coins_winner_amount
 
     # Setup
     winner = sample_players[0]
@@ -594,6 +634,13 @@ async def test_give_coins_winner_gets_2_coins(mock_update, mock_context, mock_ga
 
     # Mock get_balance
     mocker.patch('bot.handlers.game.commands.get_balance', return_value=15)
+
+    # Mock get_config_by_game_id
+    mock_config = MagicMock()
+    mock_config.constants.give_coins_enabled = True
+    mock_config.constants.give_coins_amount = GameConstants().give_coins_amount
+    mock_config.constants.give_coins_winner_amount = GIVE_COINS_WINNER_AMOUNT
+    mocker.patch('bot.handlers.game.give_coins_service.get_config_by_game_id', return_value=mock_config)
 
     # Execute
     await handle_give_coins_callback(mock_update, mock_context)

@@ -76,9 +76,10 @@ def test_create_shop_keyboard():
     """Test creating shop keyboard with item buttons."""
     # Setup
     owner_user_id = 123
+    chat_id = -1001392307997
 
     # Execute
-    keyboard = create_shop_keyboard(owner_user_id)
+    keyboard = create_shop_keyboard(owner_user_id, chat_id)
 
     # Verify structure
     assert isinstance(keyboard, InlineKeyboardMarkup)
@@ -210,8 +211,10 @@ def test_create_prediction_keyboard_many_players():
 @pytest.mark.unit
 def test_format_shop_menu_message():
     """Test formatting shop menu message."""
+    chat_id = -1001392307997
+
     # Test with zero balance
-    result = format_shop_menu_message(0)
+    result = format_shop_menu_message(0, chat_id)
     assert "🏪 *Магазин пидор\\-койнов*" in result
     assert "💰 Ваш баланс: *0* 🪙" in result
     assert "🛡️ Защита от пидора" in result
@@ -223,11 +226,11 @@ def test_format_shop_menu_message():
     assert "_Выберите товар для покупки:_" in result
 
     # Test with positive balance
-    result = format_shop_menu_message(100)
+    result = format_shop_menu_message(100, chat_id)
     assert "💰 Ваш баланс: *100* 🪙" in result
 
     # Test with large balance (format_number may or may not add spaces)
-    result = format_shop_menu_message(1000000)
+    result = format_shop_menu_message(1000000, chat_id)
     # Just verify the balance is present, format may vary
     assert "💰 Ваш баланс:" in result
     assert "1000000" in result or "1 000 000" in result
@@ -236,7 +239,8 @@ def test_format_shop_menu_message():
 @pytest.mark.unit
 def test_format_shop_menu_message_markdown_escaping():
     """Test that shop menu message properly escapes Markdown V2 characters."""
-    result = format_shop_menu_message(50)
+    chat_id = -1001392307997
+    result = format_shop_menu_message(50, chat_id)
 
     # Verify proper escaping
     assert "\\-" in result  # Hyphens escaped
@@ -283,9 +287,10 @@ def test_format_and_parse_roundtrip():
 @pytest.mark.unit
 def test_format_shop_menu_message_with_none_price():
     """Test that shop menu message correctly handles items with None price."""
+    chat_id = -1001392307997
     # Test that items without price (like "Передать койны" and "Банк чата")
     # are displayed without "None 🪙"
-    result = format_shop_menu_message(100)
+    result = format_shop_menu_message(100, chat_id)
 
     # Verify the message is generated
     assert "🏪 *Магазин пидор\\-койнов*" in result
@@ -315,8 +320,9 @@ def test_create_transfer_amount_keyboard():
     balance = 100
     receiver_id = 2
     owner_user_id = 123456
+    chat_id = -1001392307997
 
-    keyboard = create_transfer_amount_keyboard(balance, receiver_id, owner_user_id)
+    keyboard = create_transfer_amount_keyboard(balance, receiver_id, owner_user_id, chat_id)
 
     # Verify structure
     assert isinstance(keyboard, InlineKeyboardMarkup)
@@ -355,8 +361,9 @@ def test_create_transfer_amount_keyboard_small_balance():
     balance = 5
     receiver_id = 3
     owner_user_id = 654321
+    chat_id = -1001392307997
 
-    keyboard = create_transfer_amount_keyboard(balance, receiver_id, owner_user_id)
+    keyboard = create_transfer_amount_keyboard(balance, receiver_id, owner_user_id, chat_id)
 
     # Verify structure
     assert isinstance(keyboard, InlineKeyboardMarkup)

@@ -9,12 +9,10 @@ from bot.app.models import CoinTransfer, ChatBank
 from bot.handlers.game.coin_service import add_coins
 from bot.handlers.game.shop_service import spend_coins
 from bot.handlers.game.cbr_service import calculate_commission_amount
+from bot.handlers.game.config import get_config_by_game_id
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
-
-# Константы передачи койнов
-TRANSFER_MIN_AMOUNT = 2
 
 
 def calculate_commission(amount: int) -> int:
@@ -130,8 +128,16 @@ def execute_transfer(
     Raises:
         ValueError: Если сумма меньше минимальной или отправитель = получатель
     """
-    if amount < TRANSFER_MIN_AMOUNT:
-        raise ValueError(f"Amount must be at least {TRANSFER_MIN_AMOUNT}")
+    # Получаем конфигурацию для чата
+    config = get_config_by_game_id(db_session, game_id)
+
+    # Проверяем, включена ли функция переводов
+    if not config.constants.transfer_enabled:
+        raise ValueError("Transfer is disabled for this chat")
+
+    # Проверяем минимальную сумму из конфигурации
+    if amount < config.constants.transfer_min_amount:
+        raise ValueError(f"Amount must be at least {config.constants.transfer_min_amount}")
 
     if sender_id == receiver_id:
         raise ValueError("Cannot transfer to yourself")
