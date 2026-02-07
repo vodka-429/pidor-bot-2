@@ -46,13 +46,8 @@ spec:
               secretKeyRef:
                 name: pidor-bot-secrets
                 key: tg_token
-          - name: GAME_CONFIG
-            value: "/config/game_config.json"
-          volumeMounts:
-          - name: config-volume
-            mountPath: /config
-            readOnly: true
-      volumes:
-      - name: config-volume
-        configMap:
-          name: {{ include "app.fullname" . }}-config
+          - name: CHAT_WHITELIST
+            valueFrom:
+              secretKeyRef:
+                name: pidor-bot-secrets
+                key: chat_whitelist

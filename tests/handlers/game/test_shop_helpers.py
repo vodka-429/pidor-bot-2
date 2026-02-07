@@ -76,10 +76,9 @@ def test_create_shop_keyboard():
     """Test creating shop keyboard with item buttons."""
     # Setup
     owner_user_id = 123
-    game_id = 1
 
     # Execute
-    keyboard = create_shop_keyboard(owner_user_id, game_id)
+    keyboard = create_shop_keyboard(owner_user_id)
 
     # Verify structure
     assert isinstance(keyboard, InlineKeyboardMarkup)
@@ -211,9 +210,8 @@ def test_create_prediction_keyboard_many_players():
 @pytest.mark.unit
 def test_format_shop_menu_message():
     """Test formatting shop menu message."""
-    game_id = 1
     # Test with zero balance
-    result = format_shop_menu_message(0, game_id)
+    result = format_shop_menu_message(0)
     assert "🏪 *Магазин пидор\\-койнов*" in result
     assert "💰 Ваш баланс: *0* 🪙" in result
     assert "🛡️ Защита от пидора" in result
@@ -225,11 +223,11 @@ def test_format_shop_menu_message():
     assert "_Выберите товар для покупки:_" in result
 
     # Test with positive balance
-    result = format_shop_menu_message(100, game_id)
+    result = format_shop_menu_message(100)
     assert "💰 Ваш баланс: *100* 🪙" in result
 
     # Test with large balance (format_number may or may not add spaces)
-    result = format_shop_menu_message(1000000, game_id)
+    result = format_shop_menu_message(1000000)
     # Just verify the balance is present, format may vary
     assert "💰 Ваш баланс:" in result
     assert "1000000" in result or "1 000 000" in result
@@ -238,8 +236,7 @@ def test_format_shop_menu_message():
 @pytest.mark.unit
 def test_format_shop_menu_message_markdown_escaping():
     """Test that shop menu message properly escapes Markdown V2 characters."""
-    game_id = 1
-    result = format_shop_menu_message(50, game_id)
+    result = format_shop_menu_message(50)
 
     # Verify proper escaping
     assert "\\-" in result  # Hyphens escaped
@@ -286,10 +283,9 @@ def test_format_and_parse_roundtrip():
 @pytest.mark.unit
 def test_format_shop_menu_message_with_none_price():
     """Test that shop menu message correctly handles items with None price."""
-    game_id = 1
     # Test that items without price (like "Передать койны" and "Банк чата")
     # are displayed without "None 🪙"
-    result = format_shop_menu_message(100, game_id)
+    result = format_shop_menu_message(100)
 
     # Verify the message is generated
     assert "🏪 *Магазин пидор\\-койнов*" in result
@@ -319,9 +315,8 @@ def test_create_transfer_amount_keyboard():
     balance = 100
     receiver_id = 2
     owner_user_id = 123456
-    game_id = 1
 
-    keyboard = create_transfer_amount_keyboard(balance, receiver_id, owner_user_id, game_id)
+    keyboard = create_transfer_amount_keyboard(balance, receiver_id, owner_user_id)
 
     # Verify structure
     assert isinstance(keyboard, InlineKeyboardMarkup)
@@ -360,9 +355,8 @@ def test_create_transfer_amount_keyboard_small_balance():
     balance = 5
     receiver_id = 3
     owner_user_id = 654321
-    game_id = 1
 
-    keyboard = create_transfer_amount_keyboard(balance, receiver_id, owner_user_id, game_id)
+    keyboard = create_transfer_amount_keyboard(balance, receiver_id, owner_user_id)
 
     # Verify structure
     assert isinstance(keyboard, InlineKeyboardMarkup)

@@ -140,13 +140,8 @@ async def test_full_game_flow(mock_update, mock_context, mock_game, sample_playe
 async def test_reroll_with_immunity_protection(mock_update, mock_context, mock_game, sample_players, mocker):
     """Integration test: full scenario with immunity protection during reroll."""
     from datetime import date
-    from bot.handlers.game.reroll_service import execute_reroll
-    from bot.handlers.game.config import get_config
-
-    # Получаем конфигурацию для получения констант
-    config = get_config(mock_game.chat_id)
-    REROLL_PRICE = config.constants.reroll_price
-    COINS_PER_WIN = config.constants.coins_per_win
+    from bot.handlers.game.reroll_service import execute_reroll, REROLL_PRICE
+    from bot.handlers.game.commands import COINS_PER_WIN
 
     # Setup
     game_id = 1
@@ -241,13 +236,8 @@ async def test_reroll_with_immunity_protection(mock_update, mock_context, mock_g
 async def test_reroll_with_double_chance(mock_update, mock_context, mock_game, sample_players, mocker):
     """Integration test: full scenario with double chance during reroll."""
     from datetime import date
-    from bot.handlers.game.reroll_service import execute_reroll
-    from bot.handlers.game.config import get_config
-
-    # Получаем конфигурацию для получения констант
-    config = get_config(mock_game.chat_id)
-    REROLL_PRICE = config.constants.reroll_price
-    COINS_PER_WIN = config.constants.coins_per_win
+    from bot.handlers.game.reroll_service import execute_reroll, REROLL_PRICE
+    from bot.handlers.game.commands import COINS_PER_WIN
 
     # Setup
     game_id = 1
@@ -335,15 +325,10 @@ async def test_reroll_with_double_chance(mock_update, mock_context, mock_game, s
 async def test_reroll_with_predictions(mock_update, mock_context, mock_game, sample_players, mocker):
     """Integration test: full scenario with predictions during reroll."""
     from datetime import date
-    from bot.handlers.game.reroll_service import execute_reroll
-    from bot.handlers.game.config import get_config
+    from bot.handlers.game.reroll_service import execute_reroll, REROLL_PRICE
+    from bot.handlers.game.commands import COINS_PER_WIN
+    from bot.handlers.game.prediction_service import PREDICTION_REWARD
     from bot.app.models import Prediction
-
-    # Получаем конфигурацию для получения констант
-    config = get_config(mock_game.chat_id)
-    REROLL_PRICE = config.constants.reroll_price
-    COINS_PER_WIN = config.constants.coins_per_win
-    PREDICTION_REWARD = config.constants.prediction_reward
 
     # Setup
     game_id = 1
@@ -525,11 +510,7 @@ async def test_give_coins_button_appears_after_pidor_selection(mock_update, mock
 async def test_give_coins_regular_player_gets_1_coin(mock_update, mock_context, mock_game, sample_players, mocker):
     """Интеграционный тест: обычный игрок получает 1 койн."""
     from bot.handlers.game.commands import handle_give_coins_callback
-    from bot.handlers.game.config import get_config
-
-    # Получаем конфигурацию для получения констант
-    config = get_config(mock_game.chat_id)
-    GIVE_COINS_AMOUNT = config.constants.give_coins_amount
+    from bot.handlers.game.give_coins_service import GIVE_COINS_AMOUNT
 
     # Setup
     winner = sample_players[0]
@@ -583,11 +564,7 @@ async def test_give_coins_regular_player_gets_1_coin(mock_update, mock_context, 
 async def test_give_coins_winner_gets_2_coins(mock_update, mock_context, mock_game, sample_players, mocker):
     """Интеграционный тест: пидор дня получает 2 койна."""
     from bot.handlers.game.commands import handle_give_coins_callback
-    from bot.handlers.game.config import get_config
-
-    # Получаем конфигурацию для получения констант
-    config = get_config(mock_game.chat_id)
-    GIVE_COINS_WINNER_AMOUNT = config.constants.give_coins_winner_amount
+    from bot.handlers.game.give_coins_service import GIVE_COINS_WINNER_AMOUNT
 
     # Setup
     winner = sample_players[0]

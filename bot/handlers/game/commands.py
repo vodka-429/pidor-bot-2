@@ -23,15 +23,20 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
     YEAR_RESULTS_MSG, YEAR_RESULTS_ANNOUNCEMENT, REGISTRATION_MANY_SUCCESS, \
     ERROR_ALREADY_REGISTERED_MANY, VOTING_ENDED_RESPONSE, \
     FINAL_VOTING_CLOSE_ERROR_NOT_AUTHORIZED, COIN_INFO, \
-    COINS_PERSONAL, COINS_CURRENT_YEAR, COINS_ALL_TIME, COINS_LIST_ITEM, COIN_EARNED, COIN_INFO_SELF_PIDOR, \
-    get_rules_message
-from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders
-from bot.handlers.game.config import is_test_chat, get_config
+    COINS_PERSONAL, COINS_CURRENT_YEAR, COINS_ALL_TIME, COINS_LIST_ITEM, COIN_EARNED, COIN_INFO_SELF_PIDOR
+from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders, is_test_chat
 from bot.handlers.game.coin_service import add_coins, get_balance, get_leaderboard, get_leaderboard_by_year
 from bot.utils import escape_markdown2, escape_word, format_number, ECallbackContext, get_allowed_final_voting_closers
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
+
+
+GAME_RESULT_TIME_DELAY = 2
+MAX_MISSED_DAYS_FOR_FINAL_VOTING = 10  # Максимальное количество пропущенных дней для финального голосования
+COINS_PER_WIN = 4  # Количество койнов за победу в розыгрыше
+COINS_PER_COMMAND = 1  # Количество койнов за запуск команды /pidor
+SELF_PIDOR_MULTIPLIER = 2  # Множитель для случая self-pidor
 
 MOSCOW_TZ = ZoneInfo('Europe/Moscow')
 
@@ -120,16 +125,13 @@ async def run_tiebreaker(update: Update, context: GECallbackContext, leaders: Li
 
     logger.info(f"Starting tie-breaker for year {year} with {len(leaders)} leaders")
 
-    # Получаем конфигурацию для чата
-    config = get_config(context.game.chat_id)
-
     # Сообщение о tie-breaker
     leaders_names = ', '.join([escape_markdown2(leader.full_username()) for leader in leaders])
     await update.effective_chat.send_message(
         TIEBREAKER_ANNOUNCEMENT.format(count=len(leaders), leaders=leaders_names),
         parse_mode="MarkdownV2"
     )
-    await asyncio.sleep(config.constants.game_result_time_delay)
+    await asyncio.sleep(GAME_RESULT_TIME_DELAY)
 
     # Выбор победителя
     winner = random.choice(leaders)
@@ -145,8 +147,8 @@ async def run_tiebreaker(update: Update, context: GECallbackContext, leaders: Li
     )
 
     # Начислить койны победителю tie-breaker'а (без коммита)
-    add_coins(context.db_session, context.game.id, winner.id, config.constants.coins_per_win, year, "tiebreaker_win", auto_commit=False)
-    logger.debug(f"Awarded {config.constants.coins_per_win} coins to tie-breaker winner {winner.id}")
+    add_coins(context.db_session, context.game.id, winner.id, COINS_PER_WIN, year, "tiebreaker_win", auto_commit=False)
+    logger.debug(f"Awarded {COINS_PER_WIN} coins to tie-breaker winner {winner.id}")
 
     logger.debug("Committing tie-breaker result and coin transaction to DB")
     context.db_session.commit()
@@ -255,9 +257,6 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         await update.effective_chat.send_message(ERROR_NOT_ENOUGH_PLAYERS)
         return
 
-    # Получаем конфигурацию для чата
-    config = get_config(context.game.chat_id)
-
     current_dt = current_datetime()
     cur_year, cur_day = current_dt.year, current_dt.timetuple().tm_yday
     current_date = current_dt.date()
@@ -269,7 +268,7 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         logger.info(f"Missed {missed_days} days since last game")
         dramatic_msg = get_dramatic_message(missed_days)
         await update.effective_chat.send_message(dramatic_msg, parse_mode="MarkdownV2")
-        await asyncio.sleep(config.constants.game_result_time_delay)
+        await asyncio.sleep(GAME_RESULT_TIME_DELAY)
 
     game_result: GameResult = context.db_session.query(GameResult).filter_by(game_id=context.game.id, year=cur_year, day=cur_day).one_or_none()
     if game_result:
@@ -314,8 +313,8 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
             protected_player = selection_result.protected_player
 
             # Начисляем койны защищенному игроку за то, что его выбрали
-            add_coins(context.db_session, context.game.id, protected_player.id, config.constants.coins_per_win, cur_year, "immunity_save", auto_commit=False)
-            logger.debug(f"Awarded {config.constants.coins_per_win} coins to protected player {protected_player.id}")
+            add_coins(context.db_session, context.game.id, protected_player.id, COINS_PER_WIN, cur_year, "immunity_save", auto_commit=False)
+            logger.debug(f"Awarded {COINS_PER_WIN} coins to protected player {protected_player.id}")
 
             # Показываем сообщение о срабатывании защиты с информацией о койнах
             from html import escape as html_escape
@@ -323,11 +322,11 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
                 IMMUNITY_ACTIVATED_IN_GAME.format(
                     username=html_escape(protected_player.full_username()),
                     username_plain=protected_player.full_username(),
-                    amount=config.constants.coins_per_win
+                    amount=COINS_PER_WIN
                 ),
                 parse_mode="HTML"
             )
-            await asyncio.sleep(config.constants.game_result_time_delay)
+            await asyncio.sleep(GAME_RESULT_TIME_DELAY)
 
         # Сбрасываем двойной шанс у победителя (если был активен)
         reset_double_chance(context.db_session, context.game.id, winner.id, current_date)
@@ -339,17 +338,17 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
 
         if is_self_pidor:
             # Начислить специальные койны с множителем
-            self_pidor_coins = config.constants.coins_per_win * config.constants.self_pidor_multiplier
+            self_pidor_coins = COINS_PER_WIN * SELF_PIDOR_MULTIPLIER
             add_coins(context.db_session, context.game.id, winner.id, self_pidor_coins, cur_year, "self_pidor_win", auto_commit=False)
             logger.debug(f"Awarded {self_pidor_coins} coins to self-pidor winner {winner.id}")
         else:
             # Начислить койны победителю (без коммита)
-            add_coins(context.db_session, context.game.id, winner.id, config.constants.coins_per_win, cur_year, "pidor_win", auto_commit=False)
-            logger.debug(f"Awarded {config.constants.coins_per_win} coins to winner {winner.id}")
+            add_coins(context.db_session, context.game.id, winner.id, COINS_PER_WIN, cur_year, "pidor_win", auto_commit=False)
+            logger.debug(f"Awarded {COINS_PER_WIN} coins to winner {winner.id}")
 
             # Начислить койны игроку, который запустил команду (без коммита)
-            add_coins(context.db_session, context.game.id, context.tg_user.id, config.constants.coins_per_command, cur_year, "command_execution", auto_commit=False)
-            logger.debug(f"Awarded {config.constants.coins_per_command} coin to command executor {context.tg_user.id}")
+            add_coins(context.db_session, context.game.id, context.tg_user.id, COINS_PER_COMMAND, cur_year, "command_execution", auto_commit=False)
+            logger.debug(f"Awarded {COINS_PER_COMMAND} coin to command executor {context.tg_user.id}")
 
         # Обрабатываем предсказания на текущий день
         predictions_results = process_predictions(
@@ -369,27 +368,27 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
 
         logger.debug("Sending stage 1 message")
         await update.effective_chat.send_message(random.choice(stage1.phrases))
-        await asyncio.sleep(config.constants.game_result_time_delay)
+        await asyncio.sleep(GAME_RESULT_TIME_DELAY)
         logger.debug("Sending stage 2 message")
         await update.effective_chat.send_message(random.choice(stage2.phrases))
-        await asyncio.sleep(config.constants.game_result_time_delay)
+        await asyncio.sleep(GAME_RESULT_TIME_DELAY)
         logger.debug("Sending stage 3 message")
         await update.effective_chat.send_message(random.choice(stage3.phrases))
-        await asyncio.sleep(config.constants.game_result_time_delay)
+        await asyncio.sleep(GAME_RESULT_TIME_DELAY)
         logger.debug("Sending stage 4 message")
         stage4_message = random.choice(stage4.phrases).format(
             username=winner.full_username(mention=True))
 
         # Добавить информацию о койнах в зависимости от ситуации
         if is_self_pidor:
-            self_pidor_coins = config.constants.coins_per_win * config.constants.self_pidor_multiplier
+            self_pidor_coins = COINS_PER_WIN * SELF_PIDOR_MULTIPLIER
             stage4_message += COIN_INFO_SELF_PIDOR.format(amount=self_pidor_coins)
         else:
             stage4_message += COIN_INFO.format(
                 winner_username=winner.full_username(),
-                amount=config.constants.coins_per_win,
+                amount=COINS_PER_WIN,
                 executor_username=context.tg_user.full_username(),
-                executor_amount=config.constants.coins_per_command
+                executor_amount=COINS_PER_COMMAND
             )
 
         # Добавить информацию о двойном шансе (если сработал)
@@ -432,20 +431,42 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
                 logger.debug("Single leader detected, no tie-breaker needed")
 
 
-async def pidorules_cmd(update: Update, context: ECallbackContext):
+async def pidorules_cmd(update: Update, _context: CallbackContext):
     logger.info("Game rules requested")
-
-    # Получаем конфигурацию для чата (используем chat_id из update, так как game может не существовать)
-    config = get_config(update.effective_chat.id)
-
-    # Генерируем сообщение с правилами из конфигурации
-    rules_message = get_rules_message(config)
-
     await update.effective_chat.send_message(
-        rules_message,
-        parse_mode="HTML",
-        disable_web_page_preview=True
-    )
+        "<b>Правила игры «Пидор Дня»</b> (только для групповых чатов):\n\n"
+        "<b>1.</b> Зарегистрируйтесь в игру по команде /pidoreg\n"
+        "<b>2.</b> Подождите пока зарегиструются все (или большинство :)\n"
+        "<b>3.</b> Запустите розыгрыш по команде /pidor\n"
+        "<b>4.</b> Просмотр статистики канала по команде /pidorstats, /pidorall\n"
+        "<b>5.</b> Личная статистика по команде /pidorme\n"
+        "<b>6.</b> Статистика за последний год по команде /pidor2020 (так же есть за 2016-2020)\n"
+        "<b>7.</b> Просмотр пропущенных дней в текущем году: /pidormissed\n"
+        "<b>8.</b> Финальное голосование за пропущенные дни (29-30 декабря): /pidorfinal\n"
+        "<b>9.</b> Статус финального голосования: /pidorfinalstatus\n"
+        "<b>10. (!!! Только для администраторов чатов)</b>: удалить из игры может только Админ канала, "
+        "сначала выведя по команде список игроков: /pidormin list\n"
+        "Удалить же игрока можно по команде (используйте идентификатор пользователя - цифры из списка пользователей): "
+        "/pidormin del 123456\n\n"
+        "<b>Важно</b>, розыгрыш проходит только <b>раз в день</b>, повторная команда выведет <b>результат</b> игры.\n\n"
+        "<b>Пидор-койны:</b> За участие в игре начисляются пидор-койны! Победитель получает 4 койна, "
+        "запустивший команду - 1 койн. Если ты сам стал пидором дня - получаешь 8 койнов! "
+        "Потратить койны можно в магазине: /pidorshop\n"
+        "• <b>Защита от пидора</b> (10 койнов) - защита на следующий день, если тебя выберут - перевыбор. Кулдаун 7 дней.\n"
+        "• <b>Двойной шанс</b> (8 койнов) - удваивает шанс стать пидором дня на следующий розыгрыш. Можно купить для любого игрока!\n"
+        "• <b>Предсказание</b> (3 койна) - угадай пидора дня и получи 30 койнов!\n"
+        "• <b>Перевод койнов</b> - передай койны другому игроку (комиссия по ключевой ставке ЦБ РФ).\n"
+        "• <b>Банк чата</b> - общий банк, куда идут комиссии с покупок и переводов.\n\n"
+        "<b>Комиссия:</b> При каждой покупке в магазине и переводе койнов часть денег (по ключевой ставке ЦБ РФ) идёт в банк чата. "
+        "Минимальная комиссия - 1 койн.\n"
+        "Баланс койнов: /pidorcoinsme, топ по койнам: /pidorcoinsstats\n\n"
+        "<b>Финальное голосование:</b> В конце года (29-30 декабря) можно запустить взвешенное голосование "
+        "для распределения пропущенных дней. Финальное голосование с кастомными кнопками (поддерживает любое количество участников). "
+        "Результаты скрыты до завершения. Вес каждого голоса равен количеству побед игрока в текущем году. "
+        "Голосование доступно только если пропущено менее 10 дней. Завершить голосование могут администраторы чата: /pidorfinalclose\n\n"
+        "Сброс розыгрыша происходит каждый день в 12 часов ночи по Москве.\n\n"
+        'Поддержать бота можно по <a href="https://github.com/vodka-429/pidor-bot-2/">ссылке</a> :)',
+        parse_mode="HTML", disable_web_page_preview=True)
 
 
 @ensure_game
@@ -587,9 +608,6 @@ async def pidormissed_cmd(update: Update, context: GECallbackContext):
 
     logger.info(f"pidormissed_cmd started for chat {update.effective_chat.id}")
 
-    # Получаем конфигурацию для чата
-    config = get_config(context.game.chat_id)
-
     # Получаем текущий год и день
     current_dt = current_datetime()
     cur_year, cur_day = current_dt.year, current_dt.timetuple().tm_yday
@@ -605,8 +623,8 @@ async def pidormissed_cmd(update: Update, context: GECallbackContext):
         )
         return
 
-    # Если пропущено меньше max_missed_days_for_final_voting дней - показываем список с датами
-    if missed_count < config.constants.max_missed_days_for_final_voting:
+    # Если пропущено меньше MAX_MISSED_DAYS_FOR_FINAL_VOTING дней - показываем список с датами
+    if missed_count < MAX_MISSED_DAYS_FOR_FINAL_VOTING:
         days_list_items = []
         for day_num in missed_days:
             date = day_to_date(cur_year, day_num)
@@ -619,7 +637,7 @@ async def pidormissed_cmd(update: Update, context: GECallbackContext):
         days_list = '\n'.join(days_list_items)
         message = MISSED_DAYS_INFO_WITH_LIST.format(count=missed_count, days_list=days_list)
     else:
-        # Если больше или равно max_missed_days_for_final_voting - показываем только количество
+        # Если больше или равно MAX_MISSED_DAYS_FOR_FINAL_VOTING - показываем только количество
         message = MISSED_DAYS_INFO_COUNT_ONLY.format(count=missed_count)
 
     await update.effective_chat.send_message(message, parse_mode="MarkdownV2")
@@ -639,9 +657,6 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
     )
 
     logger.info(f"pidorfinal_cmd started for chat {update.effective_chat.id}")
-
-    # Получаем конфигурацию для чата
-    config = get_config(context.game.chat_id)
 
     # Получаем текущую дату
     current_dt = current_datetime()
@@ -663,13 +678,13 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
     # Определяем всех лидеров года (игроки с максимальным количеством побед)
     year_leaders = get_year_leaders(player_weights)
 
-    # Проверяем, что пропущено меньше max_missed_days_for_final_voting дней (пропускаем для тестового чата)
+    # Проверяем, что пропущено меньше MAX_MISSED_DAYS_FOR_FINAL_VOTING дней (пропускаем для тестового чата)
     if not is_test_chat(update.effective_chat.id):
-        if effective_missed_days >= config.constants.max_missed_days_for_final_voting:
+        if effective_missed_days >= MAX_MISSED_DAYS_FOR_FINAL_VOTING:
             await update.effective_chat.send_message(
                 FINAL_VOTING_ERROR_TOO_MANY.format(
                     count=effective_missed_days,
-                    max_days=config.constants.max_missed_days_for_final_voting
+                    max_days=MAX_MISSED_DAYS_FOR_FINAL_VOTING
                 ),
                 parse_mode="MarkdownV2"
             )
@@ -1217,11 +1232,11 @@ async def pidorshop_cmd(update: Update, context: GECallbackContext):
     # Создаём клавиатуру магазина с owner_user_id для проверки прав и информацией об активных эффектах
     # ВАЖНО: используем tg_id (Telegram ID), а не id (внутренний ID БД)
     logger.info(f"Creating shop keyboard with owner_user_id (tg_id): {context.tg_user.tg_id}")
-    keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id, game_id=context.game.id, active_effects=active_effects)
+    keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id, active_effects=active_effects)
 
     # Форматируем сообщение с балансом, именем пользователя, списком товаров и информацией об активных эффектах
     user_name = context.tg_user.full_username()
-    message_text = format_shop_menu_message(balance, context.game.id, user_name, active_effects)
+    message_text = format_shop_menu_message(balance, user_name, active_effects)
 
     # Отправляем сообщение с inline-кнопками
     await update.effective_chat.send_message(
@@ -1352,9 +1367,9 @@ async def handle_shop_immunity_callback(update: Update, context: GECallbackConte
             current_date
         )
 
-        keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id, game_id=context.game.id, active_effects=active_effects)
+        keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id, active_effects=active_effects)
         user_name = context.tg_user.full_username()
-        message_text = format_shop_menu_message(balance, context.game.id, user_name, active_effects)
+        message_text = format_shop_menu_message(balance, user_name, active_effects)
 
         await query.edit_message_text(
             text=message_text,
@@ -1919,9 +1934,6 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
         await query.answer("❌ Ошибка обработки запроса")
         return
 
-    # Получаем конфигурацию для чата
-    config = get_config(context.game.chat_id)
-
     # Проверяем, что перевыбор ещё доступен
     if not can_reroll(context.db_session, game_id, year, day):
         await query.answer(REROLL_ERROR_ALREADY_USED, show_alert=True)
@@ -1979,7 +1991,7 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
     # Информация о защите (если сработала при перевыборе)
     if selection_result.had_immunity and selection_result.protected_player:
         protected_player = selection_result.protected_player
-        protection_info = f"\n\n🛡️ <b>Защита сработала!</b> {html_escape(protected_player.full_username())} был(а) защищён(а) и получил(а) +{config.constants.coins_per_win} 💰"
+        protection_info = f"\n\n🛡️ <b>Защита сработала!</b> {html_escape(protected_player.full_username())} был(а) защищён(а) и получил(а) +{COINS_PER_WIN} 💰"
 
     # Информация о двойном шансе (если сработал при перевыборе)
     if selection_result.had_double_chance:
@@ -2008,7 +2020,7 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
             initiator_name=initiator_name,
             old_winner_name=old_winner_name,
             new_winner_name=new_winner_name,
-            new_winner_coins=config.constants.coins_per_win,
+            new_winner_coins=COINS_PER_WIN,
             protection_info=protection_info,
             double_chance_info=double_chance_info,
             predictions_info=predictions_info
@@ -2195,14 +2207,11 @@ async def handle_shop_transfer_select_callback(update: Update, context: GECallba
         await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
         return
 
-    # Получаем конфигурацию для чата
-    config = get_config(context.game.chat_id)
-
     # Получаем баланс отправителя
     balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
 
-    if balance < config.constants.transfer_min_amount:
-        await query.answer(f"❌ Недостаточно койнов для передачи (минимум {config.constants.transfer_min_amount})", show_alert=True)
+    if balance < 2:  # TRANSFER_MIN_AMOUNT
+        await query.answer("❌ Недостаточно койнов для передачи (минимум 2)", show_alert=True)
         return
 
     # Получаем имя получателя
@@ -2210,7 +2219,7 @@ async def handle_shop_transfer_select_callback(update: Update, context: GECallba
     receiver_name = escape_markdown2(receiver.full_username())
 
     # Создаём клавиатуру с выбором суммы
-    keyboard = create_transfer_amount_keyboard(balance, receiver_id, context.tg_user.tg_id, context.game.id)
+    keyboard = create_transfer_amount_keyboard(balance, receiver_id, context.tg_user.tg_id)
 
     await query.edit_message_text(
         text=TRANSFER_SELECT_AMOUNT.format(
@@ -2434,11 +2443,11 @@ async def handle_shop_predict_cancel_callback(update: Update, context: GECallbac
     )
 
     # Создаём клавиатуру магазина
-    keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id, game_id=context.game.id, active_effects=active_effects)
+    keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id, active_effects=active_effects)
 
     # Форматируем сообщение
     user_name = context.tg_user.full_username()
-    message_text = format_shop_menu_message(balance, context.game.id, user_name, active_effects)
+    message_text = format_shop_menu_message(balance, user_name, active_effects)
 
     # Обновляем сообщение
     await query.answer("❌ Предсказание отменено")
@@ -2495,11 +2504,11 @@ async def handle_shop_back_callback(update: Update, context: GECallbackContext):
     )
 
     # Создаём клавиатуру магазина
-    keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id, game_id=context.game.id, active_effects=active_effects)
+    keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id, active_effects=active_effects)
 
     # Форматируем сообщение
     user_name = context.tg_user.full_username()
-    message_text = format_shop_menu_message(balance, context.game.id, user_name, active_effects)
+    message_text = format_shop_menu_message(balance, user_name, active_effects)
 
     # Обновляем сообщение
     await query.answer()

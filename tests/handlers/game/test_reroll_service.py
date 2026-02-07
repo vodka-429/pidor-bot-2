@@ -7,8 +7,9 @@ from bot.handlers.game.reroll_service import (
     can_reroll,
     execute_reroll,
     remove_reroll_button_after_timeout,
+    REROLL_PRICE
 )
-from bot.handlers.game.config import get_config
+from bot.handlers.game.commands import COINS_PER_WIN
 from bot.app.models import GameResult, TGUser
 
 
@@ -29,12 +30,7 @@ def test_can_reroll_returns_true_when_available(mock_db_session):
     mock_db_session.exec.return_value = mock_result
 
     # Execute
-    with patch('bot.handlers.game.reroll_service.get_config') as mock_get_config:
-        mock_config = MagicMock()
-        mock_config.constants.reroll_enabled = True
-        mock_get_config.return_value = mock_config
-
-        result = can_reroll(mock_db_session, game_id, year, day)
+    result = can_reroll(mock_db_session, game_id, year, day)
 
     # Verify
     assert result is True
@@ -58,12 +54,7 @@ def test_can_reroll_returns_false_when_not_available(mock_db_session):
     mock_db_session.exec.return_value = mock_result
 
     # Execute
-    with patch('bot.handlers.game.reroll_service.get_config') as mock_get_config:
-        mock_config = MagicMock()
-        mock_config.constants.reroll_enabled = True
-        mock_get_config.return_value = mock_config
-
-        result = can_reroll(mock_db_session, game_id, year, day)
+    result = can_reroll(mock_db_session, game_id, year, day)
 
     # Verify
     assert result is False
@@ -83,12 +74,7 @@ def test_can_reroll_returns_false_when_game_result_not_found(mock_db_session):
     mock_db_session.exec.return_value = mock_result
 
     # Execute
-    with patch('bot.handlers.game.reroll_service.get_config') as mock_get_config:
-        mock_config = MagicMock()
-        mock_config.constants.reroll_enabled = True
-        mock_get_config.return_value = mock_config
-
-        result = can_reroll(mock_db_session, game_id, year, day)
+    result = can_reroll(mock_db_session, game_id, year, day)
 
     # Verify
     assert result is False
@@ -134,17 +120,9 @@ def test_execute_reroll_updates_game_result(mock_db_session, sample_players):
     # Execute
     current_date = date(2024, 4, 10)  # День 100 в 2024 году
 
-    with patch('bot.handlers.game.reroll_service.get_config') as mock_get_config, \
-         patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
+    with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
-
-        # Mock config
-        mock_config = MagicMock()
-        mock_config.constants.reroll_enabled = True
-        mock_config.constants.reroll_price = 15
-        mock_config.constants.coins_per_win = 4
-        mock_get_config.return_value = mock_config
 
         # Мокаем результат выбора победителя
         mock_selection_result = MagicMock()
@@ -160,12 +138,12 @@ def test_execute_reroll_updates_game_result(mock_db_session, sample_players):
 
     # Verify spend_coins was called
     mock_spend.assert_called_once_with(
-        mock_db_session, game_id, initiator_id, 15, year, "reroll", auto_commit=False
+        mock_db_session, game_id, initiator_id, REROLL_PRICE, year, "reroll", auto_commit=False
     )
 
     # Verify add_coins was called for new winner
     mock_add.assert_called_once_with(
-        mock_db_session, game_id, sample_players[1].id, 4, year, "pidor_win_reroll", auto_commit=False
+        mock_db_session, game_id, sample_players[1].id, COINS_PER_WIN, year, "pidor_win_reroll", auto_commit=False
     )
 
     # Verify GameResult was updated
@@ -219,17 +197,9 @@ def test_execute_reroll_allows_same_winner(mock_db_session, sample_players):
     # Execute - same player wins again
     current_date = date(2024, 4, 10)
 
-    with patch('bot.handlers.game.reroll_service.get_config') as mock_get_config, \
-         patch('bot.handlers.game.reroll_service.spend_coins'), \
+    with patch('bot.handlers.game.reroll_service.spend_coins'), \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
-
-        # Mock config
-        mock_config = MagicMock()
-        mock_config.constants.reroll_enabled = True
-        mock_config.constants.reroll_price = 15
-        mock_config.constants.coins_per_win = 4
-        mock_get_config.return_value = mock_config
 
         # Мокаем результат выбора победителя - тот же игрок
         mock_selection_result = MagicMock()
@@ -245,7 +215,7 @@ def test_execute_reroll_allows_same_winner(mock_db_session, sample_players):
 
     # Verify add_coins was called even for the same winner (double reward)
     mock_add.assert_called_once_with(
-        mock_db_session, game_id, old_winner.id, 4, year, "pidor_win_reroll", auto_commit=False
+        mock_db_session, game_id, old_winner.id, COINS_PER_WIN, year, "pidor_win_reroll", auto_commit=False
     )
 
     # Verify both returned winners are the same
@@ -265,13 +235,8 @@ def test_execute_reroll_raises_error_when_no_players(mock_db_session):
 
     # Execute and verify
     current_date = date(2024, 4, 10)
-    with patch('bot.handlers.game.reroll_service.get_config') as mock_get_config:
-        mock_config = MagicMock()
-        mock_config.constants.reroll_enabled = True
-        mock_get_config.return_value = mock_config
-
-        with pytest.raises(ValueError, match="Players list cannot be empty"):
-            execute_reroll(mock_db_session, game_id, year, day, initiator_id, players, current_date)
+    with pytest.raises(ValueError, match="Players list cannot be empty"):
+        execute_reroll(mock_db_session, game_id, year, day, initiator_id, players, current_date)
 
 
 @pytest.mark.unit
@@ -290,13 +255,8 @@ def test_execute_reroll_raises_error_when_game_result_not_found(mock_db_session,
 
     # Execute and verify
     current_date = date(2024, 4, 10)
-    with patch('bot.handlers.game.reroll_service.get_config') as mock_get_config:
-        mock_config = MagicMock()
-        mock_config.constants.reroll_enabled = True
-        mock_get_config.return_value = mock_config
-
-        with pytest.raises(ValueError, match="GameResult not found"):
-            execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players, current_date)
+    with pytest.raises(ValueError, match="GameResult not found"):
+        execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players, current_date)
 
 
 @pytest.mark.unit
@@ -332,13 +292,8 @@ def test_execute_reroll_raises_error_when_old_winner_not_found(mock_db_session, 
 
     # Execute and verify
     current_date = date(2024, 4, 10)
-    with patch('bot.handlers.game.reroll_service.get_config') as mock_get_config:
-        mock_config = MagicMock()
-        mock_config.constants.reroll_enabled = True
-        mock_get_config.return_value = mock_config
-
-        with pytest.raises(ValueError, match="Old winner with id .* not found"):
-            execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players, current_date)
+    with pytest.raises(ValueError, match="Old winner with id .* not found"):
+        execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players, current_date)
 
 
 @pytest.mark.asyncio
@@ -352,12 +307,7 @@ async def test_remove_reroll_button_after_timeout_removes_button():
     delay_minutes = 0.001  # Very short delay for testing
 
     # Execute
-    with patch('bot.handlers.game.reroll_service.get_config') as mock_get_config:
-        mock_config = MagicMock()
-        mock_config.constants.reroll_timeout_minutes = 5
-        mock_get_config.return_value = mock_config
-
-        await remove_reroll_button_after_timeout(mock_bot, chat_id, message_id, delay_minutes)
+    await remove_reroll_button_after_timeout(mock_bot, chat_id, message_id, delay_minutes)
 
     # Verify
     mock_bot.edit_message_reply_markup.assert_called_once_with(
@@ -421,17 +371,9 @@ def test_execute_reroll_preserves_old_winner_coins(mock_db_session, sample_playe
     # Execute
     current_date = date(2024, 4, 10)
 
-    with patch('bot.handlers.game.reroll_service.get_config') as mock_get_config, \
-         patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
+    with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
-
-        # Mock config
-        mock_config = MagicMock()
-        mock_config.constants.reroll_enabled = True
-        mock_config.constants.reroll_price = 15
-        mock_config.constants.coins_per_win = 4
-        mock_get_config.return_value = mock_config
 
         # Мокаем результат выбора победителя
         mock_selection_result = MagicMock()
@@ -446,13 +388,13 @@ def test_execute_reroll_preserves_old_winner_coins(mock_db_session, sample_playe
     # Verify spend_coins was called ONLY for initiator, NOT for old winner
     assert mock_spend.call_count == 1
     mock_spend.assert_called_with(
-        mock_db_session, game_id, initiator_id, 15, year, "reroll", auto_commit=False
+        mock_db_session, game_id, initiator_id, REROLL_PRICE, year, "reroll", auto_commit=False
     )
 
     # Verify add_coins was called ONLY for new winner
     assert mock_add.call_count == 1
     mock_add.assert_called_with(
-        mock_db_session, game_id, sample_players[1].id, 4, year, "pidor_win_reroll", auto_commit=False
+        mock_db_session, game_id, sample_players[1].id, COINS_PER_WIN, year, "pidor_win_reroll", auto_commit=False
     )
 
 
@@ -501,17 +443,9 @@ def test_execute_reroll_with_immunity_protection(mock_db_session, sample_players
     # Execute
     current_date = date(2024, 4, 10)
 
-    with patch('bot.handlers.game.reroll_service.get_config') as mock_get_config, \
-         patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
+    with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
-
-        # Mock config
-        mock_config = MagicMock()
-        mock_config.constants.reroll_enabled = True
-        mock_config.constants.reroll_price = 15
-        mock_config.constants.coins_per_win = 4
-        mock_get_config.return_value = mock_config
 
         # Мокаем результат выбора: защита сработала, перевыбран другой игрок
         mock_selection_result = MagicMock()
@@ -534,11 +468,11 @@ def test_execute_reroll_with_immunity_protection(mock_db_session, sample_players
     assert mock_add.call_count == 2
     # First call - immunity reward for protected player
     mock_add.assert_any_call(
-        mock_db_session, game_id, protected_player.id, 4, year, "immunity_save_reroll", auto_commit=False
+        mock_db_session, game_id, protected_player.id, COINS_PER_WIN, year, "immunity_save_reroll", auto_commit=False
     )
     # Second call - win reward for final winner
     mock_add.assert_any_call(
-        mock_db_session, game_id, final_winner.id, 4, year, "pidor_win_reroll", auto_commit=False
+        mock_db_session, game_id, final_winner.id, COINS_PER_WIN, year, "pidor_win_reroll", auto_commit=False
     )
 
     # Verify GameResult was updated with final winner
@@ -590,17 +524,9 @@ def test_execute_reroll_with_double_chance(mock_db_session, sample_players):
     # Execute
     current_date = date(2024, 4, 10)
 
-    with patch('bot.handlers.game.reroll_service.get_config') as mock_get_config, \
-         patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
+    with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
-
-        # Mock config
-        mock_config = MagicMock()
-        mock_config.constants.reroll_enabled = True
-        mock_config.constants.reroll_price = 15
-        mock_config.constants.coins_per_win = 4
-        mock_get_config.return_value = mock_config
 
         # Мокаем результат выбора: победитель с двойным шансом
         mock_selection_result = MagicMock()
@@ -623,7 +549,7 @@ def test_execute_reroll_with_double_chance(mock_db_session, sample_players):
     # Verify coins were added to winner
     assert mock_add.call_count == 1
     mock_add.assert_called_with(
-        mock_db_session, game_id, double_chance_winner.id, 4, year, "pidor_win_reroll", auto_commit=False
+        mock_db_session, game_id, double_chance_winner.id, COINS_PER_WIN, year, "pidor_win_reroll", auto_commit=False
     )
 
     # Verify GameResult was updated
@@ -674,18 +600,10 @@ def test_execute_reroll_when_all_protected(mock_db_session, sample_players):
     # Execute
     current_date = date(2024, 4, 10)
 
-    with patch('bot.handlers.game.reroll_service.get_config') as mock_get_config, \
-         patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
+    with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select, \
          patch('bot.handlers.game.reroll_service.random.choice', return_value=random_winner) as mock_random:
-
-        # Mock config
-        mock_config = MagicMock()
-        mock_config.constants.reroll_enabled = True
-        mock_config.constants.reroll_price = 15
-        mock_config.constants.coins_per_win = 4
-        mock_get_config.return_value = mock_config
 
         # Мокаем результат выбора: все защищены
         mock_selection_result = MagicMock()
@@ -710,7 +628,7 @@ def test_execute_reroll_when_all_protected(mock_db_session, sample_players):
     # Verify coins were added to random winner
     assert mock_add.call_count == 1
     mock_add.assert_called_with(
-        mock_db_session, game_id, random_winner.id, 4, year, "pidor_win_reroll", auto_commit=False
+        mock_db_session, game_id, random_winner.id, COINS_PER_WIN, year, "pidor_win_reroll", auto_commit=False
     )
 
     # Verify GameResult was updated with random winner

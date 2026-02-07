@@ -8,11 +8,13 @@ from sqlmodel import select
 
 from bot.app.models import Prediction, TGUser
 from bot.handlers.game.coin_service import add_coins
-from bot.handlers.game.config import get_config
 from bot.utils import escape_markdown2, format_number
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
+
+# Награда за правильное предсказание
+PREDICTION_REWARD = 30
 
 
 def calculate_candidates_count(players_count: int) -> int:
@@ -207,10 +209,6 @@ def award_correct_predictions(
         year: Год
         predictions_results: Список кортежей (предсказание, правильность)
     """
-    # Получаем конфигурацию для чата
-    config = get_config(game_id)
-    prediction_reward = config.constants.prediction_reward
-
     for prediction, is_correct in predictions_results:
         if is_correct:
             # Начисляем койны за правильное предсказание
@@ -218,12 +216,12 @@ def award_correct_predictions(
                 db_session,
                 game_id,
                 prediction.user_id,
-                prediction_reward,
+                PREDICTION_REWARD,
                 year,
                 "prediction_correct",
                 auto_commit=False
             )
-            logger.info(f"Awarded {prediction_reward} coins to user {prediction.user_id} for correct prediction")
+            logger.info(f"Awarded {PREDICTION_REWARD} coins to user {prediction.user_id} for correct prediction")
 
 
 def process_predictions_for_reroll(
@@ -249,10 +247,6 @@ def process_predictions_for_reroll(
     Returns:
         Список кортежей (предсказание, правильность для нового победителя)
     """
-    # Получаем конфигурацию для чата
-    config = get_config(game_id)
-    prediction_reward = config.constants.prediction_reward
-
     predictions = get_predictions_for_day(db_session, game_id, year, day)
     results = []
 
@@ -270,7 +264,7 @@ def process_predictions_for_reroll(
                 db_session,
                 game_id,
                 prediction.user_id,
-                prediction_reward,
+                PREDICTION_REWARD,
                 year,
                 "prediction_correct_reroll",
                 auto_commit=False

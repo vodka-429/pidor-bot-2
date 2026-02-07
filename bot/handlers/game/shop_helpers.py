@@ -103,13 +103,12 @@ def parse_shop_callback_data(callback_data: str) -> Tuple[str, int]:
         raise ValueError(f"Invalid callback_data format: {callback_data}")
 
 
-def create_shop_keyboard(owner_user_id: int, game_id: int, active_effects: dict = None) -> InlineKeyboardMarkup:
+def create_shop_keyboard(owner_user_id: int, active_effects: dict = None) -> InlineKeyboardMarkup:
     """
     Создаёт клавиатуру магазина с кнопками товаров.
 
     Args:
         owner_user_id: ID владельца магазина (кто вызвал команду)
-        game_id: ID игры (чата) для получения конфигурации
         active_effects: Словарь с информацией об активных эффектах
 
     Returns:
@@ -117,10 +116,10 @@ def create_shop_keyboard(owner_user_id: int, game_id: int, active_effects: dict 
     """
     from bot.handlers.game.shop_service import get_shop_items
 
-    items = get_shop_items(game_id)
+    items = get_shop_items()
     keyboard = []
 
-    logger.info(f"Creating shop keyboard for owner_user_id: {owner_user_id}, game_id: {game_id}")
+    logger.info(f"Creating shop keyboard for owner_user_id: {owner_user_id}")
 
     for item in items:
         # Определяем, активен ли товар
@@ -278,7 +277,7 @@ def create_double_chance_keyboard(players: List[TGUser], owner_user_id: int, cal
     return InlineKeyboardMarkup(keyboard)
 
 
-def create_transfer_amount_keyboard(balance: int, receiver_id: int, owner_user_id: int, game_id: int) -> InlineKeyboardMarkup:
+def create_transfer_amount_keyboard(balance: int, receiver_id: int, owner_user_id: int) -> InlineKeyboardMarkup:
     """
     Создаёт клавиатуру для выбора суммы передачи.
 
@@ -286,17 +285,13 @@ def create_transfer_amount_keyboard(balance: int, receiver_id: int, owner_user_i
         balance: Баланс отправителя
         receiver_id: ID получателя (внутренний ID БД)
         owner_user_id: Telegram ID владельца магазина
-        game_id: ID игры (чата) для получения конфигурации
 
     Returns:
         InlineKeyboardMarkup с кнопками выбора суммы
     """
-    from bot.handlers.game.config import get_config
-
-    config = get_config(game_id)
     keyboard = []
 
-    # Рассчитываем суммы (только если >= transfer_min_amount)
+    # Рассчитываем суммы (только если >= TRANSFER_MIN_AMOUNT)
     amounts = [
         (balance // 4, "25%"),
         (balance // 2, "50%"),
@@ -306,7 +301,7 @@ def create_transfer_amount_keyboard(balance: int, receiver_id: int, owner_user_i
 
     row = []
     for amount, label in amounts:
-        if amount >= config.constants.transfer_min_amount:
+        if amount >= 2:  # TRANSFER_MIN_AMOUNT
             callback_data = f"shop_transfer_amount_{receiver_id}_{amount}_{owner_user_id}"
             button = InlineKeyboardButton(
                 text=f"{amount} 💰 ({label})",
@@ -329,13 +324,12 @@ def create_transfer_amount_keyboard(balance: int, receiver_id: int, owner_user_i
     return InlineKeyboardMarkup(keyboard)
 
 
-def format_shop_menu_message(balance: int, game_id: int, user_name: str = None, active_effects: dict = None) -> str:
+def format_shop_menu_message(balance: int, user_name: str = None, active_effects: dict = None) -> str:
     """
     Форматирует сообщение меню магазина с балансом и списком товаров.
 
     Args:
         balance: Текущий баланс пользователя
-        game_id: ID игры (чата) для получения конфигурации
         user_name: Имя пользователя, чей это магазин (опционально)
         active_effects: Информация об активных эффектах
 
@@ -362,7 +356,7 @@ def format_shop_menu_message(balance: int, game_id: int, user_name: str = None, 
     commission_info = f"ℹ️ _Комиссия на покупки: {escape_markdown2(str(commission_rate))}% \\(ключевая ставка ЦБ РФ\\)_\n_Комиссия идёт в банк чата \\(минимум 1 🪙\\)_\n\n"
 
     # Формируем список товаров с информацией об активности
-    items = get_shop_items(game_id)
+    items = get_shop_items()
     items_list = []
 
     for item in items:

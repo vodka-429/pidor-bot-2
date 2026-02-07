@@ -6,10 +6,13 @@ from sqlmodel import select
 
 from bot.app.models import GiveCoinsClick
 from bot.handlers.game.coin_service import add_coins
-from bot.handlers.game.config import get_config
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
+
+# Константы награды
+GIVE_COINS_AMOUNT = 1
+GIVE_COINS_WINNER_AMOUNT = 2
 
 
 def has_claimed_today(db_session, game_id: int, user_id: int, year: int, day: int) -> bool:
@@ -63,21 +66,13 @@ def claim_coins(
         success - True если койны успешно начислены, False если уже получены сегодня
         amount - количество начисленных койнов (0 если уже получены)
     """
-    # Получаем конфигурацию для чата
-    config = get_config(game_id)
-
-    # Проверяем, включена ли фича
-    if not config.constants.give_coins_enabled:
-        logger.warning(f"Give coins feature is disabled for chat {game_id}")
-        raise ValueError("Give coins is disabled for this chat")
-
     # Проверяем, не получал ли уже сегодня
     if has_claimed_today(db_session, game_id, user_id, year, day):
         logger.info(f"User {user_id} already claimed coins today ({year}-{day})")
         return False, 0
 
-    # Определяем количество койнов из конфигурации
-    amount = config.constants.give_coins_winner_amount if is_winner else config.constants.give_coins_amount
+    # Определяем количество койнов
+    amount = GIVE_COINS_WINNER_AMOUNT if is_winner else GIVE_COINS_AMOUNT
 
     logger.info(
         f"Claiming coins: user={user_id}, game={game_id}, "
