@@ -12,12 +12,15 @@ from bot.handlers.game.shop_service import (
     buy_double_chance,
     create_prediction,
     process_purchase,
-    IMMUNITY_PRICE,
-    DOUBLE_CHANCE_PRICE,
-    PREDICTION_PRICE,
-    IMMUNITY_COOLDOWN_DAYS
 )
+from bot.handlers.game.config import GameConstants
 from bot.app.models import GamePlayerEffect, Prediction, PidorCoinTransaction, ChatBank
+
+# Значения констант по умолчанию для тестов
+IMMUNITY_PRICE = GameConstants().immunity_price
+DOUBLE_CHANCE_PRICE = GameConstants().double_chance_price
+PREDICTION_PRICE = GameConstants().prediction_price
+IMMUNITY_COOLDOWN_DAYS = GameConstants().immunity_cooldown_days
 
 
 @pytest.mark.unit
@@ -215,6 +218,7 @@ def test_get_shop_items():
 def test_buy_immunity_success(mock_db_session):
     """Test buy_immunity successfully purchases immunity."""
     from bot.app.models import ChatBank
+    from bot.handlers.game.config import GameConstants, ChatConfig
 
     # Setup
     game_id = 1
@@ -254,25 +258,30 @@ def test_buy_immunity_success(mock_db_session):
 
     mock_db_session.exec.side_effect = exec_side_effect
 
-    # Execute
-    success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+    # Mock get_config_by_game_id to return default config
+    mock_config = ChatConfig(chat_id=123, constants=GameConstants())
+    with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
+        # Execute
+        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
 
-    # Verify
-    assert success is True
-    assert message == "success"
-    assert commission > 0  # Комиссия должна быть больше 0
+        # Verify
+        assert success is True
+        assert message == "success"
+        assert commission > 0  # Комиссия должна быть больше 0
 
-    # Verify immunity is set for tomorrow (June 16, day 168)
-    assert mock_effect.immunity_year == 2024
-    assert mock_effect.immunity_day == 168  # June 16 is day 168 (June 15 is day 167)
+        # Verify immunity is set for tomorrow (June 16, day 168)
+        assert mock_effect.immunity_year == 2024
+        assert mock_effect.immunity_day == 168  # June 16 is day 168 (June 15 is day 167)
 
-    # Verify commit was called
-    mock_db_session.commit.assert_called()
+        # Verify commit was called
+        mock_db_session.commit.assert_called()
 
 
 @pytest.mark.unit
 def test_buy_immunity_insufficient_funds(mock_db_session):
     """Test buy_immunity fails when user doesn't have enough coins."""
+    from bot.handlers.game.config import GameConstants, ChatConfig
+
     # Setup
     game_id = 1
     user_id = 1
@@ -305,18 +314,23 @@ def test_buy_immunity_insufficient_funds(mock_db_session):
 
     mock_db_session.exec.side_effect = exec_side_effect
 
-    # Execute
-    success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+    # Mock get_config_by_game_id to return default config
+    mock_config = ChatConfig(chat_id=123, constants=GameConstants())
+    with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
+        # Execute
+        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
 
-    # Verify
-    assert success is False
-    assert message == "insufficient_funds"
-    assert commission == 0  # При ошибке комиссия 0
+        # Verify
+        assert success is False
+        assert message == "insufficient_funds"
+        assert commission == 0  # При ошибке комиссия 0
 
 
 @pytest.mark.unit
 def test_buy_immunity_already_active(mock_db_session):
     """Test buy_immunity fails when immunity is already active."""
+    from bot.handlers.game.config import GameConstants, ChatConfig
+
     # Setup
     game_id = 1
     user_id = 1
@@ -347,19 +361,24 @@ def test_buy_immunity_already_active(mock_db_session):
 
     mock_db_session.exec.side_effect = exec_side_effect
 
-    # Execute
-    success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+    # Mock get_config_by_game_id to return default config
+    mock_config = ChatConfig(chat_id=123, constants=GameConstants())
+    with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
+        # Execute
+        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
 
-    # Verify
-    assert success is False
-    assert message.startswith("already_active:")
-    assert "2024:168" in message
-    assert commission == 0  # При ошибке комиссия 0
+        # Verify
+        assert success is False
+        assert message.startswith("already_active:")
+        assert "2024:168" in message
+        assert commission == 0  # При ошибке комиссия 0
 
 
 @pytest.mark.unit
 def test_buy_immunity_cooldown(mock_db_session):
     """Test buy_immunity fails when immunity is on cooldown."""
+    from bot.handlers.game.config import GameConstants, ChatConfig
+
     # Setup
     game_id = 1
     user_id = 1
@@ -391,21 +410,25 @@ def test_buy_immunity_cooldown(mock_db_session):
 
     mock_db_session.exec.side_effect = exec_side_effect
 
-    # Execute
-    success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+    # Mock get_config_by_game_id to return default config
+    mock_config = ChatConfig(chat_id=123, constants=GameConstants())
+    with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
+        # Execute
+        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
 
-    # Verify
-    assert success is False
-    assert message.startswith("cooldown:")
-    expected_cooldown_end = date(2024, 6, 17)  # 10 + 7 days
-    assert message == f"cooldown:{expected_cooldown_end.isoformat()}"
-    assert commission == 0  # При ошибке комиссия 0
+        # Verify
+        assert success is False
+        assert message.startswith("cooldown:")
+        expected_cooldown_end = date(2024, 6, 17)  # 10 + 7 days
+        assert message == f"cooldown:{expected_cooldown_end.isoformat()}"
+        assert commission == 0  # При ошибке комиссия 0
 
 
 @pytest.mark.unit
 def test_buy_double_chance_for_self(mock_db_session):
     """Test buy_double_chance successfully purchases double chance for self."""
     from bot.app.models import DoubleChancePurchase, ChatBank
+    from bot.handlers.game.config import GameConstants, ChatConfig
 
     # Setup
     game_id = 1
@@ -438,25 +461,29 @@ def test_buy_double_chance_for_self(mock_db_session):
 
     mock_db_session.exec.side_effect = exec_side_effect
 
-    # Execute
-    success, message, commission = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
+    # Mock get_config_by_game_id to return default config
+    mock_config = ChatConfig(chat_id=123, constants=GameConstants())
+    with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
+        # Execute
+        success, message, commission = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
 
-    # Verify
-    assert success is True
-    assert message == "success"
-    assert commission > 0  # Комиссия должна быть больше 0
+        # Verify
+        assert success is True
+        assert message == "success"
+        assert commission > 0  # Комиссия должна быть больше 0
 
-    # Verify DoubleChancePurchase was added
-    assert mock_db_session.add.call_count >= 2  # Transaction + DoubleChancePurchase
+        # Verify DoubleChancePurchase was added
+        assert mock_db_session.add.call_count >= 2  # Transaction + DoubleChancePurchase
 
-    # Verify commit was called
-    mock_db_session.commit.assert_called()
+        # Verify commit was called
+        mock_db_session.commit.assert_called()
 
 
 @pytest.mark.unit
 def test_buy_double_chance_for_other(mock_db_session):
     """Test buy_double_chance successfully purchases double chance for another player."""
     from bot.app.models import DoubleChancePurchase, ChatBank
+    from bot.handlers.game.config import GameConstants, ChatConfig
 
     # Setup
     game_id = 1
@@ -489,22 +516,26 @@ def test_buy_double_chance_for_other(mock_db_session):
 
     mock_db_session.exec.side_effect = exec_side_effect
 
-    # Execute
-    success, message, commission = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
+    # Mock get_config_by_game_id to return default config
+    mock_config = ChatConfig(chat_id=123, constants=GameConstants())
+    with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
+        # Execute
+        success, message, commission = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
 
-    # Verify
-    assert success is True
-    assert message == "success"
-    assert commission > 0  # Комиссия должна быть больше 0
+        # Verify
+        assert success is True
+        assert message == "success"
+        assert commission > 0  # Комиссия должна быть больше 0
 
-    # Verify commit was called
-    mock_db_session.commit.assert_called()
+        # Verify commit was called
+        mock_db_session.commit.assert_called()
 
 
 @pytest.mark.unit
 def test_buy_double_chance_tracks_buyer(mock_db_session):
     """Test buy_double_chance tracks who bought the double chance."""
     from bot.app.models import DoubleChancePurchase, ChatBank
+    from bot.handlers.game.config import GameConstants, ChatConfig
 
     # Setup
     game_id = 1
@@ -537,25 +568,29 @@ def test_buy_double_chance_tracks_buyer(mock_db_session):
 
     mock_db_session.exec.side_effect = exec_side_effect
 
-    # Execute
-    success, message, commission = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
+    # Mock get_config_by_game_id to return default config
+    mock_config = ChatConfig(chat_id=123, constants=GameConstants())
+    with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
+        # Execute
+        success, message, commission = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
 
-    # Verify
-    assert success is True
-    assert commission > 0  # Комиссия должна быть больше 0
+        # Verify
+        assert success is True
+        assert commission > 0  # Комиссия должна быть больше 0
 
-    # Verify that DoubleChancePurchase was created with correct buyer_id and target_id
-    added_objects = [call[0][0] for call in mock_db_session.add.call_args_list]
-    purchase = next((obj for obj in added_objects if isinstance(obj, DoubleChancePurchase)), None)
-    assert purchase is not None, "DoubleChancePurchase should be created"
-    assert purchase.buyer_id == user_id
-    assert purchase.target_id == target_user_id
+        # Verify that DoubleChancePurchase was created with correct buyer_id and target_id
+        added_objects = [call[0][0] for call in mock_db_session.add.call_args_list]
+        purchase = next((obj for obj in added_objects if isinstance(obj, DoubleChancePurchase)), None)
+        assert purchase is not None, "DoubleChancePurchase should be created"
+        assert purchase.buyer_id == user_id
+        assert purchase.target_id == target_user_id
 
 
 @pytest.mark.unit
 def test_create_prediction_success(mock_db_session):
     """Test create_prediction successfully creates prediction."""
     from bot.app.models import ChatBank
+    from bot.handlers.game.config import GameConstants, ChatConfig
 
     # Setup
     game_id = 1
@@ -588,22 +623,27 @@ def test_create_prediction_success(mock_db_session):
 
     mock_db_session.exec.side_effect = exec_side_effect
 
-    # Execute
-    success, message, commission = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
+    # Mock get_config_by_game_id to return default config
+    mock_config = ChatConfig(chat_id=123, constants=GameConstants())
+    with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
+        # Execute
+        success, message, commission = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
 
-    # Verify
-    assert success is True
-    assert message == "success"
-    assert commission > 0  # Комиссия должна быть больше 0
+        # Verify
+        assert success is True
+        assert message == "success"
+        assert commission > 0  # Комиссия должна быть больше 0
 
-    # Verify prediction was added
-    assert mock_db_session.add.call_count >= 2  # Transaction + bank + prediction
-    mock_db_session.commit.assert_called()
+        # Verify prediction was added
+        assert mock_db_session.add.call_count >= 2  # Transaction + bank + prediction
+        mock_db_session.commit.assert_called()
 
 
 @pytest.mark.unit
 def test_create_prediction_already_exists(mock_db_session):
     """Test create_prediction fails when prediction already exists for the day."""
+    from bot.handlers.game.config import GameConstants, ChatConfig
+
     # Setup
     game_id = 1
     user_id = 1
@@ -638,19 +678,23 @@ def test_create_prediction_already_exists(mock_db_session):
 
     mock_db_session.exec.side_effect = exec_side_effect
 
-    # Execute
-    success, message, commission = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
+    # Mock get_config_by_game_id to return default config
+    mock_config = ChatConfig(chat_id=123, constants=GameConstants())
+    with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
+        # Execute
+        success, message, commission = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
 
-    # Verify
-    assert success is False
-    assert message == "already_exists"
-    assert commission == 0  # При ошибке комиссия 0
+        # Verify
+        assert success is False
+        assert message == "already_exists"
+        assert commission == 0  # При ошибке комиссия 0
 
 
 @pytest.mark.unit
 def test_create_prediction_self(mock_db_session):
     """Test create_prediction allows user to predict themselves."""
     from bot.app.models import ChatBank
+    from bot.handlers.game.config import GameConstants, ChatConfig
 
     # Setup
     game_id = 1
@@ -683,17 +727,20 @@ def test_create_prediction_self(mock_db_session):
 
     mock_db_session.exec.side_effect = exec_side_effect
 
-    # Execute
-    success, message, commission = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
+    # Mock get_config_by_game_id to return default config
+    mock_config = ChatConfig(chat_id=123, constants=GameConstants())
+    with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
+        # Execute
+        success, message, commission = create_prediction(mock_db_session, game_id, user_id, predicted_user_ids, year, day)
 
-    # Verify - self-prediction is now allowed
-    assert success is True
-    assert message == "success"
-    assert commission > 0  # Комиссия должна быть больше 0
+        # Verify - self-prediction is now allowed
+        assert success is True
+        assert message == "success"
+        assert commission > 0  # Комиссия должна быть больше 0
 
-    # Verify prediction was added
-    assert mock_db_session.add.call_count >= 2  # Transaction + bank + prediction
-    mock_db_session.commit.assert_called()
+        # Verify prediction was added
+        assert mock_db_session.add.call_count >= 2  # Transaction + bank + prediction
+        mock_db_session.commit.assert_called()
 
 
 @pytest.mark.unit
@@ -891,6 +938,7 @@ def test_effects_isolated_by_game(mock_db_session):
 def test_buy_immunity_year_day_logic(mock_db_session):
     """Test buy_immunity correctly calculates year+day for tomorrow."""
     from bot.app.models import ChatBank
+    from bot.handlers.game.config import GameConstants, ChatConfig
 
     # Setup - last day of year
     game_id = 1
@@ -930,21 +978,25 @@ def test_buy_immunity_year_day_logic(mock_db_session):
 
     mock_db_session.exec.side_effect = exec_side_effect
 
-    # Execute
-    success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+    # Mock get_config_by_game_id to return default config
+    mock_config = ChatConfig(chat_id=123, constants=GameConstants())
+    with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
+        # Execute
+        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
 
-    # Verify
-    assert success is True
-    assert commission > 0  # Комиссия должна быть больше 0
-    # Проверяем, что защита установлена на 1 января следующего года
-    assert mock_effect.immunity_year == 2025
-    assert mock_effect.immunity_day == 1
+        # Verify
+        assert success is True
+        assert commission > 0  # Комиссия должна быть больше 0
+        # Проверяем, что защита установлена на 1 января следующего года
+        assert mock_effect.immunity_year == 2025
+        assert mock_effect.immunity_day == 1
 
 
 @pytest.mark.unit
 def test_buy_double_chance_already_bought_today(mock_db_session):
     """Test buy_double_chance fails when buyer already bought today."""
     from bot.app.models import DoubleChancePurchase
+    from bot.handlers.game.config import GameConstants, ChatConfig
 
     # Setup
     game_id = 1
@@ -978,19 +1030,23 @@ def test_buy_double_chance_already_bought_today(mock_db_session):
 
     mock_db_session.exec.side_effect = exec_side_effect
 
-    # Execute
-    success, message, commission = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
+    # Mock get_config_by_game_id to return default config
+    mock_config = ChatConfig(chat_id=123, constants=GameConstants())
+    with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
+        # Execute
+        success, message, commission = buy_double_chance(mock_db_session, game_id, user_id, target_user_id, year, current_date)
 
-    # Verify
-    assert success is False
-    assert message == "already_bought_today"
-    assert commission == 0  # При ошибке комиссия 0
+        # Verify
+        assert success is False
+        assert message == "already_bought_today"
+        assert commission == 0  # При ошибке комиссия 0
 
 
 @pytest.mark.unit
 def test_buy_double_chance_multiple_buyers_same_target(mock_db_session):
     """Test multiple buyers can buy double chance for same target."""
     from bot.app.models import DoubleChancePurchase, ChatBank
+    from bot.handlers.game.config import GameConstants, ChatConfig
 
     # Setup
     game_id = 1
@@ -1024,13 +1080,16 @@ def test_buy_double_chance_multiple_buyers_same_target(mock_db_session):
 
     mock_db_session.exec.side_effect = exec_side_effect
 
-    # Execute - buyer2 buys for same target
-    success, message, commission = buy_double_chance(mock_db_session, game_id, buyer2_id, target_user_id, year, current_date)
+    # Mock get_config_by_game_id to return default config
+    mock_config = ChatConfig(chat_id=123, constants=GameConstants())
+    with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
+        # Execute - buyer2 buys for same target
+        success, message, commission = buy_double_chance(mock_db_session, game_id, buyer2_id, target_user_id, year, current_date)
 
-    # Verify
-    assert success is True
-    assert message == "success"
-    assert commission > 0  # Комиссия должна быть больше 0
+        # Verify
+        assert success is True
+        assert message == "success"
+        assert commission > 0  # Комиссия должна быть больше 0
 
 
 @pytest.mark.unit

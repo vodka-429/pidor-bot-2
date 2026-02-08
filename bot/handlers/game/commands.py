@@ -24,7 +24,8 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
     ERROR_ALREADY_REGISTERED_MANY, VOTING_ENDED_RESPONSE, \
     FINAL_VOTING_CLOSE_ERROR_NOT_AUTHORIZED, COIN_INFO, \
     COINS_PERSONAL, COINS_CURRENT_YEAR, COINS_ALL_TIME, COINS_LIST_ITEM, COIN_EARNED, COIN_INFO_SELF_PIDOR
-from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders, is_test_chat
+from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders
+from bot.handlers.game.config import is_test_chat
 from bot.handlers.game.coin_service import add_coins, get_balance, get_leaderboard, get_leaderboard_by_year
 from bot.utils import escape_markdown2, escape_word, format_number, ECallbackContext, get_allowed_final_voting_closers
 
