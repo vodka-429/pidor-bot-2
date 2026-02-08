@@ -10,9 +10,9 @@ from bot.handlers.game.transfer_service import (
     can_transfer,
     get_or_create_chat_bank,
     execute_transfer,
-    TRANSFER_MIN_AMOUNT,
 )
 from bot.handlers.game.cbr_service import MIN_COMMISSION as TRANSFER_MIN_COMMISSION
+from bot.handlers.game.config import GameConstants, ChatConfig
 
 
 @pytest.mark.unit
@@ -141,8 +141,18 @@ class TestExecuteTransfer:
     """Тесты выполнения передачи."""
 
     @patch('bot.handlers.game.transfer_service.calculate_commission_amount')
-    def test_successful_transfer(self, mock_calc, mock_db_session):
+    @patch('bot.handlers.game.transfer_service.get_config_by_game_id')
+    def test_successful_transfer(self, mock_get_config, mock_calc, mock_db_session):
         """Успешная передача койнов."""
+        # Mock config
+        mock_config = ChatConfig(
+            chat_id=-1001392307997,
+            enabled=True,
+            is_test=False,
+            constants=GameConstants(transfer_enabled=True, transfer_min_amount=2)
+        )
+        mock_get_config.return_value = mock_config
+
         # Mock commission calculation (21% от 50 = 10.5 -> 10)
         mock_calc.return_value = 10
 
@@ -178,8 +188,18 @@ class TestExecuteTransfer:
         assert mock_bank.balance == 10
 
     @patch('bot.handlers.game.transfer_service.calculate_commission_amount')
-    def test_transfer_minimum_amount(self, mock_calc, mock_db_session):
+    @patch('bot.handlers.game.transfer_service.get_config_by_game_id')
+    def test_transfer_minimum_amount(self, mock_get_config, mock_calc, mock_db_session):
         """Передача минимальной суммы."""
+        # Mock config with default transfer_min_amount = 2
+        mock_config = ChatConfig(
+            chat_id=-1001392307997,
+            enabled=True,
+            is_test=False,
+            constants=GameConstants(transfer_enabled=True, transfer_min_amount=2)
+        )
+        mock_get_config.return_value = mock_config
+
         mock_calc.return_value = TRANSFER_MIN_COMMISSION
 
         mock_bank = MagicMock()
@@ -192,16 +212,26 @@ class TestExecuteTransfer:
              patch('bot.handlers.game.transfer_service.add_coins'):
 
             amount_sent, amount_received, commission = execute_transfer(
-                mock_db_session, 1, 1, 2, TRANSFER_MIN_AMOUNT, 2026, 22
+                mock_db_session, 1, 1, 2, 2, 2026, 22
             )
 
-        assert amount_sent == TRANSFER_MIN_AMOUNT
+        assert amount_sent == 2
         assert commission == TRANSFER_MIN_COMMISSION
-        assert amount_received == TRANSFER_MIN_AMOUNT - TRANSFER_MIN_COMMISSION
+        assert amount_received == 2 - TRANSFER_MIN_COMMISSION
 
     @patch('bot.handlers.game.transfer_service.calculate_commission_amount')
-    def test_transfer_large_amount(self, mock_calc, mock_db_session):
+    @patch('bot.handlers.game.transfer_service.get_config_by_game_id')
+    def test_transfer_large_amount(self, mock_get_config, mock_calc, mock_db_session):
         """Передача большой суммы."""
+        # Mock config
+        mock_config = ChatConfig(
+            chat_id=-1001392307997,
+            enabled=True,
+            is_test=False,
+            constants=GameConstants(transfer_enabled=True, transfer_min_amount=2)
+        )
+        mock_get_config.return_value = mock_config
+
         # Mock commission (21% от 1000 = 210)
         mock_calc.return_value = 210
 
@@ -223,12 +253,47 @@ class TestExecuteTransfer:
         assert amount_received == 790
         assert mock_bank.balance == 210
 
-    def test_transfer_to_yourself_raises_error(self, mock_db_session):
+    @patch('bot.handlers.game.transfer_service.get_config_by_game_id')
+    def test_transfer_to_yourself_raises_error(self, mock_get_config, mock_db_session):
         """Нельзя передавать себе."""
+        # Mock config
+        mock_config = ChatConfig(
+            chat_id=-1001392307997,
+            enabled=True,
+            is_test=False,
+            constants=GameConstants(transfer_enabled=True, transfer_min_amount=2)
+        )
+        mock_get_config.return_value = mock_config
+
         with pytest.raises(ValueError, match="Cannot transfer to yourself"):
             execute_transfer(mock_db_session, 1, 1, 1, 50, 2026, 22)
 
-    def test_transfer_below_minimum_raises_error(self, mock_db_session):
+    @patch('bot.handlers.game.transfer_service.get_config_by_game_id')
+    def test_transfer_below_minimum_raises_error(self, mock_get_config, mock_db_session):
         """Нельзя передавать меньше минимума."""
+        # Mock config
+        mock_config = ChatConfig(
+            chat_id=-1001392307997,
+            enabled=True,
+            is_test=False,
+            constants=GameConstants(transfer_enabled=True, transfer_min_amount=2)
+        )
+        mock_get_config.return_value = mock_config
+
         with pytest.raises(ValueError, match="Amount must be at least"):
             execute_transfer(mock_db_session, 1, 1, 2, 1, 2026, 22)
+
+    @patch('bot.handlers.game.transfer_service.get_config_by_game_id')
+    def test_transfer_disabled_raises_error(self, mock_get_config, mock_db_session):
+        """Нельзя передавать, если функция отключена."""
+        # Mock config with transfer disabled
+        mock_config = ChatConfig(
+            chat_id=-1001392307997,
+            enabled=True,
+            is_test=False,
+            constants=GameConstants(transfer_enabled=False, transfer_min_amount=2)
+        )
+        mock_get_config.return_value = mock_config
+
+        with pytest.raises(ValueError, match="Transfer is disabled"):
+            execute_transfer(mock_db_session, 1, 1, 2, 50, 2026, 22)

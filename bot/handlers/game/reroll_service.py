@@ -10,13 +10,10 @@ from sqlmodel import select
 from bot.app.models import GameResult, TGUser
 from bot.handlers.game.coin_service import add_coins
 from bot.handlers.game.shop_service import spend_coins, can_afford
+from bot.handlers.game.config import get_config_by_game_id
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
-
-# Константы перевыборов
-REROLL_PRICE = 15
-REROLL_TIMEOUT_MINUTES = 5
 
 
 def can_reroll(db_session, game_id: int, year: int, day: int) -> bool:
@@ -79,12 +76,17 @@ def execute_reroll(
         Кортеж (старый_победитель, новый_победитель)
 
     Raises:
-        ValueError: Если GameResult не найден или игроки пусты
+        ValueError: Если GameResult не найден или игроки пусты, или если reroll отключен
     """
-    from bot.handlers.game.commands import COINS_PER_WIN
-
     if not players:
         raise ValueError("Players list cannot be empty")
+
+    # Получаем конфигурацию для чата
+    config = get_config_by_game_id(db_session, game_id)
+
+    # Проверяем, включены ли перевыборы
+    if not config.constants.reroll_enabled:
+        raise ValueError("Reroll is disabled for this chat")
 
     # Получаем результат игры
     stmt = select(GameResult).where(
@@ -105,9 +107,12 @@ def execute_reroll(
     if old_winner is None:
         raise ValueError(f"Old winner with id {old_winner_id} not found")
 
+    # Получаем цену перевыбора из конфигурации
+    reroll_price = config.constants.reroll_price
+
     # Списываем койны с инициатора
-    spend_coins(db_session, game_id, initiator_id, REROLL_PRICE, year, "reroll", auto_commit=False)
-    logger.info(f"Spent {REROLL_PRICE} coins from user {initiator_id} for reroll")
+    spend_coins(db_session, game_id, initiator_id, reroll_price, year, "reroll", auto_commit=False)
+    logger.info(f"Spent {reroll_price} coins from user {initiator_id} for reroll")
 
     # ВАЖНО: НЕ отменяем награду старого победителя!
     # Он сохраняет свои койны.
@@ -128,11 +133,14 @@ def execute_reroll(
 
     logger.info(f"Selected new winner: {new_winner.id} ({new_winner.full_username()})")
 
+    # Получаем награду за победу из конфигурации
+    coins_per_win = config.constants.coins_per_win
+
     # Если сработала защита при перевыборе - начисляем койны защищённому игроку
     if selection_result.had_immunity and selection_result.protected_player:
         protected_player = selection_result.protected_player
-        add_coins(db_session, game_id, protected_player.id, COINS_PER_WIN, year, "immunity_save_reroll", auto_commit=False)
-        logger.info(f"Protection activated during reroll for player {protected_player.id}, awarded {COINS_PER_WIN} coins")
+        add_coins(db_session, game_id, protected_player.id, coins_per_win, year, "immunity_save_reroll", auto_commit=False)
+        logger.info(f"Protection activated during reroll for player {protected_player.id}, awarded {coins_per_win} coins")
 
     # Обновляем GameResult
     game_result.original_winner_id = old_winner_id
@@ -143,8 +151,8 @@ def execute_reroll(
     db_session.add(game_result)
 
     # Начисляем койны новому победителю (даже если это тот же человек - двойная награда!)
-    add_coins(db_session, game_id, new_winner.id, COINS_PER_WIN, year, "pidor_win_reroll", auto_commit=False)
-    logger.info(f"Added {COINS_PER_WIN} coins to new winner {new_winner.id}")
+    add_coins(db_session, game_id, new_winner.id, coins_per_win, year, "pidor_win_reroll", auto_commit=False)
+    logger.info(f"Added {coins_per_win} coins to new winner {new_winner.id}")
 
     # Обрабатываем предсказания для нового победителя
     from bot.handlers.game.prediction_service import process_predictions_for_reroll
@@ -168,7 +176,7 @@ async def remove_reroll_button_after_timeout(
     bot,
     chat_id: int,
     message_id: int,
-    delay_minutes: int = REROLL_TIMEOUT_MINUTES
+    delay_minutes: int | None = None
 ):
     """
     Удалить кнопку перевыбора через указанное время.
@@ -177,8 +185,14 @@ async def remove_reroll_button_after_timeout(
         bot: Экземпляр бота
         chat_id: ID чата
         message_id: ID сообщения с кнопкой
-        delay_minutes: Задержка в минутах (по умолчанию REROLL_TIMEOUT_MINUTES)
+        delay_minutes: Задержка в минутах (если None, берётся из конфигурации)
     """
+    # Если задержка не указана, получаем из конфигурации
+    if delay_minutes is None:
+        from bot.handlers.game.config import get_config
+        config = get_config(chat_id)
+        delay_minutes = config.constants.reroll_timeout_minutes
+
     await asyncio.sleep(delay_minutes * 60)
     try:
         await bot.edit_message_reply_markup(

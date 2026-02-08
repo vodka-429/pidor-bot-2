@@ -28,12 +28,12 @@ Bot reads Telegram Bot Token from both `.env` file in current folder and also
 
 ## Configuration
 
-The bot uses the following environment variables:
-
+Environment variables:
 * `TELEGRAM_BOT_API_SECRET` - Telegram Bot API token (required)
-* `CHAT_WHITELIST` - Comma-separated list of chat IDs allowed to use the bot (optional)
-* `TEST_CHAT_ID` - ID of the test chat for testing purposes (optional, enables special test mode features)
-* `ALLOWED_FINAL_VOTING_CLOSERS` - Comma-separated list of usernames allowed to close final voting (optional, if not set all chat administrators can close voting)
+* `GAME_CONFIG_PATH` - Path to JSON config file (optional, see `game_config.example.json`)
+* `ALLOWED_FINAL_VOTING_CLOSERS` - Usernames allowed to close final voting (optional)
+
+Game configuration via JSON file allows per-chat customization of prices, rewards, limits and feature flags. See `game_config.example.json` for format and `bot/handlers/game/config.py` docstrings for all available parameters.
 
 ## Docker
 

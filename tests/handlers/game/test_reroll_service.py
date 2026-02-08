@@ -6,11 +6,15 @@ from datetime import datetime, date
 from bot.handlers.game.reroll_service import (
     can_reroll,
     execute_reroll,
-    remove_reroll_button_after_timeout,
-    REROLL_PRICE
+    remove_reroll_button_after_timeout
 )
-from bot.handlers.game.commands import COINS_PER_WIN
+from bot.handlers.game.config import GameConstants
 from bot.app.models import GameResult, TGUser
+
+# Используем значения по умолчанию из конфигурации
+_default_constants = GameConstants()
+REROLL_PRICE = _default_constants.reroll_price
+COINS_PER_WIN = _default_constants.coins_per_win
 
 
 @pytest.mark.unit
@@ -120,9 +124,17 @@ def test_execute_reroll_updates_game_result(mock_db_session, sample_players):
     # Execute
     current_date = date(2024, 4, 10)  # День 100 в 2024 году
 
-    with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
+    with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
+
+        # Мокаем конфигурацию
+        mock_config = MagicMock()
+        mock_config.constants.reroll_enabled = True
+        mock_config.constants.reroll_price = REROLL_PRICE
+        mock_config.constants.coins_per_win = COINS_PER_WIN
+        mock_get_config.return_value = mock_config
 
         # Мокаем результат выбора победителя
         mock_selection_result = MagicMock()
@@ -135,6 +147,9 @@ def test_execute_reroll_updates_game_result(mock_db_session, sample_players):
         old_winner_result, new_winner_result = execute_reroll(
             mock_db_session, game_id, year, day, initiator_id, sample_players, current_date
         )
+
+    # Verify get_config_by_game_id was called
+    mock_get_config.assert_called_once_with(mock_db_session, game_id)
 
     # Verify spend_coins was called
     mock_spend.assert_called_once_with(
@@ -197,9 +212,17 @@ def test_execute_reroll_allows_same_winner(mock_db_session, sample_players):
     # Execute - same player wins again
     current_date = date(2024, 4, 10)
 
-    with patch('bot.handlers.game.reroll_service.spend_coins'), \
+    with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.spend_coins'), \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
+
+        # Мокаем конфигурацию
+        mock_config = MagicMock()
+        mock_config.constants.reroll_enabled = True
+        mock_config.constants.reroll_price = REROLL_PRICE
+        mock_config.constants.coins_per_win = COINS_PER_WIN
+        mock_get_config.return_value = mock_config
 
         # Мокаем результат выбора победителя - тот же игрок
         mock_selection_result = MagicMock()
@@ -255,8 +278,14 @@ def test_execute_reroll_raises_error_when_game_result_not_found(mock_db_session,
 
     # Execute and verify
     current_date = date(2024, 4, 10)
-    with pytest.raises(ValueError, match="GameResult not found"):
-        execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players, current_date)
+    with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config:
+        # Мокаем конфигурацию
+        mock_config = MagicMock()
+        mock_config.constants.reroll_enabled = True
+        mock_get_config.return_value = mock_config
+
+        with pytest.raises(ValueError, match="GameResult not found"):
+            execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players, current_date)
 
 
 @pytest.mark.unit
@@ -292,8 +321,14 @@ def test_execute_reroll_raises_error_when_old_winner_not_found(mock_db_session, 
 
     # Execute and verify
     current_date = date(2024, 4, 10)
-    with pytest.raises(ValueError, match="Old winner with id .* not found"):
-        execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players, current_date)
+    with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config:
+        # Мокаем конфигурацию
+        mock_config = MagicMock()
+        mock_config.constants.reroll_enabled = True
+        mock_get_config.return_value = mock_config
+
+        with pytest.raises(ValueError, match="Old winner with id .* not found"):
+            execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players, current_date)
 
 
 @pytest.mark.asyncio
@@ -371,9 +406,17 @@ def test_execute_reroll_preserves_old_winner_coins(mock_db_session, sample_playe
     # Execute
     current_date = date(2024, 4, 10)
 
-    with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
+    with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
+
+        # Мокаем конфигурацию
+        mock_config = MagicMock()
+        mock_config.constants.reroll_enabled = True
+        mock_config.constants.reroll_price = REROLL_PRICE
+        mock_config.constants.coins_per_win = COINS_PER_WIN
+        mock_get_config.return_value = mock_config
 
         # Мокаем результат выбора победителя
         mock_selection_result = MagicMock()
@@ -443,9 +486,17 @@ def test_execute_reroll_with_immunity_protection(mock_db_session, sample_players
     # Execute
     current_date = date(2024, 4, 10)
 
-    with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
+    with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
+
+        # Мокаем конфигурацию
+        mock_config = MagicMock()
+        mock_config.constants.reroll_enabled = True
+        mock_config.constants.reroll_price = REROLL_PRICE
+        mock_config.constants.coins_per_win = COINS_PER_WIN
+        mock_get_config.return_value = mock_config
 
         # Мокаем результат выбора: защита сработала, перевыбран другой игрок
         mock_selection_result = MagicMock()
@@ -524,9 +575,17 @@ def test_execute_reroll_with_double_chance(mock_db_session, sample_players):
     # Execute
     current_date = date(2024, 4, 10)
 
-    with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
+    with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
+
+        # Мокаем конфигурацию
+        mock_config = MagicMock()
+        mock_config.constants.reroll_enabled = True
+        mock_config.constants.reroll_price = REROLL_PRICE
+        mock_config.constants.coins_per_win = COINS_PER_WIN
+        mock_get_config.return_value = mock_config
 
         # Мокаем результат выбора: победитель с двойным шансом
         mock_selection_result = MagicMock()
@@ -600,10 +659,18 @@ def test_execute_reroll_when_all_protected(mock_db_session, sample_players):
     # Execute
     current_date = date(2024, 4, 10)
 
-    with patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
+    with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select, \
-         patch('bot.handlers.game.reroll_service.random.choice', return_value=random_winner) as mock_random:
+         patch('random.choice', return_value=random_winner) as mock_random:
+
+        # Мокаем конфигурацию
+        mock_config = MagicMock()
+        mock_config.constants.reroll_enabled = True
+        mock_config.constants.reroll_price = REROLL_PRICE
+        mock_config.constants.coins_per_win = COINS_PER_WIN
+        mock_get_config.return_value = mock_config
 
         # Мокаем результат выбора: все защищены
         mock_selection_result = MagicMock()

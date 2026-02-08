@@ -97,30 +97,6 @@ class ECallbackContext(ContextTypes.DEFAULT_TYPE):
     tg_user: TGUser
 
 
-def chat_whitelist():
-    env = os.environ.get('CHAT_WHITELIST', '')
-    if env:
-        return [int(x) for x in env.split(',')]
-    else:
-        return []
-
-
-def get_test_chat_id():
-    """
-    Получает ID тестового чата из переменной окружения TEST_CHAT_ID.
-
-    Returns:
-        Optional[int]: ID тестового чата или None, если не задано
-    """
-    env = os.environ.get('TEST_CHAT_ID', '')
-    if env:
-        try:
-            return int(env)
-        except ValueError:
-            return None
-    return None
-
-
 def get_allowed_final_voting_closers():
     """
     Получает список username пользователей, которые могут закрывать финальное голосование.

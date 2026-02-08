@@ -681,7 +681,7 @@ def test_calculate_voting_params_test_chat_limit():
 
     TEST_CHAT_ID = -4608252738
 
-    with patch('bot.handlers.game.voting_helpers.get_test_chat_id', return_value=TEST_CHAT_ID):
+    with patch('bot.handlers.game.config.get_test_chat_id', return_value=TEST_CHAT_ID):
         # Test with 15 missed days in test chat - should limit to 10
         effective_days, max_votes = calculate_voting_params(15, TEST_CHAT_ID)
         assert effective_days == 10
@@ -726,7 +726,7 @@ def test_calculate_voting_params_test_chat_under_limit():
 
     TEST_CHAT_ID = -4608252738
 
-    with patch('bot.handlers.game.voting_helpers.get_test_chat_id', return_value=TEST_CHAT_ID):
+    with patch('bot.handlers.game.config.get_test_chat_id', return_value=TEST_CHAT_ID):
         # Test with 5 missed days in test chat - under limit, no change
         effective_days, max_votes = calculate_voting_params(5, TEST_CHAT_ID)
         assert effective_days == 5
@@ -750,7 +750,7 @@ def test_calculate_max_votes_backward_compatibility():
     assert max_votes == 5
     assert isinstance(max_votes, int)
 
-    with patch('bot.handlers.game.voting_helpers.get_test_chat_id', return_value=TEST_CHAT_ID):
+    with patch('bot.handlers.game.config.get_test_chat_id', return_value=TEST_CHAT_ID):
         # Test with test chat - should apply limit
         max_votes = calculate_max_votes(15, TEST_CHAT_ID)
         assert max_votes == 5  # Limited to 10 days → 10/2 = 5
@@ -977,7 +977,7 @@ def test_duplicate_candidates_for_test_chat():
     # Test with test chat ID
     TEST_CHAT_ID = -4608252738
 
-    with patch('bot.handlers.game.voting_helpers.get_test_chat_id', return_value=TEST_CHAT_ID):
+    with patch('bot.handlers.game.config.get_test_chat_id', return_value=TEST_CHAT_ID):
         result = duplicate_candidates_for_test(candidates, TEST_CHAT_ID, target_count=5)
 
         # Should have 5 candidates total
@@ -1035,7 +1035,7 @@ def test_duplicate_candidates_exact_count():
     # Test with test chat ID and target count of 3 (exact match)
     TEST_CHAT_ID = -4608252738
 
-    with patch('bot.handlers.game.voting_helpers.get_test_chat_id', return_value=TEST_CHAT_ID):
+    with patch('bot.handlers.game.config.get_test_chat_id', return_value=TEST_CHAT_ID):
         result = duplicate_candidates_for_test(candidates, TEST_CHAT_ID, target_count=3)
 
         # Should return original candidates unchanged (already at target count)
@@ -1064,7 +1064,7 @@ def test_duplicate_candidates_vote_counting():
     # Test duplication
     TEST_CHAT_ID = -4608252738
 
-    with patch('bot.handlers.game.voting_helpers.get_test_chat_id', return_value=TEST_CHAT_ID):
+    with patch('bot.handlers.game.config.get_test_chat_id', return_value=TEST_CHAT_ID):
         result = duplicate_candidates_for_test(candidates, TEST_CHAT_ID, target_count=3)
 
         # Verify all duplicates have same ID as original

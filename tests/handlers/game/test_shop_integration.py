@@ -5,6 +5,7 @@ from datetime import datetime, date, timedelta
 from unittest.mock import MagicMock, AsyncMock, patch
 from bot.handlers.game.commands import pidor_cmd
 from bot.app.models import GamePlayerEffect, Prediction
+from bot.handlers.game.config import ChatConfig, GameConstants
 
 
 @pytest.mark.asyncio
@@ -1351,6 +1352,10 @@ async def test_prediction_full_flow(mock_update, mock_context, mock_game, sample
     # Mock get_active_effects
     mocker.patch('bot.handlers.game.shop_service.get_active_effects', return_value={})
 
+    # Mock get_config_by_game_id для shop_service
+    mock_config = ChatConfig(chat_id=mock_game.chat_id, constants=GameConstants())
+    mocker.patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config)
+
     # Mock ensure_game decorator - возвращаем mock_game вместо запроса к БД
     mock_game_query = MagicMock()
     mock_game_query.filter_by.return_value = mock_game_query
@@ -1445,6 +1450,7 @@ async def test_prediction_cancel_flow(mock_update, mock_context, mock_game, samp
 
     # Mock user - ВАЖНО: используем tg_id (Telegram ID)
     mock_update.effective_user.id = sample_players[0].tg_id
+    mock_update.effective_chat.id = mock_game.chat_id
 
     # Mock callback query
     mock_callback_query = MagicMock()
@@ -1580,6 +1586,10 @@ async def test_prediction_self_prediction_allowed(mock_update, mock_context, moc
     # Mock get_active_effects
     mocker.patch('bot.handlers.game.shop_service.get_active_effects', return_value={})
 
+    # Mock get_config_by_game_id для shop_service
+    mock_config = ChatConfig(chat_id=mock_game.chat_id, constants=GameConstants())
+    mocker.patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config)
+
     # Mock ensure_game decorator - возвращаем mock_game вместо запроса к БД
     mock_game_query = MagicMock()
     mock_game_query.filter_by.return_value = mock_game_query
@@ -1656,9 +1666,13 @@ async def test_prediction_self_prediction_allowed(mock_update, mock_context, moc
 def test_immunity_purchase_adds_commission_to_bank(mock_db_session, mock_game, sample_players, mocker):
     """Test that immunity purchase adds commission to chat bank."""
     from bot.app.models import ChatBank, GamePlayerEffect
-    from bot.handlers.game.shop_service import buy_immunity, IMMUNITY_PRICE, process_purchase
+    from bot.handlers.game.shop_service import buy_immunity, process_purchase
+    from bot.handlers.game.config import GameConstants
     from bot.handlers.game.cbr_service import calculate_commission_amount
     from datetime import date
+
+    # Получаем цену из конфигурации
+    IMMUNITY_PRICE = GameConstants().immunity_price
 
     # Setup
     game_id = mock_game.id
@@ -1707,9 +1721,13 @@ def test_immunity_purchase_adds_commission_to_bank(mock_db_session, mock_game, s
 def test_double_chance_purchase_adds_commission_to_bank(mock_db_session, mock_game, sample_players, mocker):
     """Test that double chance purchase adds commission to chat bank."""
     from bot.app.models import ChatBank
-    from bot.handlers.game.shop_service import buy_double_chance, DOUBLE_CHANCE_PRICE
+    from bot.handlers.game.shop_service import buy_double_chance
+    from bot.handlers.game.config import GameConstants
     from bot.handlers.game.cbr_service import calculate_commission_amount
     from datetime import date
+
+    # Получаем цену из конфигурации
+    DOUBLE_CHANCE_PRICE = GameConstants().double_chance_price
 
     # Setup
     game_id = mock_game.id
@@ -1728,6 +1746,10 @@ def test_double_chance_purchase_adds_commission_to_bank(mock_db_session, mock_ga
 
     # Mock get_or_create_chat_bank
     mocker.patch('bot.handlers.game.transfer_service.get_or_create_chat_bank', return_value=mock_bank)
+
+    # Mock get_config_by_game_id для shop_service
+    mock_config = ChatConfig(chat_id=mock_game.chat_id, constants=GameConstants())
+    mocker.patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config)
 
     # Mock can_afford
     mocker.patch('bot.handlers.game.shop_service.can_afford', return_value=True)
@@ -1758,8 +1780,12 @@ def test_double_chance_purchase_adds_commission_to_bank(mock_db_session, mock_ga
 def test_prediction_purchase_adds_commission_to_bank(mock_db_session, mock_game, sample_players, mocker):
     """Test that prediction purchase adds commission to chat bank."""
     from bot.app.models import ChatBank
-    from bot.handlers.game.shop_service import create_prediction, PREDICTION_PRICE
+    from bot.handlers.game.shop_service import create_prediction
+    from bot.handlers.game.config import GameConstants
     from bot.handlers.game.cbr_service import calculate_commission_amount
+
+    # Получаем цену из конфигурации
+    PREDICTION_PRICE = GameConstants().prediction_price
 
     # Setup
     game_id = mock_game.id
@@ -1778,6 +1804,10 @@ def test_prediction_purchase_adds_commission_to_bank(mock_db_session, mock_game,
 
     # Mock get_or_create_chat_bank
     mocker.patch('bot.handlers.game.transfer_service.get_or_create_chat_bank', return_value=mock_bank)
+
+    # Mock get_config_by_game_id для shop_service
+    mock_config = ChatConfig(chat_id=mock_game.chat_id, constants=GameConstants())
+    mocker.patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config)
 
     # Mock can_afford
     mocker.patch('bot.handlers.game.shop_service.can_afford', return_value=True)

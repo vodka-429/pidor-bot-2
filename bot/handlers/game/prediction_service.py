@@ -8,13 +8,11 @@ from sqlmodel import select
 
 from bot.app.models import Prediction, TGUser
 from bot.handlers.game.coin_service import add_coins
+from bot.handlers.game.config import get_config_by_game_id
 from bot.utils import escape_markdown2, format_number
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
-
-# Награда за правильное предсказание
-PREDICTION_REWARD = 30
 
 
 def calculate_candidates_count(players_count: int) -> int:
@@ -122,17 +120,19 @@ def format_predictions_summary(predictions_results: List[Tuple[Prediction, bool]
     Returns:
         Отформатированное сообщение с результатами всех предсказаний
     """
-    from bot.handlers.game.text_static import (
-        PREDICTIONS_SUMMARY_HEADER,
-        PREDICTIONS_SUMMARY_CORRECT_ITEM,
-        PREDICTIONS_SUMMARY_INCORRECT_ITEM
-    )
+    from bot.handlers.game.text_static import get_prediction_messages
     from bot.handlers.game.coin_service import get_balance
+    from bot.handlers.game.config import get_config_by_game_id
 
     if not predictions_results:
         return ""
 
-    lines = [PREDICTIONS_SUMMARY_HEADER]
+    # Получаем конфигурацию из первого предсказания (все предсказания из одной игры)
+    game_id = predictions_results[0][0].game_id
+    config = get_config_by_game_id(db_session, game_id)
+    prediction_msgs = get_prediction_messages(config)
+
+    lines = [prediction_msgs['summary_header']]
 
     for prediction, is_correct in predictions_results:
         # Получаем пользователя, который сделал предсказание
@@ -142,12 +142,12 @@ def format_predictions_summary(predictions_results: List[Tuple[Prediction, bool]
         if is_correct:
             # Получаем новый баланс предсказателя
             predictor_balance = get_balance(db_session, prediction.game_id, prediction.user_id)
-            line = PREDICTIONS_SUMMARY_CORRECT_ITEM.format(
+            line = prediction_msgs['summary_correct_item'].format(
                 username=escape_markdown2(predictor.full_username()),
                 balance=format_number(predictor_balance)
             )
         else:
-            line = PREDICTIONS_SUMMARY_INCORRECT_ITEM.format(
+            line = prediction_msgs['summary_incorrect_item'].format(
                 username=escape_markdown2(predictor.full_username())
             )
 
@@ -175,6 +175,11 @@ def format_predictions_summary_html(predictions_results: List[Tuple[Prediction, 
     if not predictions_results:
         return ""
 
+    # Получаем конфигурацию из первого предсказания (все предсказания из одной игры)
+    game_id = predictions_results[0][0].game_id
+    config = get_config_by_game_id(db_session, game_id)
+    prediction_reward = config.constants.prediction_reward
+
     lines = ["🔮 <b>Результаты предсказаний:</b>"]
 
     for prediction, is_correct in predictions_results:
@@ -183,7 +188,7 @@ def format_predictions_summary_html(predictions_results: List[Tuple[Prediction, 
         predictor = db_session.exec(stmt).one()
 
         if is_correct:
-            line = f"✅ {html_escape(predictor.full_username())} угадал(а)! +30 🪙"
+            line = f"✅ {html_escape(predictor.full_username())} угадал(а)! +{prediction_reward} 🪙"
         else:
             line = f"❌ {html_escape(predictor.full_username())} не угадал(а)"
 
@@ -209,6 +214,10 @@ def award_correct_predictions(
         year: Год
         predictions_results: Список кортежей (предсказание, правильность)
     """
+    # Получаем конфигурацию для получения награды за предсказание
+    config = get_config_by_game_id(db_session, game_id)
+    prediction_reward = config.constants.prediction_reward
+
     for prediction, is_correct in predictions_results:
         if is_correct:
             # Начисляем койны за правильное предсказание
@@ -216,12 +225,12 @@ def award_correct_predictions(
                 db_session,
                 game_id,
                 prediction.user_id,
-                PREDICTION_REWARD,
+                prediction_reward,
                 year,
                 "prediction_correct",
                 auto_commit=False
             )
-            logger.info(f"Awarded {PREDICTION_REWARD} coins to user {prediction.user_id} for correct prediction")
+            logger.info(f"Awarded {prediction_reward} coins to user {prediction.user_id} for correct prediction")
 
 
 def process_predictions_for_reroll(
@@ -247,6 +256,10 @@ def process_predictions_for_reroll(
     Returns:
         Список кортежей (предсказание, правильность для нового победителя)
     """
+    # Получаем конфигурацию для получения награды за предсказание
+    config = get_config_by_game_id(db_session, game_id)
+    prediction_reward = config.constants.prediction_reward
+
     predictions = get_predictions_for_day(db_session, game_id, year, day)
     results = []
 
@@ -264,7 +277,7 @@ def process_predictions_for_reroll(
                 db_session,
                 game_id,
                 prediction.user_id,
-                PREDICTION_REWARD,
+                prediction_reward,
                 year,
                 "prediction_correct_reroll",
                 auto_commit=False
