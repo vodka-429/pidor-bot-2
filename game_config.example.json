@@ -1,0 +1,42 @@
+{
+  "enabled_chats": [
+    -1001392307997,
+    -4608252738,
+    -1002189152002,
+    -1003671793100
+  ],
+  "test_chat_id": -4608252738,
+  "defaults": {
+    "immunity_price": 10,
+    "double_chance_price": 8,
+    "prediction_price": 3,
+    "reroll_price": 15,
+    "coins_per_win": 4,
+    "coins_per_command": 1,
+    "self_pidor_multiplier": 2,
+    "prediction_reward": 30,
+    "give_coins_amount": 1,
+    "give_coins_winner_amount": 2,
+    "max_missed_days_for_final_voting": 10,
+    "immunity_cooldown_days": 7,
+    "transfer_min_amount": 2,
+    "game_result_time_delay": 2,
+    "reroll_timeout_minutes": 5,
+    "reroll_enabled": true,
+    "transfer_enabled": true,
+    "prediction_enabled": true,
+    "immunity_enabled": true,
+    "double_chance_enabled": true,
+    "give_coins_enabled": true
+  },
+  "chat_overrides": {
+    "-4608252738": {
+      "immunity_price": 5,
+      "max_missed_days_for_final_voting": 100
+    },
+    "-1001392307997": {
+      "reroll_enabled": false,
+      "transfer_enabled": false
+    }
+  }
+}

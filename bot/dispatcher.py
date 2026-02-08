@@ -34,7 +34,7 @@ from bot.handlers.misc.commands import hello_cmd, echo_cmd, slap_cmd, me_cmd, \
 from bot.handlers.misc.error import bot_error_handler
 from bot.handlers.tiktok.commands import tt_video_cmd, tt_depersonalize_cmd, \
     tt_inline_cmd
-from bot.utils import chat_whitelist
+from bot.handlers.game.config import get_enabled_chats
 
 
 # TODO: Refactor this function to automatically scan for handlers ending with
@@ -42,7 +42,7 @@ from bot.utils import chat_whitelist
 def init_dispatcher(application: Application, db_engine):
     """Register handlers."""
     logger.info("=== INITIALIZING DISPATCHER ===")
-    chats = chat_whitelist()
+    chats = get_enabled_chats()
     logger.info(f"Chat whitelist: {chats}")
     if chats:
         ne = ~filters.UpdateType.EDITED_MESSAGE & filters.Chat(chats)

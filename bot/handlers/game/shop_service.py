@@ -8,20 +8,10 @@ from sqlmodel import select
 from bot.app.models import GamePlayerEffect, Prediction, PidorCoinTransaction
 from bot.utils import to_date
 from bot.handlers.game.cbr_service import calculate_commission_amount
+from bot.handlers.game.config import get_config, get_config_by_game_id
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
-
-# Цены товаров в магазине
-IMMUNITY_PRICE = 10
-DOUBLE_CHANCE_PRICE = 8
-PREDICTION_PRICE = 3
-
-# Награда за правильное предсказание
-PREDICTION_REWARD = 30
-
-# Кулдаун защиты (дней)
-IMMUNITY_COOLDOWN_DAYS = 7
 
 
 def is_leap_year(year: int) -> bool:
@@ -201,9 +191,12 @@ def process_purchase(db_session, game_id: int, user_id: int, price: int, year: i
     return True, "success", commission
 
 
-def get_shop_items() -> List[Dict[str, any]]:
+def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
     """
     Получить список доступных товаров в магазине.
+
+    Args:
+        chat_id: ID чата для получения конфигурации (0 для значений по умолчанию)
 
     Returns:
         Список словарей с информацией о товарах:
@@ -212,38 +205,56 @@ def get_shop_items() -> List[Dict[str, any]]:
         - description: описание товара
         - callback_data: данные для callback кнопки
     """
-    return [
-        {
+    config = get_config(chat_id)
+    constants = config.constants
+
+    items = []
+
+    # Защита от пидора
+    if constants.immunity_enabled:
+        items.append({
             'name': '🛡️ Защита от пидора',
-            'price': IMMUNITY_PRICE,
-            'description': 'Защита на 1 день (кулдаун 7 дней)',
+            'price': constants.immunity_price,
+            'description': f'Защита на 1 день (кулдаун {constants.immunity_cooldown_days} дней)',
             'callback_data': 'shop_immunity'
-        },
-        {
+        })
+
+    # Двойной шанс
+    if constants.double_chance_enabled:
+        items.append({
             'name': '🎲 Двойной шанс',
-            'price': DOUBLE_CHANCE_PRICE,
+            'price': constants.double_chance_price,
             'description': 'Удвоенный шанс стать пидором на 1 день',
             'callback_data': 'shop_double'
-        },
-        {
+        })
+
+    # Предсказание
+    if constants.prediction_enabled:
+        items.append({
             'name': '🔮 Предсказание',
-            'price': PREDICTION_PRICE,
-            'description': 'Предскажи пидора дня (+30 койнов при успехе)',
+            'price': constants.prediction_price,
+            'description': f'Предскажи пидора дня (+{constants.prediction_reward} койнов при успехе)',
             'callback_data': 'shop_predict'
-        },
-        {
+        })
+
+    # Передать койны
+    if constants.transfer_enabled:
+        items.append({
             'name': '💸 Передать койны',
             'price': None,
             'description': 'Передать койны другому игроку',
             'callback_data': 'shop_transfer'
-        },
-        {
-            'name': '🏦 Банк чата',
-            'price': None,
-            'description': 'Посмотреть баланс банка чата',
-            'callback_data': 'shop_bank'
-        }
-    ]
+        })
+
+    # Банк чата (всегда доступен)
+    items.append({
+        'name': '🏦 Банк чата',
+        'price': None,
+        'description': 'Посмотреть баланс банка чата',
+        'callback_data': 'shop_bank'
+    })
+
+    return items
 
 
 def buy_immunity(db_session, game_id: int, user_id: int, year: int, current_date: date) -> tuple[bool, str, int]:
@@ -253,6 +264,15 @@ def buy_immunity(db_session, game_id: int, user_id: int, year: int, current_date
     Returns:
         Кортеж (success, message, commission_amount)
     """
+    # Получаем конфигурацию для чата по game_id
+    config = get_config_by_game_id(db_session, game_id)
+    constants = config.constants
+
+    # Проверяем, включена ли фича
+    if not constants.immunity_enabled:
+        logger.debug(f"Immunity disabled for game {game_id}")
+        return False, "feature_disabled", 0
+
     effect = get_or_create_player_effects(db_session, game_id, user_id)
 
     # Вычисляем завтрашний день (день действия защиты)
@@ -263,17 +283,17 @@ def buy_immunity(db_session, game_id: int, user_id: int, year: int, current_date
         logger.debug(f"Immunity already active for {target_year}-{target_day}")
         return False, f"already_active:{target_year}:{target_day}", 0
 
-    # Проверяем кулдаун (7 дней с последнего использования)
+    # Проверяем кулдаун (дней с последнего использования)
     if effect.immunity_last_used:
         # immunity_last_used это datetime, нужно преобразовать в date
         last_used_date = effect.immunity_last_used.date() if isinstance(effect.immunity_last_used, datetime) else effect.immunity_last_used
-        cooldown_end = last_used_date + timedelta(days=IMMUNITY_COOLDOWN_DAYS)
+        cooldown_end = last_used_date + timedelta(days=constants.immunity_cooldown_days)
         if current_date < cooldown_end:
             return False, f"cooldown:{cooldown_end.isoformat()}", 0
 
     # Обрабатываем покупку с комиссией
     success, message, commission = process_purchase(
-        db_session, game_id, user_id, IMMUNITY_PRICE, year, "shop_immunity"
+        db_session, game_id, user_id, constants.immunity_price, year, "shop_immunity"
     )
 
     if not success:
@@ -303,6 +323,15 @@ def buy_double_chance(db_session, game_id: int, user_id: int, target_user_id: in
     """
     from bot.app.models import DoubleChancePurchase
 
+    # Получаем конфигурацию для чата по game_id
+    config = get_config_by_game_id(db_session, game_id)
+    constants = config.constants
+
+    # Проверяем, включена ли фича
+    if not constants.double_chance_enabled:
+        logger.debug(f"Double chance disabled for game {game_id}")
+        return False, "feature_disabled", 0
+
     # Вычисляем завтрашний день (день действия)
     target_year, target_day = calculate_next_day(current_date, year)
 
@@ -320,7 +349,7 @@ def buy_double_chance(db_session, game_id: int, user_id: int, target_user_id: in
 
     # Обрабатываем покупку с комиссией
     success, message, commission = process_purchase(
-        db_session, game_id, user_id, DOUBLE_CHANCE_PRICE, year,
+        db_session, game_id, user_id, constants.double_chance_price, year,
         f"shop_double_chance_for_{target_user_id}"
     )
 
@@ -349,7 +378,7 @@ def create_prediction(db_session, game_id: int, user_id: int, predicted_user_ids
 
     Args:
         db_session: Сессия базы данных
-        game_id: ID игры (чата)
+        game_id: ID игры (внутренний ID в БД)
         user_id: ID пользователя (кто предсказывает)
         predicted_user_ids: Список ID предсказываемых пользователей
         year: Год предсказания
@@ -359,6 +388,15 @@ def create_prediction(db_session, game_id: int, user_id: int, predicted_user_ids
         Кортеж (success, message, commission_amount)
     """
     import json
+
+    # Получаем конфигурацию для чата по game_id
+    config = get_config_by_game_id(db_session, game_id)
+    constants = config.constants
+
+    # Проверяем, включена ли фича
+    if not constants.prediction_enabled:
+        logger.debug(f"Prediction disabled for game {game_id}")
+        return False, "feature_disabled", 0
 
     # Проверяем, нет ли уже предсказания на этот день
     stmt = select(Prediction).where(
@@ -374,7 +412,7 @@ def create_prediction(db_session, game_id: int, user_id: int, predicted_user_ids
 
     # Обрабатываем покупку с комиссией
     success, message, commission = process_purchase(
-        db_session, game_id, user_id, PREDICTION_PRICE, year, "shop_prediction"
+        db_session, game_id, user_id, constants.prediction_price, year, "shop_prediction"
     )
 
     if not success:
