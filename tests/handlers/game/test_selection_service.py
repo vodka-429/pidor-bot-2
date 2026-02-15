@@ -528,3 +528,68 @@ def test_build_selection_context_immunity_disabled(mock_db_session, sample_playe
         assert len(double_chance_ids) == 0
     finally:
         ges.get_or_create_player_effects = original_get_effects
+
+
+@pytest.mark.unit
+def test_build_selection_context_with_multiple_double_chance_same_player(mock_db_session, sample_players):
+    """Test build_selection_context with exponential double chance logic - multiple purchases for same player."""
+    # Setup
+    game_id = 1
+    current_date = date(2024, 6, 15)  # Day 166
+    current_year = 2024
+    current_day = 166
+    players = sample_players[:3]
+
+    # Mock no immunity
+    def mock_get_effects(db_session, game_id, user_id):
+        return GamePlayerEffect(
+            game_id=game_id,
+            user_id=user_id,
+            immunity_year=None,
+            immunity_day=None
+        )
+
+    # Mock 2 double chance purchases for player[0] from different buyers
+    purchase1 = DoubleChancePurchase(
+        game_id=game_id,
+        buyer_id=players[1].id,
+        target_id=players[0].id,
+        year=current_year,
+        day=current_day,
+        is_used=False
+    )
+    purchase2 = DoubleChancePurchase(
+        game_id=game_id,
+        buyer_id=players[2].id,
+        target_id=players[0].id,
+        year=current_year,
+        day=current_day,
+        is_used=False
+    )
+
+    mock_result = MagicMock()
+    mock_result.all.return_value = [purchase1, purchase2]
+    mock_db_session.exec.return_value = mock_result
+
+    # Patch get_or_create_player_effects
+    import bot.handlers.game.game_effects_service as ges
+    original_get_effects = ges.get_or_create_player_effects
+    ges.get_or_create_player_effects = mock_get_effects
+
+    try:
+        # Execute
+        selection_pool, unprotected, protected, double_chance_ids = build_selection_context(
+            mock_db_session, game_id, players, current_date
+        )
+
+        # Verify - with exponential logic: 2 purchases = 2^2 = 4 entries
+        assert len(selection_pool) == 6  # player[0] (2^2=4) + player[1] (1) + player[2] (1)
+        assert selection_pool.count(players[0]) == 4
+        assert selection_pool.count(players[1]) == 1
+        assert selection_pool.count(players[2]) == 1
+        assert len(unprotected) == 3
+        assert len(protected) == 0
+        assert players[0].id in double_chance_ids
+        assert len(double_chance_ids) == 1
+    finally:
+        ges.get_or_create_player_effects = original_get_effects

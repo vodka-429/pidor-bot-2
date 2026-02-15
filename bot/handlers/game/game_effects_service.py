@@ -1,5 +1,6 @@
 """Service functions for game effects (immunity, double chance)."""
 import logging
+from collections import Counter
 from datetime import date, datetime
 from typing import List, Set, Tuple
 from unittest.mock import MagicMock
@@ -54,7 +55,8 @@ def build_selection_pool(
     """
     Создать пул выбора с учётом двойного шанса.
 
-    Игроки с активным двойным шансом добавляются в пул дважды.
+    Игроки с активным двойным шансом добавляются в пул экспоненциально:
+    1 покупка = 2^1 = 2 записи, 2 покупки = 2^2 = 4 записи, и т.д.
     """
     from bot.app.models import DoubleChancePurchase
 
@@ -73,16 +75,19 @@ def build_selection_pool(
     )
     active_purchases = db_session.exec(stmt).all()
 
-    # Собираем ID игроков с двойным шансом
-    targets_with_double_chance = {p.target_id for p in active_purchases}
+    # Подсчитываем количество покупок для каждого игрока
+    purchase_counts = Counter(p.target_id for p in active_purchases)
 
     for player in players:
-        if player.id in targets_with_double_chance:
-            # Добавляем игрока дважды (двойной шанс)
-            selection_pool.append(player)
-            selection_pool.append(player)
+        purchase_count = purchase_counts.get(player.id, 0)
+
+        if purchase_count > 0:
+            # Экспоненциальная логика: 2^n записей
+            entries_count = 2 ** purchase_count
+            for _ in range(entries_count):
+                selection_pool.append(player)
             players_with_double_chance.add(player.id)
-            logger.debug(f"Player {player.id} ({player.full_username()}) has double chance")
+            logger.debug(f"Player {player.id} ({player.full_username()}) has {purchase_count} double chance purchase(s), added {entries_count} times")
         else:
             # Добавляем игрока один раз
             selection_pool.append(player)
