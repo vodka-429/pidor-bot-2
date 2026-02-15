@@ -206,7 +206,7 @@ def test_build_selection_pool_multiple_double_chance(mock_db_session):
     player3 = TGUser(id=3, tg_id=103, first_name="Player3", username="player3")
     players = [player1, player2, player3]
 
-    # Mock double chance purchases: player1 and player3 have active purchases
+    # Mock double chance purchases: player1 and player3 have active purchases (1 each)
     purchase1 = DoubleChancePurchase(
         game_id=game_id,
         buyer_id=4,
@@ -231,8 +231,8 @@ def test_build_selection_pool_multiple_double_chance(mock_db_session):
     # Execute
     pool, double_chance_players = build_selection_pool(mock_db_session, game_id, players, current_date)
 
-    # Verify
-    assert len(pool) == 5  # player1 twice + player2 once + player3 twice
+    # Verify - with exponential logic: 1 purchase = 2^1 = 2 entries
+    assert len(pool) == 5  # player1 (2^1=2) + player2 (1) + player3 (2^1=2)
     assert pool.count(player1) == 2
     assert pool.count(player2) == 1
     assert pool.count(player3) == 2
@@ -372,3 +372,109 @@ def test_is_immunity_enabled_last_day():
 
     # Verify
     assert result is False
+
+
+@pytest.mark.unit
+def test_build_selection_pool_exponential_double_chance(mock_db_session):
+    """Test build_selection_pool with exponential logic - 2 purchases = 4 entries."""
+    from bot.app.models import DoubleChancePurchase
+
+    # Setup
+    game_id = 1
+    current_date = date(2024, 6, 15)  # Day 166
+    current_year = 2024
+    current_day = 166
+
+    player1 = TGUser(id=1, tg_id=101, first_name="Player1", username="player1")
+    player2 = TGUser(id=2, tg_id=102, first_name="Player2", username="player2")
+    players = [player1, player2]
+
+    # Mock double chance purchases: player1 has 2 purchases from different buyers
+    purchase1 = DoubleChancePurchase(
+        game_id=game_id,
+        buyer_id=3,
+        target_id=player1.id,
+        year=current_year,
+        day=current_day,
+        is_used=False
+    )
+    purchase2 = DoubleChancePurchase(
+        game_id=game_id,
+        buyer_id=4,
+        target_id=player1.id,
+        year=current_year,
+        day=current_day,
+        is_used=False
+    )
+
+    mock_result = MagicMock()
+    mock_result.all.return_value = [purchase1, purchase2]
+    mock_db_session.exec.return_value = mock_result
+
+    # Execute
+    pool, double_chance_players = build_selection_pool(mock_db_session, game_id, players, current_date)
+
+    # Verify - with exponential logic: 2 purchases = 2^2 = 4 entries
+    assert len(pool) == 5  # player1 (2^2=4) + player2 (1)
+    assert pool.count(player1) == 4
+    assert pool.count(player2) == 1
+    assert len(double_chance_players) == 1
+    assert player1.id in double_chance_players
+
+
+@pytest.mark.unit
+def test_build_selection_pool_triple_double_chance(mock_db_session):
+    """Test build_selection_pool with exponential logic - 3 purchases = 8 entries."""
+    from bot.app.models import DoubleChancePurchase
+
+    # Setup
+    game_id = 1
+    current_date = date(2024, 6, 15)  # Day 166
+    current_year = 2024
+    current_day = 166
+
+    player1 = TGUser(id=1, tg_id=101, first_name="Player1", username="player1")
+    player2 = TGUser(id=2, tg_id=102, first_name="Player2", username="player2")
+    player3 = TGUser(id=3, tg_id=103, first_name="Player3", username="player3")
+    players = [player1, player2, player3]
+
+    # Mock double chance purchases: player1 has 3 purchases from different buyers
+    purchase1 = DoubleChancePurchase(
+        game_id=game_id,
+        buyer_id=4,
+        target_id=player1.id,
+        year=current_year,
+        day=current_day,
+        is_used=False
+    )
+    purchase2 = DoubleChancePurchase(
+        game_id=game_id,
+        buyer_id=5,
+        target_id=player1.id,
+        year=current_year,
+        day=current_day,
+        is_used=False
+    )
+    purchase3 = DoubleChancePurchase(
+        game_id=game_id,
+        buyer_id=6,
+        target_id=player1.id,
+        year=current_year,
+        day=current_day,
+        is_used=False
+    )
+
+    mock_result = MagicMock()
+    mock_result.all.return_value = [purchase1, purchase2, purchase3]
+    mock_db_session.exec.return_value = mock_result
+
+    # Execute
+    pool, double_chance_players = build_selection_pool(mock_db_session, game_id, players, current_date)
+
+    # Verify - with exponential logic: 3 purchases = 2^3 = 8 entries
+    assert len(pool) == 10  # player1 (2^3=8) + player2 (1) + player3 (1)
+    assert pool.count(player1) == 8
+    assert pool.count(player2) == 1
+    assert pool.count(player3) == 1
+    assert len(double_chance_players) == 1
+    assert player1.id in double_chance_players
