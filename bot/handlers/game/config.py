@@ -40,6 +40,7 @@ class GameConstants:
             immunity_enabled: Включена ли защита (по умолчанию: True)
             double_chance_enabled: Включен ли двойной шанс (по умолчанию: True)
             give_coins_enabled: Включена ли раздача койнов (по умолчанию: True)
+            achievements_enabled: Включены ли достижения (по умолчанию: True)
     """
     # Цены
     immunity_price: int = 10
@@ -71,6 +72,7 @@ class GameConstants:
     immunity_enabled: bool = True
     double_chance_enabled: bool = True
     give_coins_enabled: bool = True
+    achievements_enabled: bool = True
 
 
 @dataclass
@@ -279,6 +281,7 @@ def get_config(chat_id: int) -> ChatConfig:
         'immunity_enabled': global_config.defaults.immunity_enabled,
         'double_chance_enabled': global_config.defaults.double_chance_enabled,
         'give_coins_enabled': global_config.defaults.give_coins_enabled,
+        'achievements_enabled': global_config.defaults.achievements_enabled,
     }
 
     # Применяем переопределения для конкретного чата

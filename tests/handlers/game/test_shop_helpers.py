@@ -83,7 +83,7 @@ def test_create_shop_keyboard():
 
     # Verify structure
     assert isinstance(keyboard, InlineKeyboardMarkup)
-    assert len(keyboard.inline_keyboard) == 5  # 5 items (immunity, double, predict, transfer, bank)
+    assert len(keyboard.inline_keyboard) == 6  # 6 items (immunity, double, predict, achievements, transfer, bank)
 
     # Verify each item is on separate row
     for row in keyboard.inline_keyboard:
