@@ -238,10 +238,11 @@ def check_first_blood(
     if has_achievement(db_session, game_id, user_id, "first_blood", year):
         return None
 
-    # Проверяем, что это первая победа пользователя в этом чате
+    # Проверяем, что это первая победа пользователя в этом году
     stmt = select(GameResult).where(
         GameResult.game_id == game_id,
-        GameResult.winner_id == user_id
+        GameResult.winner_id == user_id,
+        GameResult.year == year
     )
     wins_count = len(db_session.exec(stmt).all())
 
