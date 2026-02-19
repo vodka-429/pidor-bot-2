@@ -213,7 +213,7 @@ async def test_reroll_with_immunity_protection(mock_update, mock_context, mock_g
     mock_select.return_value = mock_selection_result
 
     # Execute reroll
-    old_winner_result, new_winner_result = execute_reroll(
+    old_winner_result, new_winner_result, selection_result = execute_reroll(
         mock_context.db_session, game_id, year, day, initiator_id, sample_players, current_date
     )
 
@@ -313,7 +313,7 @@ async def test_reroll_with_double_chance(mock_update, mock_context, mock_game, s
     mock_select.return_value = mock_selection_result
 
     # Execute reroll
-    old_winner_result, new_winner_result = execute_reroll(
+    old_winner_result, new_winner_result, selection_result = execute_reroll(
         mock_context.db_session, game_id, year, day, initiator_id, sample_players, current_date
     )
 
@@ -423,7 +423,7 @@ async def test_reroll_with_predictions(mock_update, mock_context, mock_game, sam
     mock_process_predictions.return_value = [(mock_prediction, True)]
 
     # Execute reroll
-    old_winner_result, new_winner_result = execute_reroll(
+    old_winner_result, new_winner_result, selection_result = execute_reroll(
         mock_context.db_session, game_id, year, day, initiator_id, sample_players, current_date
     )
 
