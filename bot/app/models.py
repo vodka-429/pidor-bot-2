@@ -275,3 +275,21 @@ class GiveCoinsClick(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint('game_id', 'user_id', 'year', 'day', name='unique_give_coins_click'),
     )
+
+
+class UserAchievement(SQLModel, table=True):
+    """Достижения пользователей в игре."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    user_id: int = Field(foreign_key="tguser.id", nullable=False)
+    achievement_code: str = Field(nullable=False)  # Код достижения из ACHIEVEMENTS
+    year: int = Field(nullable=False)  # Год получения
+    period: Optional[int] = Field(default=None)  # Номер периода (неделя/месяц для периодических, None для разовых)
+    earned_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    game: Game = Relationship()
+    user: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[UserAchievement.user_id]"})
+
+    __table_args__ = (
+        UniqueConstraint('game_id', 'user_id', 'achievement_code', 'year', 'period', name='unique_user_achievement'),
+    )

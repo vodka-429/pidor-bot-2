@@ -27,6 +27,7 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
 from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders
 from bot.handlers.game.config import is_test_chat, get_config
 from bot.handlers.game.coin_service import add_coins, get_balance, get_leaderboard, get_leaderboard_by_year
+from bot.handlers.game.shop_service import is_leap_year, get_days_in_year
 from bot.utils import escape_markdown2, escape_word, format_number, ECallbackContext, get_allowed_final_voting_closers
 
 # Получаем логгер для этого модуля
@@ -135,8 +136,7 @@ async def run_tiebreaker(update: Update, context: GECallbackContext, leaders: Li
     logger.info(f"Tie-breaker winner: {winner.full_username()}")
 
     # Определяем специальный день для tie-breaker
-    is_leap_year = (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
-    tiebreaker_day = 367 if is_leap_year else 366
+    tiebreaker_day = get_days_in_year(year) + 1
 
     # Создаём запись GameResult для tie-breaker
     context.game.results.append(
@@ -367,9 +367,15 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         # Начисляем койны за правильные предсказания
         award_correct_predictions(context.db_session, context.game.id, cur_year, predictions_results)
 
-        # Коммит всех изменений одним запросом
+        # Проверяем и выдаём достижения (если включены)
+        from bot.handlers.game.achievement_service import check_and_award_achievements
+        awarded_achievements = check_and_award_achievements(
+            context.db_session, context.game.id, winner.id, cur_year, cur_day
+        )
+
+        # Коммит всех изменений одним запросом (включая достижения)
         context.db_session.commit()
-        logger.debug("Committed game result and all coin transactions")
+        logger.debug("Committed game result, coin transactions, and achievements")
 
         if last_day:
             logger.debug("Sending year results announcement")
@@ -416,6 +422,28 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
                 predictions_html = format_predictions_summary_html(predictions_results, context.db_session)
                 stage4_message += f"\n\n{predictions_html}"
                 logger.info(f"Added predictions summary with {len(predictions_results)} predictions to stage4 message")
+
+        # Добавить информацию о полученных достижениях (если есть)
+        if awarded_achievements:
+            from bot.handlers.game.text_static import ACHIEVEMENTS_EARNED_HEADER, ACHIEVEMENT_EARNED_TEMPLATE
+            from bot.handlers.game.achievement_constants import get_achievement
+            from html import escape as html_escape
+
+            achievements_lines = []
+            for achievement in awarded_achievements:
+                achievement_data = get_achievement(achievement.achievement_code)
+                if achievement_data:
+                    achievement_line = ACHIEVEMENT_EARNED_TEMPLATE.format(
+                        name=html_escape(achievement_data['name']),
+                        reward=achievement_data['reward']
+                    )
+                    achievements_lines.append(achievement_line)
+
+            if achievements_lines:
+                stage4_message += ACHIEVEMENTS_EARNED_HEADER
+                for line in achievements_lines:
+                    stage4_message += f"\n{line}"
+                logger.info(f"Added {len(awarded_achievements)} achievements to stage4 message")
 
         # Отправляем финальное сообщение с кнопкой перевыбора
         await send_result_with_reroll_button(update, context, stage4_message, cur_year, cur_day)
@@ -2520,3 +2548,105 @@ async def handle_shop_back_callback(update: Update, context: GECallbackContext):
     )
 
     logger.info(f"Returned to shop menu for user {context.tg_user.id}")
+
+
+@ensure_game
+async def handle_shop_achievements_callback(update: Update, context: GECallbackContext):
+    """Обработчик кнопки 'Мои достижения' в магазине"""
+    from bot.handlers.game.shop_helpers import parse_shop_callback_data
+    from bot.handlers.game.achievement_service import get_user_achievements
+    from bot.handlers.game.achievement_constants import ACHIEVEMENTS
+    from bot.handlers.game.text_static import (
+        SHOP_ERROR_NOT_YOUR_SHOP,
+        ACHIEVEMENTS_HEADER,
+        ACHIEVEMENT_EARNED_FORMAT,
+        ACHIEVEMENT_NOT_EARNED_FORMAT,
+        ACHIEVEMENTS_TOTAL_COINS,
+        ACHIEVEMENTS_EMPTY
+    )
+    from bot.handlers.game.shop_helpers import format_date_readable
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop achievements callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    try:
+        # Парсим callback_data для получения item_type и owner_user_id
+        item_type, owner_user_id = parse_shop_callback_data(query.data)
+        logger.info(f"Parsed callback: item_type={item_type}, owner_user_id={owner_user_id}")
+    except ValueError as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # Проверяем, что нажавший кнопку - это владелец магазина
+    if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    # Получаем достижения пользователя
+    user_achievements = get_user_achievements(context.db_session, context.game.id, context.tg_user.id)
+
+    # Формируем сообщение
+    user_name = context.tg_user.full_username()
+    message_lines = [ACHIEVEMENTS_HEADER.format(user_name=escape_markdown2(user_name))]
+    message_lines.append("")
+
+    if not user_achievements:
+        # Если нет достижений
+        message_lines.append(ACHIEVEMENTS_EMPTY)
+    else:
+        # Создаём словарь полученных достижений для быстрого поиска
+        earned_codes = {ach.achievement_code: ach for ach in user_achievements}
+        total_coins = 0
+
+        # Проходим по всем возможным достижениям
+        for code, achievement_data in ACHIEVEMENTS.items():
+            if code in earned_codes:
+                # Достижение получено
+                earned_ach = earned_codes[code]
+                date_str = format_date_readable(earned_ach.year, earned_ach.earned_at.timetuple().tm_yday)
+                message_lines.append(
+                    ACHIEVEMENT_EARNED_FORMAT.format(
+                        name=escape_markdown2(achievement_data['name']),
+                        date=escape_markdown2(date_str)
+                    )
+                )
+                total_coins += achievement_data['reward']
+            else:
+                # Достижение не получено
+                message_lines.append(
+                    ACHIEVEMENT_NOT_EARNED_FORMAT.format(
+                        name=escape_markdown2(achievement_data['name'])
+                    )
+                )
+
+        # Добавляем общую сумму заработанных койнов
+        if total_coins > 0:
+            message_lines.append(ACHIEVEMENTS_TOTAL_COINS.format(total=format_number(total_coins)))
+
+    message_text = "\n".join(message_lines)
+
+    # Создаём кнопку "Назад в магазин"
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "⬅️ Назад в магазин",
+            callback_data=f"shop_back_{owner_user_id}"
+        )
+    ]])
+
+    await query.answer()
+    await query.edit_message_text(
+        text=message_text,
+        parse_mode="MarkdownV2",
+        reply_markup=keyboard
+    )
+
+    logger.info(f"Showed achievements for user {context.tg_user.id}, total: {len(user_achievements)}")

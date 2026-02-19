@@ -152,6 +152,17 @@ COINS_ALL_TIME = """Топ\\-50 по *пидор\\-койнам* за все в�
 COINS_LIST_ITEM = """*{number}\\.* {username} — {amount} койн\\(ов\\)\n"""
 COIN_EARNED = """🎉 Поздравляем\\! Вы получили *{amount}* пидор\\-койн\\(ов\\) за победу в розыгрыше\\!"""
 
+# Сообщения для достижений
+ACHIEVEMENT_EARNED_TEMPLATE = "🏆 Достижение! {name}: +{reward} 💰"
+ACHIEVEMENTS_EARNED_HEADER = "\n\n🎖️ Новые достижения:"
+
+# Сообщения для просмотра достижений
+ACHIEVEMENTS_HEADER = "🎖️ *Достижения {user_name}:*"
+ACHIEVEMENT_EARNED_FORMAT = "✅ {name} — {date}"
+ACHIEVEMENT_NOT_EARNED_FORMAT = "⬜ {name}"
+ACHIEVEMENTS_TOTAL_COINS = "\n\n💰 *Всего заработано:* {total} койнов"
+ACHIEVEMENTS_EMPTY = "У вас пока нет достижений\\. Играйте\\, чтобы получить их\\!"
+
 
 # Сообщения для магазина пидор-койнов
 SHOP_ERROR_NOT_YOUR_SHOP = "❌ Это не твой магазин! Открой свой командой /pidorshop"
@@ -441,11 +452,22 @@ def get_rules_message(config) -> str:
         str: Форматированное сообщение с правилами
     """
     from bot.handlers.game.config import ChatConfig
+    from bot.handlers.game.achievement_constants import ACHIEVEMENTS
 
     if not isinstance(config, ChatConfig):
         raise TypeError(f"Expected ChatConfig, got {type(config)}")
 
     c = config.constants
+
+    # Формируем список достижений из констант
+    achievements_list = []
+    for code, achievement in ACHIEVEMENTS.items():
+        name = achievement['name']
+        description = achievement['description']
+        reward = achievement['reward']
+        achievements_list.append(f"• {name} \\- {description} \\(\\+{reward} 💰\\)")
+
+    achievements_text = "\n".join(achievements_list)
 
     return f"""📜 *Правила игры "Пидор Дня"*
 
@@ -483,6 +505,10 @@ def get_rules_message(config) -> str:
 • Обычные игроки: {c.give_coins_amount} койн
 • Победитель дня: {c.give_coins_winner_amount} койна
 • Один раз в день
+
+🎖️ *Достижения:*
+{achievements_text}
+• Просмотр достижений: /pidorshop → "🎖️ Мои достижения"
 
 📊 *Команды:*
 • /pidor \\- запустить розыгрыш

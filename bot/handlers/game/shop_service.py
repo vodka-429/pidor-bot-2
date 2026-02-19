@@ -254,6 +254,15 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
         'callback_data': 'shop_bank'
     })
 
+    # Мои достижения (всегда доступны, если включены)
+    if constants.achievements_enabled:
+        items.append({
+            'name': '🎖️ Мои достижения',
+            'price': None,
+            'description': 'Посмотреть свои достижения',
+            'callback_data': 'shop_achievements'
+        })
+
     return items
 
 
