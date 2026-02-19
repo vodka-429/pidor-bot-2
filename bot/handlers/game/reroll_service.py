@@ -11,6 +11,7 @@ from bot.app.models import GameResult, TGUser
 from bot.handlers.game.coin_service import add_coins
 from bot.handlers.game.shop_service import spend_coins, can_afford
 from bot.handlers.game.config import get_config_by_game_id
+from bot.handlers.game.selection_service import SelectionResult
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
@@ -54,7 +55,7 @@ def execute_reroll(
     players: List[TGUser],
     current_date: date,
     immunity_enabled: bool = True
-) -> Tuple[TGUser, TGUser]:
+) -> Tuple[TGUser, TGUser, SelectionResult]:
     """
     Выполнить перевыбор.
 
@@ -73,7 +74,8 @@ def execute_reroll(
         immunity_enabled: Включена ли защита (по умолчанию True)
 
     Returns:
-        Кортеж (старый_победитель, новый_победитель)
+        Кортеж (старый_победитель, новый_победитель, selection_result)
+        где selection_result содержит метаданные о выборе (защита, двойной шанс)
 
     Raises:
         ValueError: Если GameResult не найден или игроки пусты, или если reroll отключен
@@ -169,7 +171,7 @@ def execute_reroll(
         f"initiator {initiator_id} in game {game_id} for {year}-{day}"
     )
 
-    return old_winner, new_winner
+    return old_winner, new_winner, selection_result
 
 
 async def remove_reroll_button_after_timeout(

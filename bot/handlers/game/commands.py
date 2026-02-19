@@ -1956,7 +1956,7 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
     current_date = current_dt.date()
     immunity_enabled = is_immunity_enabled(current_dt)
 
-    old_winner, new_winner = execute_reroll(
+    old_winner, new_winner, selection_result = execute_reroll(
         context.db_session, game_id, year, day,
         context.tg_user.id, players, current_date, immunity_enabled
     )
@@ -1977,13 +1977,6 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
     protection_info = ""
     double_chance_info = ""
     predictions_info = ""
-
-    # Получаем информацию о том, что произошло при перевыборе из reroll_service
-    # Проверяем, была ли активирована защита
-    from bot.handlers.game.selection_service import select_winner_with_effects
-    selection_result = select_winner_with_effects(
-        context.db_session, game_id, players, current_date, immunity_enabled
-    )
 
     # Информация о защите (если сработала при перевыборе)
     if selection_result.had_immunity and selection_result.protected_player:
