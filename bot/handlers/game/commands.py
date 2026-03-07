@@ -373,6 +373,21 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
             context.db_session, context.game.id, winner.id, cur_year, cur_day
         )
 
+        # Проверяем, первый ли это розыгрыш в месяце
+        from bot.handlers.game.achievement_service import (
+            is_first_game_of_month, check_monthly_achievements, get_previous_month
+        )
+
+        current_month = current_dt.month
+        if is_first_game_of_month(context.db_session, context.game.id, cur_year, current_month, current_dt.day):
+            # Выдаём достижения за прошлый месяц
+            prev_year, prev_month = get_previous_month(cur_year, current_month)
+            monthly_achievements = check_monthly_achievements(
+                context.db_session, context.game.id, prev_year, prev_month
+            )
+            awarded_achievements.extend(monthly_achievements)
+            logger.info(f"Awarded {len(monthly_achievements)} monthly achievements for {prev_year}-{prev_month:02d}")
+
         # Коммит всех изменений одним запросом (включая достижения)
         context.db_session.commit()
         logger.debug("Committed game result, coin transactions, and achievements")

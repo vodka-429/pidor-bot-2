@@ -16,26 +16,40 @@ ACHIEVEMENTS = {
         "is_periodic": False,
         "period_type": None
     },
-    "streak_3": {
+    "streak_2": {
         "name": "🎯 Снайпер",
+        "description": "2 победы подряд",
+        "reward": 15,
+        "is_periodic": False,
+        "period_type": None
+    },
+    "streak_3": {
+        "name": "⚡ Серия 3",
         "description": "3 победы подряд",
-        "reward": 20,
+        "reward": 25,
         "is_periodic": False,
         "period_type": None
     },
     "streak_5": {
-        "name": "⚡ Серия 5",
+        "name": "🌟 Легенда",
         "description": "5 побед подряд",
-        "reward": 30,
-        "is_periodic": False,
-        "period_type": None
-    },
-    "streak_7": {
-        "name": "🌟 Серия 7",
-        "description": "7 побед подряд",
         "reward": 50,
         "is_periodic": False,
         "period_type": None
+    },
+    "monthly_king": {
+        "name": "👑 Король месяца",
+        "description": "Больше всех побед за месяц",
+        "reward": 30,
+        "is_periodic": True,
+        "period_type": "monthly"
+    },
+    "monthly_initiator": {
+        "name": "🎯 Инициатор месяца",
+        "description": "Больше всех запусков /pidor за месяц",
+        "reward": 15,
+        "is_periodic": True,
+        "period_type": "monthly"
     }
 }
 
