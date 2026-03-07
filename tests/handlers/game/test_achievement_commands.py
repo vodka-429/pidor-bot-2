@@ -121,8 +121,8 @@ async def test_handle_shop_achievements_callback_with_achievements(mock_update, 
 
     # Check that total coins is shown
     assert "Всего заработано" in message_text
-    # first_blood (10) + streak_3 (20) = 30
-    assert "30" in message_text
+    # first_blood (10) + streak_3 (25) = 35
+    assert "35" in message_text
 
     assert call_args[1]["parse_mode"] == "MarkdownV2"
     # Check that reply_markup (back button) is present

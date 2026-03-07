@@ -1,11 +1,12 @@
 """Service functions for achievements system."""
 import logging
-from typing import List, Optional
-from datetime import datetime
+from typing import List, Optional, Tuple
+from datetime import datetime, date
+from calendar import monthrange
 
-from sqlmodel import select
+from sqlmodel import select, func, text
 
-from bot.app.models import UserAchievement, GameResult, TGUser
+from bot.app.models import UserAchievement, GameResult, TGUser, PidorCoinTransaction
 from bot.handlers.game.achievement_constants import ACHIEVEMENTS, get_achievement
 from bot.handlers.game.coin_service import add_coins
 from bot.handlers.game.config import get_config_by_game_id
@@ -287,9 +288,9 @@ def check_streak_achievements(
 
     # Проверяем достижения за серии (в порядке возрастания)
     streak_achievements = [
+        ("streak_2", 2),
         ("streak_3", 3),
-        ("streak_5", 5),
-        ("streak_7", 7)
+        ("streak_5", 5)
     ]
 
     for achievement_code, required_streak in streak_achievements:
@@ -355,5 +356,227 @@ def check_and_award_achievements(
             f"Awarded {len(awarded)} achievements to user {user_id} in game {game_id} "
             f"on {year}-{day}"
         )
+
+    return awarded
+
+
+
+def get_previous_month(year: int, month: int) -> Tuple[int, int]:
+    """
+    Получить предыдущий месяц с учётом перехода года.
+
+    Args:
+        year: Текущий год
+        month: Текущий месяц (1-12)
+
+    Returns:
+        Кортеж (год, месяц) для предыдущего месяца
+    """
+    if month == 1:
+        return year - 1, 12
+    return year, month - 1
+
+
+def is_first_game_of_month(
+    db_session,
+    game_id: int,
+    year: int,
+    month: int,
+    day: int
+) -> bool:
+    """
+    Проверить, первый ли это розыгрыш в месяце.
+
+    Args:
+        db_session: Сессия базы данных
+        game_id: ID игры
+        year: Год
+        month: Месяц (1-12)
+        day: День месяца (1-31)
+
+    Returns:
+        True если это первый розыгрыш месяца, False иначе
+    """
+    # Вычисляем день года для первого дня месяца
+    first_day_of_month = date(year, month, 1).timetuple().tm_yday
+    # Вычисляем день года для текущего дня
+    current_day_of_year = date(year, month, day).timetuple().tm_yday
+
+    # Ищем розыгрыши в текущем месяце до текущего дня
+    stmt = select(GameResult).where(
+        GameResult.game_id == game_id,
+        GameResult.year == year,
+        GameResult.day >= first_day_of_month,
+        GameResult.day < current_day_of_year  # Строго меньше текущего дня
+    )
+
+    previous_games = db_session.exec(stmt).all()
+    is_first = len(previous_games) == 0
+
+    logger.debug(
+        f"Checking if first game of month for game {game_id}, {year}-{month:02d}-{day:02d}: "
+        f"{is_first} (found {len(previous_games)} previous games)"
+    )
+
+    return is_first
+
+
+def get_monthly_winners(
+    db_session,
+    game_id: int,
+    year: int,
+    month: int
+) -> List[Tuple[int, int]]:
+    """
+    Получить лидеров по победам за месяц.
+
+    Args:
+        db_session: Сессия базы данных
+        game_id: ID игры
+        year: Год
+        month: Месяц (1-12)
+
+    Returns:
+        Список кортежей (user_id, wins_count), отсортированный по убыванию побед
+    """
+    # Вычисляем диапазон дней для месяца
+    first_day = date(year, month, 1).timetuple().tm_yday
+    last_day_of_month = monthrange(year, month)[1]
+    last_day = date(year, month, last_day_of_month).timetuple().tm_yday
+
+    stmt = select(GameResult.winner_id, func.count(GameResult.id).label('wins')) \
+        .where(
+            GameResult.game_id == game_id,
+            GameResult.year == year,
+            GameResult.day >= first_day,
+            GameResult.day <= last_day
+        ) \
+        .group_by(GameResult.winner_id) \
+        .order_by(text('wins DESC'))
+
+    results = db_session.exec(stmt).all()
+    winners = [(r[0], r[1]) for r in results]
+
+    logger.debug(
+        f"Monthly winners for game {game_id}, {year}-{month:02d}: "
+        f"{len(winners)} players, top: {winners[:3] if winners else 'none'}"
+    )
+
+    return winners
+
+
+def get_monthly_initiators(
+    db_session,
+    game_id: int,
+    year: int,
+    month: int
+) -> List[Tuple[int, int]]:
+    """
+    Получить лидеров по запускам /pidor за месяц.
+
+    Args:
+        db_session: Сессия базы данных
+        game_id: ID игры
+        year: Год
+        month: Месяц (1-12)
+
+    Returns:
+        Список кортежей (user_id, commands_count), отсортированный по убыванию
+    """
+    # Вычисляем временной диапазон для месяца
+    first_day_date = date(year, month, 1)
+    last_day_of_month = monthrange(year, month)[1]
+    last_day_date = date(year, month, last_day_of_month)
+
+    # Создаём datetime объекты для начала и конца месяца
+    start_datetime = datetime(year, month, 1, 0, 0, 0)
+    end_datetime = datetime(year, month, last_day_of_month, 23, 59, 59)
+
+    # Считаем транзакции с reason="command_execution"
+    stmt = select(PidorCoinTransaction.user_id, func.count(PidorCoinTransaction.id).label('commands')) \
+        .where(
+            PidorCoinTransaction.game_id == game_id,
+            PidorCoinTransaction.year == year,
+            PidorCoinTransaction.reason == "command_execution",
+            PidorCoinTransaction.created_at >= start_datetime,
+            PidorCoinTransaction.created_at <= end_datetime
+        ) \
+        .group_by(PidorCoinTransaction.user_id) \
+        .order_by(text('commands DESC'))
+
+    results = db_session.exec(stmt).all()
+    initiators = [(r[0], r[1]) for r in results]
+
+    logger.debug(
+        f"Monthly initiators for game {game_id}, {year}-{month:02d}: "
+        f"{len(initiators)} players, top: {initiators[:3] if initiators else 'none'}"
+    )
+
+    return initiators
+
+
+def check_monthly_achievements(
+    db_session,
+    game_id: int,
+    year: int,
+    month: int
+) -> List[UserAchievement]:
+    """
+    Проверить и выдать ежемесячные достижения.
+
+    Args:
+        db_session: Сессия базы данных
+        game_id: ID игры
+        year: Год
+        month: Месяц (1-12)
+
+    Returns:
+        Список выданных достижений
+    """
+    awarded = []
+
+    # Проверяем "Король месяца"
+    winners = get_monthly_winners(db_session, game_id, year, month)
+    if winners:
+        max_wins = winners[0][1]
+        # Все с максимальным количеством побед получают достижение
+        for user_id, wins in winners:
+            if wins == max_wins:
+                achievement = award_achievement(
+                    db_session, game_id, user_id,
+                    "monthly_king", year, period=month
+                )
+                if achievement:
+                    awarded.append(achievement)
+                    logger.info(
+                        f"Awarded 'monthly_king' to user {user_id} in game {game_id} "
+                        f"for {year}-{month:02d} ({wins} wins)"
+                    )
+            else:
+                break  # Остальные имеют меньше побед
+
+    # Проверяем "Инициатор месяца"
+    initiators = get_monthly_initiators(db_session, game_id, year, month)
+    if initiators:
+        max_commands = initiators[0][1]
+        # Все с максимальным количеством запусков получают достижение
+        for user_id, commands in initiators:
+            if commands == max_commands:
+                achievement = award_achievement(
+                    db_session, game_id, user_id,
+                    "monthly_initiator", year, period=month
+                )
+                if achievement:
+                    awarded.append(achievement)
+                    logger.info(
+                        f"Awarded 'monthly_initiator' to user {user_id} in game {game_id} "
+                        f"for {year}-{month:02d} ({commands} commands)"
+                    )
+            else:
+                break
+
+    logger.info(
+        f"Awarded {len(awarded)} monthly achievements for game {game_id}, {year}-{month:02d}"
+    )
 
     return awarded

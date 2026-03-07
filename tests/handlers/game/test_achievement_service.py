@@ -313,15 +313,15 @@ def test_check_first_blood_not_first(mock_award_achievement, mock_db_session):
 @pytest.mark.unit
 @patch('bot.handlers.game.achievement_service.get_current_win_streak')
 @patch('bot.handlers.game.achievement_service.award_achievement')
-def test_check_streak_3(mock_award_achievement, mock_get_streak, mock_db_session):
-    """Test check_streak_achievements awards 'Снайпер' for 3 wins."""
+def test_check_streak_2(mock_award_achievement, mock_get_streak, mock_db_session):
+    """Test check_streak_achievements awards 'Снайпер' for 2 wins."""
     # Setup
     game_id = 1
     user_id = 1
     year = 2024
 
-    # Mock streak of 3
-    mock_get_streak.return_value = 3
+    # Mock streak of 2
+    mock_get_streak.return_value = 2
 
     # Mock no existing achievements
     mock_result = MagicMock()
@@ -333,7 +333,7 @@ def test_check_streak_3(mock_award_achievement, mock_get_streak, mock_db_session
         id=1,
         game_id=game_id,
         user_id=user_id,
-        achievement_code="streak_3",
+        achievement_code="streak_2",
         year=year,
         period=None,
         earned_at=datetime.utcnow()
@@ -347,15 +347,60 @@ def test_check_streak_3(mock_award_achievement, mock_get_streak, mock_db_session
     assert len(result) == 1
     assert result[0] == mock_achievement
     mock_award_achievement.assert_called_once_with(
-        mock_db_session, game_id, user_id, "streak_3", year
+        mock_db_session, game_id, user_id, "streak_2", year
     )
 
 
 @pytest.mark.unit
 @patch('bot.handlers.game.achievement_service.get_current_win_streak')
 @patch('bot.handlers.game.achievement_service.award_achievement')
+def test_check_streak_3(mock_award_achievement, mock_get_streak, mock_db_session):
+    """Test check_streak_achievements awards 'Серия 3' for 3 wins."""
+    # Setup
+    game_id = 1
+    user_id = 1
+    year = 2024
+
+    # Mock streak of 3
+    mock_get_streak.return_value = 3
+
+    # Mock no existing achievements
+    mock_result = MagicMock()
+    mock_result.first.return_value = None
+    mock_db_session.exec.return_value = mock_result
+
+    # Mock award_achievement to return achievements
+    achievements = []
+    def award_side_effect(db, gid, uid, code, y):
+        achievement = UserAchievement(
+            id=len(achievements) + 1,
+            game_id=gid,
+            user_id=uid,
+            achievement_code=code,
+            year=y,
+            period=None,
+            earned_at=datetime.utcnow()
+        )
+        achievements.append(achievement)
+        return achievement
+
+    mock_award_achievement.side_effect = award_side_effect
+
+    # Execute
+    result = check_streak_achievements(mock_db_session, game_id, user_id, year)
+
+    # Verify - should award both streak_2 and streak_3
+    assert len(result) == 2
+    assert result[0].achievement_code == "streak_2"
+    assert result[1].achievement_code == "streak_3"
+    assert mock_award_achievement.call_count == 2
+
+
+@pytest.mark.unit
+@patch('bot.handlers.game.achievement_service.get_current_win_streak')
+@patch('bot.handlers.game.achievement_service.award_achievement')
 def test_check_streak_5(mock_award_achievement, mock_get_streak, mock_db_session):
-    """Test check_streak_achievements awards 'Серия 5' for 5 wins."""
+    """Test check_streak_achievements awards 'Легенда' for 5 wins."""
     # Setup
     game_id = 1
     user_id = 1
@@ -389,56 +434,11 @@ def test_check_streak_5(mock_award_achievement, mock_get_streak, mock_db_session
     # Execute
     result = check_streak_achievements(mock_db_session, game_id, user_id, year)
 
-    # Verify - should award both streak_3 and streak_5
-    assert len(result) == 2
-    assert result[0].achievement_code == "streak_3"
-    assert result[1].achievement_code == "streak_5"
-    assert mock_award_achievement.call_count == 2
-
-
-@pytest.mark.unit
-@patch('bot.handlers.game.achievement_service.get_current_win_streak')
-@patch('bot.handlers.game.achievement_service.award_achievement')
-def test_check_streak_7(mock_award_achievement, mock_get_streak, mock_db_session):
-    """Test check_streak_achievements awards 'Серия 7' for 7 wins."""
-    # Setup
-    game_id = 1
-    user_id = 1
-    year = 2024
-
-    # Mock streak of 7
-    mock_get_streak.return_value = 7
-
-    # Mock no existing achievements
-    mock_result = MagicMock()
-    mock_result.first.return_value = None
-    mock_db_session.exec.return_value = mock_result
-
-    # Mock award_achievement to return achievements
-    achievements = []
-    def award_side_effect(db, gid, uid, code, y):
-        achievement = UserAchievement(
-            id=len(achievements) + 1,
-            game_id=gid,
-            user_id=uid,
-            achievement_code=code,
-            year=y,
-            period=None,
-            earned_at=datetime.utcnow()
-        )
-        achievements.append(achievement)
-        return achievement
-
-    mock_award_achievement.side_effect = award_side_effect
-
-    # Execute
-    result = check_streak_achievements(mock_db_session, game_id, user_id, year)
-
-    # Verify - should award all three: streak_3, streak_5, and streak_7
+    # Verify - should award all three: streak_2, streak_3, and streak_5
     assert len(result) == 3
-    assert result[0].achievement_code == "streak_3"
-    assert result[1].achievement_code == "streak_5"
-    assert result[2].achievement_code == "streak_7"
+    assert result[0].achievement_code == "streak_2"
+    assert result[1].achievement_code == "streak_3"
+    assert result[2].achievement_code == "streak_5"
     assert mock_award_achievement.call_count == 3
 
 

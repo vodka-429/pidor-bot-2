@@ -232,7 +232,7 @@ async def test_streak_achievements_awarded_correctly(mock_update, mock_context, 
 
     assert streak_3_added, "Streak 3 achievement should be added"
 
-    # Verify coins were awarded for streak_3 (20 coins)
+    # Verify coins were awarded for streak_3 (25 coins)
     # Проверяем вызовы в achievement_service
     streak_coin_call = None
     for call in mock_add_coins_achievement.call_args_list:
@@ -241,7 +241,7 @@ async def test_streak_achievements_awarded_correctly(mock_update, mock_context, 
             break
 
     assert streak_coin_call is not None, "Coins should be awarded for streak_3"
-    assert streak_coin_call[0][3] == 20, "Should award 20 coins for streak_3"
+    assert streak_coin_call[0][3] == 25, "Should award 25 coins for streak_3"
 
 
 @pytest.mark.asyncio
