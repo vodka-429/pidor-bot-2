@@ -12,18 +12,21 @@ from sqlmodel import select
 from telegram import Update
 from telegram.ext import CallbackContext
 
-from bot.app.models import Game, TGUser, GameResult, FinalVoting
+from bot.app.models import Game, GamePlayer, TGUser, GameResult, FinalVoting
 from bot.handlers.db.handlers import tg_user_from_text
 from bot.handlers.game.phrases import stage1, stage2, stage3, stage4
 from bot.handlers.game.text_static import STATS_PERSONAL, \
     STATS_CURRENT_YEAR, \
-    STATS_ALL_TIME, STATS_LIST_ITEM, REGISTRATION_SUCCESS, \
+    STATS_ALL_TIME, STATS_LIST_ITEM, STATS_LIST_ITEM_INACTIVE, REGISTRATION_SUCCESS, \
     ERROR_ALREADY_REGISTERED, ERROR_ZERO_PLAYERS, ERROR_NOT_ENOUGH_PLAYERS, \
     CURRENT_DAY_GAME_RESULT, \
     YEAR_RESULTS_MSG, YEAR_RESULTS_ANNOUNCEMENT, REGISTRATION_MANY_SUCCESS, \
     ERROR_ALREADY_REGISTERED_MANY, VOTING_ENDED_RESPONSE, \
     FINAL_VOTING_CLOSE_ERROR_NOT_AUTHORIZED, COIN_INFO, \
     COINS_PERSONAL, COINS_CURRENT_YEAR, COINS_ALL_TIME, COINS_LIST_ITEM, COIN_EARNED, COIN_INFO_SELF_PIDOR
+from bot.handlers.game.membership_service import (
+    batch_check_membership, get_active_players, get_deactivated_player_ids, reactivate_player
+)
 from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders
 from bot.handlers.game.config import is_test_chat, get_config
 from bot.handlers.game.coin_service import add_coins, get_balance, get_leaderboard, get_leaderboard_by_year
@@ -253,7 +256,12 @@ def ensure_game(func):
 async def pidor_cmd(update: Update, context: GECallbackContext):
     logger.info(f"pidor_cmd started for chat {update.effective_chat.id}")
     logger.info(f"Game {context.game.id} of the day started")
-    players: List[TGUser] = context.game.players
+
+    # Проверяем членство всех игроков в чате и деактивируем вышедших
+    all_players: List[TGUser] = context.game.players
+    await batch_check_membership(context.bot, update.effective_chat.id, context.db_session, context.game.id, all_players)
+
+    players: List[TGUser] = get_active_players(context.db_session, context.game.id)
 
     if len(players) < 2:
         await update.effective_chat.send_message(ERROR_NOT_ENOUGH_PLAYERS)
@@ -514,7 +522,18 @@ async def pidoreg_cmd(update: Update, context: GECallbackContext):
         context.db_session.commit()
         await update.effective_message.reply_markdown_v2(REGISTRATION_SUCCESS)
     else:
-        await update.effective_message.reply_markdown_v2(ERROR_ALREADY_REGISTERED)
+        # Игрок уже в списке — проверяем, не был ли он деактивирован
+        # Используем exec() вместо query() чтобы не конфликтовать с query-моками в тестах
+        stmt = select(GamePlayer).where(
+            GamePlayer.game_id == context.game.id,
+            GamePlayer.user_id == context.tg_user.id,
+        )
+        game_player = context.db_session.exec(stmt).first()
+        if game_player is not None and not game_player.is_active:
+            reactivate_player(context.db_session, context.game.id, context.tg_user.id)
+            await update.effective_message.reply_markdown_v2(REGISTRATION_SUCCESS)
+        else:
+            await update.effective_message.reply_markdown_v2(ERROR_ALREADY_REGISTERED)
 
 
 @ensure_game
@@ -554,12 +573,18 @@ async def pidorunreg_cmd(update: Update, context: GECallbackContext):
     #     update.effective_message.reply_markdown_v2(REMOVE_REGISTRATION_ERROR)
 
 
-def build_player_table(player_list: list[tuple[TGUser, int]]) -> str:
+def build_player_table(player_list: list[tuple[TGUser, int]], inactive_ids: set = None) -> str:
     result = []
+    inactive_ids = inactive_ids or set()
     for number, (tg_user, amount) in enumerate(player_list, 1):
-        result.append(STATS_LIST_ITEM.format(number=number,
-                                             username=escape_markdown2(tg_user.full_username()),
-                                             amount=format_number(amount)))
+        if tg_user.id in inactive_ids:
+            result.append(STATS_LIST_ITEM_INACTIVE.format(number=number,
+                                                          username=escape_markdown2(tg_user.full_username()),
+                                                          amount=format_number(amount)))
+        else:
+            result.append(STATS_LIST_ITEM.format(number=number,
+                                                 username=escape_markdown2(tg_user.full_username()),
+                                                 amount=format_number(amount)))
     return ''.join(result)
 
 
@@ -597,9 +622,11 @@ async def pidorstats_cmd(update: Update, context: GECallbackContext):
         .limit(50)
     db_results = context.db_session.exec(stmt).all()
 
-    player_table = build_player_table(db_results)
+    inactive_ids = get_deactivated_player_ids(context.db_session, context.game.id)
+    player_table = build_player_table(db_results, inactive_ids)
+    active_count = len(get_active_players(context.db_session, context.game.id))
     answer = STATS_CURRENT_YEAR.format(player_stats=player_table,
-                                       player_count=len(context.game.players))
+                                       player_count=active_count)
     await update.effective_chat.send_message(answer, parse_mode="MarkdownV2")
 
 
@@ -613,9 +640,11 @@ async def pidorall_cmd(update: Update, context: GECallbackContext):
         .limit(50)
     db_results = context.db_session.exec(stmt).all()
 
-    player_table = build_player_table(db_results)
+    inactive_ids = get_deactivated_player_ids(context.db_session, context.game.id)
+    player_table = build_player_table(db_results, inactive_ids)
+    active_count = len(get_active_players(context.db_session, context.game.id))
     answer = STATS_ALL_TIME.format(player_stats=player_table,
-                                   player_count=len(context.game.players))
+                                   player_count=active_count)
     await update.effective_chat.send_message(answer, parse_mode="MarkdownV2")
 
 
@@ -781,8 +810,11 @@ async def pidorfinal_cmd(update: Update, context: GECallbackContext):
     # Создаем список ID исключенных лидеров
     excluded_leader_ids = [leader.id for leader, _ in year_leaders]
 
-    # Создаем список кандидатов, исключая всех лидеров
-    candidates = [player for player, _ in player_weights if player.id not in excluded_leader_ids]
+    # Исключаем деактивированных игроков из кандидатов
+    deactivated_ids = get_deactivated_player_ids(context.db_session, context.game.id)
+
+    # Создаем список кандидатов, исключая всех лидеров и деактивированных
+    candidates = [player for player, _ in player_weights if player.id not in excluded_leader_ids and player.id not in deactivated_ids]
 
     # Создаём словарь с количеством побед для каждого игрока
     player_wins = {player.id: wins for player, wins in player_weights}
@@ -1458,7 +1490,7 @@ async def handle_shop_double_callback(update: Update, context: GECallbackContext
     double_chance_msgs = get_double_chance_messages(config)
 
     # Получаем список игроков из игры
-    players = context.game.players
+    players = get_active_players(context.db_session, context.game.id)
 
     if len(players) < 2:
         await query.answer("❌ Недостаточно игроков для двойного шанса", show_alert=True)
@@ -1514,7 +1546,7 @@ async def handle_shop_predict_callback(update: Update, context: GECallbackContex
         return
 
     # Получаем список игроков из игры
-    players = context.game.players
+    players = get_active_players(context.db_session, context.game.id)
 
     if len(players) < 2:
         await query.answer("❌ Недостаточно игроков для предсказания", show_alert=True)
@@ -1616,7 +1648,7 @@ async def handle_shop_predict_select_callback(update: Update, context: GECallbac
     selected = json.loads(draft.selected_user_ids)
 
     # Рассчитываем нужное количество кандидатов
-    players = context.game.players
+    players = get_active_players(context.db_session, context.game.id)
     candidates_count = calculate_candidates_count(len(players))
 
     # Добавляем/убираем кандидата
@@ -1745,7 +1777,7 @@ async def handle_shop_predict_confirm_callback(update: Update, context: GECallba
 
         # Получаем имена кандидатов
         candidate_names = []
-        for player in context.game.players:
+        for player in get_active_players(context.db_session, context.game.id):
             if player.id in selected:
                 candidate_names.append(escape_markdown2(player.full_username()))
 
@@ -1991,7 +2023,7 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
         return
 
     # Выполняем перевыбор
-    players = context.game.players
+    players = get_active_players(context.db_session, context.game.id)
 
     # Получаем текущую дату и проверяем, включена ли защита
     from bot.handlers.game.game_effects_service import is_immunity_enabled
@@ -2185,7 +2217,7 @@ async def handle_shop_transfer_callback(update: Update, context: GECallbackConte
     transfer_msgs = get_transfer_messages(config)
 
     # Получаем список игроков из игры, исключая отправителя
-    players = [p for p in context.game.players if p.id != context.tg_user.id]
+    players = [p for p in get_active_players(context.db_session, context.game.id) if p.id != context.tg_user.id]
 
     if len(players) < 1:
         await query.answer("❌ Нет других игроков для передачи", show_alert=True)
@@ -2709,7 +2741,7 @@ async def handle_shop_toast_callback(update: Update, context: GECallbackContext)
         return
 
     # Все игроки включая отправителя (self-toast разрешён)
-    players = context.game.players
+    players = get_active_players(context.db_session, context.game.id)
 
     if len(players) < 1:
         await query.answer("❌ Нет игроков для тоста", show_alert=True)
