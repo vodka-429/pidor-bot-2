@@ -246,6 +246,15 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'callback_data': 'shop_transfer'
         })
 
+    # Тост
+    if constants.toast_enabled:
+        items.append({
+            'name': '🍻 Тост',
+            'price': constants.toast_price,
+            'description': f'Поднять тост за игрока ({constants.toast_price} койнов)',
+            'callback_data': 'shop_toast'
+        })
+
     # Банк чата (всегда доступен)
     items.append({
         'name': '🏦 Банк чата',

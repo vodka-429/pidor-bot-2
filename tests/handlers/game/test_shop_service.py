@@ -192,8 +192,8 @@ def test_get_shop_items():
     # Execute
     items = get_shop_items()
 
-    # Verify - now includes transfer, bank and achievements
-    assert len(items) == 6
+    # Verify - now includes transfer, toast, bank and achievements
+    assert len(items) == 7
     assert items[0]['name'] == '🛡️ Защита от пидора'
     assert items[0]['price'] == IMMUNITY_PRICE
     assert items[0]['callback_data'] == 'shop_immunity'
@@ -206,15 +206,18 @@ def test_get_shop_items():
     assert items[2]['price'] == PREDICTION_PRICE
     assert items[2]['callback_data'] == 'shop_predict'
 
-    # New items (order: transfer, bank, achievements)
+    # New items (order: transfer, toast, bank, achievements)
     assert items[3]['name'] == '💸 Передать койны'
     assert items[3]['callback_data'] == 'shop_transfer'
 
-    assert items[4]['name'] == '🏦 Банк чата'
-    assert items[4]['callback_data'] == 'shop_bank'
+    assert items[4]['name'] == '🍻 Тост'
+    assert items[4]['callback_data'] == 'shop_toast'
 
-    assert items[5]['name'] == '🎖️ Мои достижения'
-    assert items[5]['callback_data'] == 'shop_achievements'
+    assert items[5]['name'] == '🏦 Банк чата'
+    assert items[5]['callback_data'] == 'shop_bank'
+
+    assert items[6]['name'] == '🎖️ Мои достижения'
+    assert items[6]['callback_data'] == 'shop_achievements'
 
 
 @pytest.mark.unit

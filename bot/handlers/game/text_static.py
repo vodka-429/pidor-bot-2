@@ -441,6 +441,45 @@ _Комиссия 10% пойдёт в банк чата_""",
     }
 
 
+def get_toast_messages(config) -> dict:
+    """
+    Генерирует сообщения о тостах с актуальными параметрами из конфигурации.
+
+    Args:
+        config: ChatConfig с константами для конкретного чата
+
+    Returns:
+        dict: Словарь с сообщениями о тостах
+    """
+    from bot.handlers.game.config import ChatConfig
+
+    if not isinstance(config, ChatConfig):
+        raise TypeError(f"Expected ChatConfig, got {type(config)}")
+
+    c = config.constants
+
+    return {
+        'select_player': f"""🍻 *Выберите получателя тоста*
+
+За кого вы хотите поднять тост\?
+
+_Стоимость: {c.toast_price} койнов_
+_Комиссия по ставке ЦБ РФ идёт в банк чата_""",
+        'success': """🍻 *Тост поднят\\!*
+
+👤 От: {{sender_name}}
+👤 За: {{receiver_name}}
+
+📤 Списано: {{amount_sent}} 💰
+📥 Получено: {{amount_received}} 💰
+🏦 Комиссия в банк: {{commission}} 💰
+
+💰 Баланс {{sender_name}}: {{sender_balance}} 💰
+💰 Баланс {{receiver_name}}: {{receiver_balance}} 💰""",
+        'error_insufficient_funds': f"❌ Недостаточно койнов\\! Нужно {c.toast_price} 💰, а у вас: {{balance}} 💰",
+    }
+
+
 def get_rules_message(config) -> str:
     """
     Генерирует сообщение с правилами игры с актуальными ценами из конфигурации.
@@ -499,6 +538,12 @@ def get_rules_message(config) -> str:
 • Минимальная сумма: {c.transfer_min_amount} койна
 • Комиссия: 10% в банк чата
 • Один перевод в день
+
+🍻 *Тост \\(/pidorshop → Тост\\):*
+• Стоимость: {c.toast_price} койнов
+• Комиссия по ставке ЦБ РФ идёт в банк чата
+• Без ограничений на количество в день
+• Можно поднять тост за себя
 
 🎁 *Бесплатные койны:*
 • Кнопка "Дайте койнов" под результатом

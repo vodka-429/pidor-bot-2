@@ -41,12 +41,14 @@ class GameConstants:
             double_chance_enabled: Включен ли двойной шанс (по умолчанию: True)
             give_coins_enabled: Включена ли раздача койнов (по умолчанию: True)
             achievements_enabled: Включены ли достижения (по умолчанию: True)
+            toast_enabled: Включены ли тосты (по умолчанию: True)
     """
     # Цены
     immunity_price: int = 10
     double_chance_price: int = 8
     prediction_price: int = 3
     reroll_price: int = 15
+    toast_price: int = 5
 
     # Награды
     coins_per_win: int = 4
@@ -73,6 +75,7 @@ class GameConstants:
     double_chance_enabled: bool = True
     give_coins_enabled: bool = True
     achievements_enabled: bool = True
+    toast_enabled: bool = True
 
 
 @dataclass
@@ -282,6 +285,8 @@ def get_config(chat_id: int) -> ChatConfig:
         'double_chance_enabled': global_config.defaults.double_chance_enabled,
         'give_coins_enabled': global_config.defaults.give_coins_enabled,
         'achievements_enabled': global_config.defaults.achievements_enabled,
+        'toast_price': global_config.defaults.toast_price,
+        'toast_enabled': global_config.defaults.toast_enabled,
     }
 
     # Применяем переопределения для конкретного чата

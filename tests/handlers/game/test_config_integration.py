@@ -331,10 +331,10 @@ def test_disabled_features_buttons_not_created(feature_flags_config_file, reset_
         total_buttons = sum(len(row) for row in keyboard.inline_keyboard)
 
         # With 3 features disabled (immunity, double_chance, give_coins), we should have fewer buttons
-        # All features: immunity, double_chance, prediction, achievements, transfer, bank = 6 items
+        # All features: immunity, double_chance, prediction, transfer, toast, bank, achievements = 7 items
         # Disabled: immunity, double_chance, give_coins (give_coins не в магазине) = 2 disabled
-        # Expected: 4 buttons (prediction, achievements, transfer, bank)
-        assert total_buttons == 4
+        # Expected: 5 buttons (prediction, transfer, toast, bank, achievements)
+        assert total_buttons == 5
 
 
 @pytest.mark.integration
@@ -354,6 +354,7 @@ def test_all_features_disabled_shop_menu(reset_global_config):
                 "immunity_enabled": False,
                 "double_chance_enabled": False,
                 "give_coins_enabled": False,
+                "toast_enabled": False,
             }
         }
     }
