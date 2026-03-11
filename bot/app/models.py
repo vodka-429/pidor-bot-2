@@ -258,6 +258,22 @@ class CoinTransfer(SQLModel, table=True):
     receiver: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[CoinTransfer.receiver_id]"})
 
 
+class Toast(SQLModel, table=True):
+    """История тостов — передача койнов с комиссией через магазин."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    sender_id: int = Field(foreign_key="tguser.id", nullable=False)
+    receiver_id: int = Field(foreign_key="tguser.id", nullable=False)
+    amount: int = Field(nullable=False)       # Полная сумма (до комиссии)
+    commission: int = Field(nullable=False)   # Размер комиссии
+    year: int = Field(nullable=False)         # Год тоста (для статистики)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    game: Game = Relationship()
+    sender: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[Toast.sender_id]"})
+    receiver: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[Toast.receiver_id]"})
+
+
 class GiveCoinsClick(SQLModel, table=True):
     """История нажатий на кнопку 'Дайте койнов'."""
     id: Optional[int] = Field(default=None, primary_key=True)

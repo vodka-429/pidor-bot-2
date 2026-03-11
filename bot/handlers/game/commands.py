@@ -2665,3 +2665,152 @@ async def handle_shop_achievements_callback(update: Update, context: GECallbackC
     )
 
     logger.info(f"Showed achievements for user {context.tg_user.id}, total: {len(user_achievements)}")
+
+
+@ensure_game
+async def handle_shop_toast_callback(update: Update, context: GECallbackContext):
+    """Обработчик кнопки '🍻 Тост' в магазине — показывает список игроков"""
+    from bot.handlers.game.shop_helpers import parse_shop_callback_data, create_double_chance_keyboard
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP, get_toast_messages
+    from bot.handlers.game.config import get_config
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop toast callback from user {query.from_user.id} in chat {update.effective_chat.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    try:
+        item_type, owner_user_id = parse_shop_callback_data(query.data)
+        logger.info(f"Parsed callback: item_type={item_type}, owner_user_id={owner_user_id}")
+    except ValueError as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    config = get_config(update.effective_chat.id)
+    toast_msgs = get_toast_messages(config)
+
+    # Проверяем баланс заранее
+    balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+    if balance < config.constants.toast_price:
+        await query.answer(
+            toast_msgs['error_insufficient_funds'].replace('\\', '').format(balance=balance),
+            show_alert=True
+        )
+        return
+
+    # Все игроки включая отправителя (self-toast разрешён)
+    players = context.game.players
+
+    if len(players) < 1:
+        await query.answer("❌ Нет игроков для тоста", show_alert=True)
+        return
+
+    keyboard = create_double_chance_keyboard(players, owner_user_id=context.tg_user.tg_id, callback_prefix="shop_toast_select")
+
+    try:
+        await query.edit_message_text(
+            text=toast_msgs['select_player'],
+            parse_mode="MarkdownV2",
+            reply_markup=keyboard
+        )
+        await query.answer()
+        logger.info(f"Showed toast player selection for user {context.tg_user.id}")
+    except Exception as e:
+        logger.error(f"Failed to show toast selection: {e}")
+        await query.answer("❌ Ошибка при отображении списка игроков")
+
+
+@ensure_game
+async def handle_shop_toast_select_callback(update: Update, context: GECallbackContext):
+    """Обработчик выбора получателя тоста — выполняет тост"""
+    from bot.handlers.game.toast_service import execute_toast, get_or_create_chat_bank
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP, get_toast_messages
+    from bot.handlers.game.config import get_config
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop toast select callback from user {query.from_user.id}")
+    logger.info(f"Callback data: {query.data}")
+
+    # Парсим callback_data: shop_toast_select_{receiver_id}_{owner_user_id}
+    try:
+        parts = query.data.split('_')
+        if len(parts) < 4:
+            raise ValueError(f"Invalid callback_data format: {query.data}")
+        owner_user_id = int(parts[-1])
+        receiver_id = int(parts[-2])
+        logger.info(f"Parsed callback: receiver_id={receiver_id}, owner_user_id={owner_user_id}")
+    except (ValueError, IndexError) as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    config = get_config(update.effective_chat.id)
+    toast_msgs = get_toast_messages(config)
+
+    # Проверяем баланс
+    balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+    if balance < config.constants.toast_price:
+        await query.answer(
+            toast_msgs['error_insufficient_funds'].replace('\\', '').format(balance=balance),
+            show_alert=True
+        )
+        return
+
+    current_dt = current_datetime()
+    cur_year = current_dt.year
+
+    # Выполняем тост
+    amount_sent, amount_received, commission = execute_toast(
+        context.db_session, context.game.id,
+        context.tg_user.id, receiver_id,
+        cur_year
+    )
+
+    # Получаем обновлённые балансы
+    sender_balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+    receiver = context.db_session.query(TGUser).filter_by(id=receiver_id).one()
+    receiver_balance = get_balance(context.db_session, context.game.id, receiver.id)
+
+    sender_name = escape_markdown2(context.tg_user.full_username())
+    receiver_name = escape_markdown2(receiver.full_username())
+
+    response_text = toast_msgs['success'].format(
+        sender_name=sender_name,
+        receiver_name=receiver_name,
+        amount_sent=format_number(amount_sent),
+        amount_received=format_number(amount_received),
+        commission=format_number(commission),
+        sender_balance=format_number(sender_balance),
+        receiver_balance=format_number(receiver_balance),
+    )
+
+    await query.answer("🍻 Тост поднят!", show_alert=True)
+    await query.edit_message_text(
+        text=response_text,
+        parse_mode="MarkdownV2"
+    )
+
+    logger.info(
+        f"Toast completed: sender {context.tg_user.id}, receiver {receiver_id}, "
+        f"amount {amount_sent}, commission {commission}"
+    )

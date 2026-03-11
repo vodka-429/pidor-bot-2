@@ -23,7 +23,8 @@ from bot.handlers.game.commands import pidor_cmd, pidorules_cmd, pidoreg_cmd, \
     handle_give_coins_callback, \
     handle_shop_transfer_callback, handle_shop_transfer_select_callback, \
     handle_shop_transfer_amount_callback, handle_shop_bank_callback, handle_shop_back_callback, \
-    handle_shop_achievements_callback
+    handle_shop_achievements_callback, \
+    handle_shop_toast_callback, handle_shop_toast_select_callback
 from bot.handlers.kvstore.commands import get_cmd, set_cmd, del_cmd, list_cmd
 from bot.handlers.meme.commands import meme_cmd, memeru_cmd, \
     meme_refresh_callback, memeru_refresh_callback, meme_save_callback, \
@@ -116,6 +117,8 @@ def init_dispatcher(application: Application, db_engine):
     application.add_handler(CallbackQueryHandler(handle_shop_bank_callback, pattern=r'^shop_bank_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_achievements_callback, pattern=r'^shop_achievements_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_back_callback, pattern=r'^shop_back_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_toast_callback, pattern=r'^shop_toast_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_toast_select_callback, pattern=r'^shop_toast_select_\d+_\d+$'))
 
     # Reroll handler
     application.add_handler(CallbackQueryHandler(handle_reroll_callback, pattern=r'^reroll_'))
