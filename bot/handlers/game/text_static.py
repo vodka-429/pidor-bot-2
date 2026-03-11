@@ -467,15 +467,15 @@ _Стоимость: {c.toast_price} койнов_
 _Комиссия по ставке ЦБ РФ идёт в банк чата_""",
         'success': """🍻 *Тост поднят\\!*
 
-👤 От: {{sender_name}}
-👤 За: {{receiver_name}}
+👤 От: {sender_name}
+👤 За: {receiver_name}
 
-📤 Списано: {{amount_sent}} 💰
-📥 Получено: {{amount_received}} 💰
-🏦 Комиссия в банк: {{commission}} 💰
+📤 Списано: {amount_sent} 💰
+📥 Получено: {amount_received} 💰
+🏦 Комиссия в банк: {commission} 💰
 
-💰 Баланс {{sender_name}}: {{sender_balance}} 💰
-💰 Баланс {{receiver_name}}: {{receiver_balance}} 💰""",
+💰 Баланс {sender_name}: {sender_balance} 💰
+💰 Баланс {receiver_name}: {receiver_balance} 💰""",
         'error_insufficient_funds': f"❌ Недостаточно койнов\\! Нужно {c.toast_price} 💰, а у вас: {{balance}} 💰",
     }
 
