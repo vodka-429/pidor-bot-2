@@ -321,6 +321,36 @@
 
 ---
 
+### 11. Тост (Toast)
+
+**Описание:** Игрок поднимает тост за другого участника (или за себя). Фиксированная стоимость, комиссия по ставке ЦБ РФ идёт в банк чата.
+
+| Параметр | Значение |
+|----------|----------|
+| Стоимость | 5 койнов |
+| Комиссия | Текущая ключевая ставка ЦБ РФ (при 21% ≈ 1 койн из 5) |
+| Получатель получает | 4 койна |
+| Ограничение | Без ограничений на количество в день |
+| Self-toast | ✅ Разрешено |
+| Интерфейс | Через магазин `/pidorshop` |
+
+**Статус:** ✅ **РЕАЛИЗОВАНО** (2026-03-12)
+
+**Реализация:**
+- ✅ Создана модель `Toast` с полями `game_id`, `sender_id`, `receiver_id`, `amount`, `commission`, `year`, `created_at`
+- ✅ Создан сервис `toast_service.py` с функциями `execute_toast()`, `calculate_toast_commission()`, `get_or_create_chat_bank()`
+- ✅ Интегрировано в магазин `/pidorshop` — пункт `🍻 Тост`
+- ✅ Созданы callback-обработчики:
+  - `handle_shop_toast_callback()` — показ списка игроков (включая себя)
+  - `handle_shop_toast_select_callback()` — выполнение тоста
+- ✅ Переиспользован `create_double_chance_keyboard()` с `callback_prefix="shop_toast_select"` — отдельная функция не потребовалась
+- ✅ Feature flag `toast_enabled` в конфигурации чата
+- ✅ Добавлен раздел о тостах в правила игры `/pidorrules`
+- ✅ 8 unit-тестов в `test_toast_service.py`
+- ✅ Миграция `l7m8n9o0p1q2_add_toast_table.py`
+
+---
+
 ## 💰 Способы получения койнов
 
 ### 1. Игровые действия (Game Actions)
@@ -1180,6 +1210,28 @@ def select_winner_with_effects(
 - Возможность просмотра достижений других игроков
 - Статистика по достижениям в чате
 
+
+### Обновление 2026-03-12 (v9): ✅ ТОСТ
+
+**Реализована механика "Тост" в магазине:**
+
+- ✅ **Тост за игрока** — поднять тост за любого участника (или за себя) за 5 койнов
+- ✅ **Без суточных лимитов** — можно тостить сколько угодно раз
+- ✅ **Self-toast разрешён** — можно поднять тост за себя
+- ✅ **Комиссия по ставке ЦБ РФ** — ~1 койн из 5 идёт в банк чата
+
+**Реализованные компоненты:**
+- `bot/app/models.py`: добавлена модель `Toast`
+- `bot/handlers/game/toast_service.py`: новый сервис
+- `bot/handlers/game/shop_service.py`: пункт `🍻 Тост` в `get_shop_items()`
+- `bot/handlers/game/commands.py`: два новых callback-обработчика
+- `bot/dispatcher.py`: регистрация обработчиков
+- `bot/handlers/game/text_static.py`: `get_toast_messages()`, раздел о тостах в правилах
+- `bot/handlers/game/config.py`: `toast_price=5`, `toast_enabled=True`
+- `migrations/versions/l7m8n9o0p1q2_add_toast_table.py`: новая миграция
+- `tests/handlers/game/test_toast_service.py`: 8 unit-тестов
+
+---
 
 ## 🐛 TODO: Известные баги и улучшения
 
