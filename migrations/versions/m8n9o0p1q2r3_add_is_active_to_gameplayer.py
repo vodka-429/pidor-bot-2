@@ -24,9 +24,9 @@ def upgrade() -> None:
     if 'is_active' not in columns:
         op.add_column(
             'gameplayer',
-            sa.Column('is_active', sa.Boolean(), nullable=False, server_default='1')
+            sa.Column('is_active', sa.Boolean(), nullable=False, server_default='true')
         )
-        connection.execute(sa.text("UPDATE gameplayer SET is_active = 1"))
+        connection.execute(sa.text("UPDATE gameplayer SET is_active = true"))
 
 
 def downgrade() -> None:
