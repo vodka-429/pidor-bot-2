@@ -8,6 +8,7 @@ from sqlmodel import SQLModel, Field, Relationship
 class GamePlayer(SQLModel, table=True):
     game_id: Optional[int] = Field(default=None, foreign_key="game.id", primary_key=True)
     user_id: Optional[int] = Field(default=None, foreign_key="tguser.id", primary_key=True)
+    is_active: bool = Field(default=True)
 
     # user: 'TGUser' = Relationship(back_populates="games")
     # game: 'Game' = Relationship(back_populates="players")
