@@ -29,6 +29,7 @@ load_dotenv()
 
 CHAT_ID = int(os.environ['CHAT_ID'])
 DRY_RUN = os.environ.get('DRY_RUN', '0') == '1'
+EXCLUDE = {u.strip().lstrip('@') for u in os.environ.get('EXCLUDE', '').split(',') if u.strip()}
 COINS_COMPENSATION = 44
 CURRENT_YEAR = datetime.now(tz=ZoneInfo('Europe/Moscow')).year
 
@@ -84,9 +85,10 @@ async def main():
                 except Exception:
                     pass  # не можем проверить — восстанавливаем
 
-                if definitely_gone:
+                if definitely_gone or player.username in EXCLUDE:
                     still_gone.append(player)
-                    print(f'  ❌ Реально вышел ({reason}): {player.full_username()}')
+                    tag = f'вручную исключён' if player.username in EXCLUDE else f'реально вышел ({reason})'
+                    print(f'  ❌ {tag}: {player.full_username()}')
                 else:
                     restored.append(player)
                     print(f'  ✅ Будет восстановлен: {player.full_username()}')
