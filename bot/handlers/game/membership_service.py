@@ -77,3 +77,21 @@ async def batch_check_membership(bot, chat_id: int, db_session, game_id: int, pl
         check_player_membership(bot, chat_id, db_session, game_id, player)
         for player in players
     ])
+
+
+async def remove_inactive_players(bot, chat_id: int, db_session, game_id: int) -> list:
+    """
+    Проверяет всех активных игроков через Telegram API и деактивирует вышедших.
+    Возвращает список деактивированных TGUser.
+    """
+    players = get_active_players(db_session, game_id)
+    deactivated = []
+    for player in players:
+        try:
+            member = await bot.get_chat_member(chat_id=chat_id, user_id=player.tg_id)
+            if member.status in ('left', 'kicked'):
+                deactivate_player(db_session, game_id, player.id)
+                deactivated.append(player)
+        except Exception:
+            pass  # safe default: keep active on any API error
+    return deactivated
