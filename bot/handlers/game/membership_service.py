@@ -5,6 +5,7 @@
 import asyncio
 
 from sqlmodel import select
+from telegram.error import BadRequest
 
 from bot.app.models import GamePlayer, TGUser
 
@@ -92,6 +93,10 @@ async def remove_inactive_players(bot, chat_id: int, db_session, game_id: int) -
             if member.status in ('left', 'kicked'):
                 deactivate_player(db_session, game_id, player.id)
                 deactivated.append(player)
+        except BadRequest:
+            # 400 user not found — пользователь недоступен, считаем вышедшим
+            deactivate_player(db_session, game_id, player.id)
+            deactivated.append(player)
         except Exception:
-            pass  # safe default: keep active on any API error
+            pass  # прочие ошибки: оставляем активным
     return deactivated
