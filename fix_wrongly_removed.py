@@ -92,11 +92,11 @@ async def main():
             # Пишем в чат
             names = ', '.join(f'@{p.username}' if p.username else p.first_name for p in restored)
             message = (
-                f'мне стыдно. ии вызывает аутизм.\n\n'
+                f'мне стыдно\\. ии вызывает аутизм ~~и муцураев~~\\.\n\n'
                 f'бот ошибочно удалил из игры: {names}\n\n'
-                f'все восстановлены, каждому {COINS_COMPENSATION} монет.'
+                f'все восстановлены, каждому {COINS_COMPENSATION} монет\\.'
             )
-            await bot.send_message(chat_id=CHAT_ID, text=message)
+            await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode='MarkdownV2')
             print(f'\nСообщение отправлено. Восстановлено: {len(restored)}, осталось деактивированных: {len(still_gone)}')
 
 
