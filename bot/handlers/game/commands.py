@@ -24,9 +24,9 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
     ERROR_ALREADY_REGISTERED_MANY, VOTING_ENDED_RESPONSE, \
     FINAL_VOTING_CLOSE_ERROR_NOT_AUTHORIZED, COIN_INFO, \
     COINS_PERSONAL, COINS_CURRENT_YEAR, COINS_ALL_TIME, COINS_LIST_ITEM, COIN_EARNED, COIN_INFO_SELF_PIDOR, \
-    PLAYER_REMOVE_SUCCESS, PLAYER_REMOVE_NOT_FOUND, PLAYER_REMOVE_NO_REPLY, PLAYER_REMOVE_NOT_ADMIN
+    PLAYER_REMOVE_SUCCESS, PLAYER_REMOVE_NONE, PLAYER_REMOVE_NOT_ADMIN
 from bot.handlers.game.membership_service import (
-    get_active_players, get_deactivated_player_ids, reactivate_player, deactivate_player
+    get_active_players, get_deactivated_player_ids, reactivate_player, remove_inactive_players
 )
 from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders
 from bot.handlers.game.config import is_test_chat, get_config
@@ -572,7 +572,7 @@ async def pidorunreg_cmd(update: Update, context: GECallbackContext):
 
 @ensure_game
 async def pidorremove_cmd(update: Update, context: GECallbackContext):
-    """Удалить игрока из игры (только для администраторов). История сохраняется."""
+    """Проверяет всех игроков через Telegram API и деактивирует вышедших (только для администраторов)."""
     try:
         chat_member = await context.bot.get_chat_member(
             chat_id=update.effective_chat.id,
@@ -586,44 +586,17 @@ async def pidorremove_cmd(update: Update, context: GECallbackContext):
         await update.effective_message.reply_markdown_v2(PLAYER_REMOVE_NOT_ADMIN)
         return
 
-    # Определяем целевого пользователя: reply или @username из аргумента
-    target_tg_id = None
-    if update.effective_message.reply_to_message:
-        target_tg_id = update.effective_message.reply_to_message.from_user.id
-    else:
-        args = update.effective_message.text.split()[1:]
-        if not args:
-            await update.effective_message.reply_markdown_v2(PLAYER_REMOVE_NO_REPLY)
-            return
-        username = args[0].lstrip('@')
-        stmt = select(TGUser).where(TGUser.username == username)
-        target_user = context.db_session.exec(stmt).first()
-        if target_user:
-            target_tg_id = target_user.tg_id
-
-    if target_tg_id is None:
-        await update.effective_message.reply_markdown_v2(PLAYER_REMOVE_NOT_FOUND)
-        return
-
-    stmt = select(TGUser).where(TGUser.tg_id == target_tg_id)
-    target_user = context.db_session.exec(stmt).first()
-    if not target_user:
-        await update.effective_message.reply_markdown_v2(PLAYER_REMOVE_NOT_FOUND)
-        return
-
-    stmt = select(GamePlayer).where(
-        GamePlayer.game_id == context.game.id,
-        GamePlayer.user_id == target_user.id,
-        GamePlayer.is_active == True,
+    deactivated = await remove_inactive_players(
+        context.bot, update.effective_chat.id, context.db_session, context.game.id
     )
-    game_player = context.db_session.exec(stmt).first()
-    if not game_player:
-        await update.effective_message.reply_markdown_v2(PLAYER_REMOVE_NOT_FOUND)
+
+    if not deactivated:
+        await update.effective_message.reply_markdown_v2(PLAYER_REMOVE_NONE)
         return
 
-    deactivate_player(context.db_session, context.game.id, target_user.id)
+    usernames = ', '.join(escape_markdown2(p.full_username()) for p in deactivated)
     await update.effective_message.reply_markdown_v2(
-        PLAYER_REMOVE_SUCCESS.format(username=escape_markdown2(target_user.full_username()))
+        PLAYER_REMOVE_SUCCESS.format(count=len(deactivated), usernames=usernames)
     )
 
 
