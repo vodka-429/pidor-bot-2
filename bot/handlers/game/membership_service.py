@@ -93,10 +93,12 @@ async def remove_inactive_players(bot, chat_id: int, db_session, game_id: int) -
             if member.status in ('left', 'kicked'):
                 deactivate_player(db_session, game_id, player.id)
                 deactivated.append(player)
-        except BadRequest:
-            # 400 user not found — пользователь недоступен, считаем вышедшим
-            deactivate_player(db_session, game_id, player.id)
-            deactivated.append(player)
+        except BadRequest as e:
+            # Только "user not found" — точно вышел из чата
+            # Прочие BadRequest (приватность, права бота) — оставляем активным
+            if 'user not found' in str(e).lower():
+                deactivate_player(db_session, game_id, player.id)
+                deactivated.append(player)
         except Exception:
             pass  # прочие ошибки: оставляем активным
     return deactivated
