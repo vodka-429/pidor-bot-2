@@ -69,25 +69,30 @@ async def main():
             still_gone = []
 
             for player in deactivated_players:
+                definitely_gone = False
+                reason = ''
                 try:
                     member = await bot.get_chat_member(chat_id=CHAT_ID, user_id=player.tg_id)
-                    if member.status not in ('left', 'kicked'):
-                        restored.append(player)
-                        print(f'  ✅ Будет восстановлен: {player.full_username()} (статус: {member.status})')
-                        if not DRY_RUN:
-                            reactivate_player(db, game.id, player.id)
-                            add_coins(db, game.id, player.id, COINS_COMPENSATION, CURRENT_YEAR, reason='compensation')
-                    else:
-                        still_gone.append(player)
-                        print(f'  ❌ Реально вышел: {player.full_username()}')
+                    if member.status in ('left', 'kicked'):
+                        definitely_gone = True
+                        reason = member.status
                 except BadRequest as e:
                     if 'user not found' in str(e).lower():
-                        still_gone.append(player)
-                        print(f'  ❌ Не найден (user not found): {player.full_username()}')
-                    else:
-                        print(f'  ⚠️  Неизвестная ошибка, пропускаем: {player.full_username()} — {e}')
-                except Exception as e:
-                    print(f'  ⚠️  Ошибка, пропускаем: {player.full_username()} — {e}')
+                        definitely_gone = True
+                        reason = 'user not found'
+                    # Иначе (Participant_id_invalid и т.п.) — не можем проверить, восстанавливаем
+                except Exception:
+                    pass  # не можем проверить — восстанавливаем
+
+                if definitely_gone:
+                    still_gone.append(player)
+                    print(f'  ❌ Реально вышел ({reason}): {player.full_username()}')
+                else:
+                    restored.append(player)
+                    print(f'  ✅ Будет восстановлен: {player.full_username()}')
+                    if not DRY_RUN:
+                        reactivate_player(db, game.id, player.id)
+                        add_coins(db, game.id, player.id, COINS_COMPENSATION, CURRENT_YEAR, reason='compensation')
 
             if not restored:
                 print('\nНикого восстанавливать не нужно.')
