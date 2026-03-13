@@ -1,0 +1,104 @@
+"""
+Скрипт для восстановления игроков, ошибочно деактивированных командой /pidorremove.
+
+Что делает:
+1. Находит всех деактивированных игроков в указанном чате
+2. Проверяет через Telegram API — реально ли они вышли
+3. Реактивирует тех, кто ещё в чате
+4. Даёт им 44 монеты как компенсацию
+5. Пишет итог в чат
+
+Запуск:
+    CHAT_ID=-1001392307997 python fix_wrongly_removed.py
+"""
+
+import asyncio
+import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from dotenv import load_dotenv
+from sqlmodel import Session, create_engine, select
+from telegram import Bot
+from telegram.error import BadRequest
+
+load_dotenv()
+
+CHAT_ID = int(os.environ['CHAT_ID'])
+COINS_COMPENSATION = 44
+CURRENT_YEAR = datetime.now(tz=ZoneInfo('Europe/Moscow')).year
+
+
+def get_engine():
+    dburi = os.environ['DATABASE_URL']
+    if dburi.startswith('postgres://'):
+        dburi = dburi.replace('postgres://', 'postgresql://', 1)
+    return create_engine(dburi, echo=False)
+
+
+async def main():
+    from bot.app.models import Game, GamePlayer, TGUser
+    from bot.handlers.game.coin_service import add_coins
+    from bot.handlers.game.membership_service import reactivate_player
+
+    engine = get_engine()
+
+    async with Bot(os.environ['TELEGRAM_BOT_API_SECRET']) as bot:
+        with Session(engine) as db:
+            # Находим игру по chat_id
+            game = db.exec(select(Game).where(Game.chat_id == CHAT_ID)).first()
+            if not game:
+                print(f'Игра для чата {CHAT_ID} не найдена')
+                return
+
+            # Находим всех деактивированных игроков
+            stmt = (
+                select(TGUser)
+                .join(GamePlayer, (GamePlayer.user_id == TGUser.id) & (GamePlayer.game_id == game.id))
+                .where(GamePlayer.is_active == False)
+            )
+            deactivated_players = db.exec(stmt).all()
+            print(f'Деактивированных игроков: {len(deactivated_players)}')
+
+            restored = []
+            still_gone = []
+
+            for player in deactivated_players:
+                try:
+                    member = await bot.get_chat_member(chat_id=CHAT_ID, user_id=player.tg_id)
+                    if member.status not in ('left', 'kicked'):
+                        # Игрок в чате — восстанавливаем
+                        reactivate_player(db, game.id, player.id)
+                        add_coins(db, game.id, player.id, COINS_COMPENSATION, CURRENT_YEAR, reason='compensation')
+                        restored.append(player)
+                        print(f'  ✅ Восстановлен: {player.full_username()} (статус: {member.status})')
+                    else:
+                        still_gone.append(player)
+                        print(f'  ❌ Реально вышел: {player.full_username()}')
+                except BadRequest as e:
+                    if 'user not found' in str(e).lower():
+                        still_gone.append(player)
+                        print(f'  ❌ Не найден (user not found): {player.full_username()}')
+                    else:
+                        # Неясно — не трогаем
+                        print(f'  ⚠️  Неизвестная ошибка, пропускаем: {player.full_username()} — {e}')
+                except Exception as e:
+                    print(f'  ⚠️  Ошибка, пропускаем: {player.full_username()} — {e}')
+
+            if not restored:
+                print('\nНикого восстанавливать не нужно.')
+                return
+
+            # Пишем в чат
+            names = ', '.join(f'@{p.username}' if p.username else p.first_name for p in restored)
+            message = (
+                f'🙏 Извините за косяк — бот ошибочно удалил из игры {len(restored)} игрок(ов).\n\n'
+                f'{names}\n\n'
+                f'Все восстановлены, каждому начислено {COINS_COMPENSATION} монет как компенсация.'
+            )
+            await bot.send_message(chat_id=CHAT_ID, text=message)
+            print(f'\nСообщение отправлено. Восстановлено: {len(restored)}, осталось деактивированных: {len(still_gone)}')
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
