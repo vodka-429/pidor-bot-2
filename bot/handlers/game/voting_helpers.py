@@ -503,7 +503,7 @@ def _select_random_winners(context, game_id: int, year: int, excluded_player_ids
     return winner_ids
 
 
-def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True, excluded_player_ids: List[int] = None) -> tuple:
+def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True, excluded_player_ids: List[int] = None, deactivated_player_ids: set = None) -> tuple:
     """
     Подсчитывает результаты финального голосования.
 
@@ -523,6 +523,8 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
         excluded_player_ids: Список ID игроков, которые должны быть исключены из победителей.
                             Эти игроки могут голосовать (их голоса учитываются с полным весом),
                             но ни один из них не может быть выбран победителем.
+        deactivated_player_ids: Множество ID деактивированных игроков (покинули чат).
+                            Не получают автоголос и не могут победить.
     """
     import json
     from datetime import datetime
@@ -569,13 +571,15 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
 
     if excluded_player_ids is None:
         excluded_player_ids = []
+    if deactivated_player_ids is None:
+        deactivated_player_ids = set()
 
     if auto_vote_for_non_voters:
         # Находим игроков, которые не проголосовали
         all_player_ids = set(weights_dict.keys())
         non_voters = all_player_ids - manual_voters
-        # Исключаем лидеров
-        non_voters = non_voters - set(excluded_player_ids)
+        # Исключаем лидеров и деактивированных (они не получают автоголос за себя)
+        non_voters = non_voters - set(excluded_player_ids) - deactivated_player_ids
 
         # Рассчитываем максимальное количество голосов
         max_votes = calculate_max_votes(final_voting.missed_days_count)
@@ -646,9 +650,9 @@ def finalize_voting(final_voting, context, auto_vote_for_non_voters: bool = True
         # Сортируем кандидатов по взвешенным очкам
         sorted_candidates = sorted(results.items(), key=lambda x: x[1]['weighted'], reverse=True)
 
-        # Фильтруем исключенных игроков из списка кандидатов
+        # Фильтруем исключенных и деактивированных игроков из списка кандидатов
         eligible_candidates = [(candidate_id, data) for candidate_id, data in sorted_candidates
-                               if candidate_id not in excluded_player_ids]
+                               if candidate_id not in excluded_player_ids and candidate_id not in deactivated_player_ids]
 
         if not eligible_candidates:
             # Если нет подходящих кандидатов с голосами, выбираем случайных

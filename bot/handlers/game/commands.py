@@ -23,9 +23,10 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
     YEAR_RESULTS_MSG, YEAR_RESULTS_ANNOUNCEMENT, REGISTRATION_MANY_SUCCESS, \
     ERROR_ALREADY_REGISTERED_MANY, VOTING_ENDED_RESPONSE, \
     FINAL_VOTING_CLOSE_ERROR_NOT_AUTHORIZED, COIN_INFO, \
-    COINS_PERSONAL, COINS_CURRENT_YEAR, COINS_ALL_TIME, COINS_LIST_ITEM, COIN_EARNED, COIN_INFO_SELF_PIDOR
+    COINS_PERSONAL, COINS_CURRENT_YEAR, COINS_ALL_TIME, COINS_LIST_ITEM, COIN_EARNED, COIN_INFO_SELF_PIDOR, \
+    PLAYER_REMOVE_SUCCESS, PLAYER_REMOVE_NOT_FOUND, PLAYER_REMOVE_NO_REPLY, PLAYER_REMOVE_NOT_ADMIN
 from bot.handlers.game.membership_service import (
-    batch_check_membership, get_active_players, get_deactivated_player_ids, reactivate_player
+    get_active_players, get_deactivated_player_ids, reactivate_player, deactivate_player
 )
 from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders
 from bot.handlers.game.config import is_test_chat, get_config
@@ -256,10 +257,6 @@ def ensure_game(func):
 async def pidor_cmd(update: Update, context: GECallbackContext):
     logger.info(f"pidor_cmd started for chat {update.effective_chat.id}")
     logger.info(f"Game {context.game.id} of the day started")
-
-    # Проверяем членство всех игроков в чате и деактивируем вышедших
-    all_players: List[TGUser] = context.game.players
-    await batch_check_membership(context.bot, update.effective_chat.id, context.db_session, context.game.id, all_players)
 
     players: List[TGUser] = get_active_players(context.db_session, context.game.id)
 
@@ -571,6 +568,63 @@ async def pidorunreg_cmd(update: Update, context: GECallbackContext):
     #     update.effective_message.reply_markdown_v2(REMOVE_REGISTRATION)
     # else:
     #     update.effective_message.reply_markdown_v2(REMOVE_REGISTRATION_ERROR)
+
+
+@ensure_game
+async def pidorremove_cmd(update: Update, context: GECallbackContext):
+    """Удалить игрока из игры (только для администраторов). История сохраняется."""
+    try:
+        chat_member = await context.bot.get_chat_member(
+            chat_id=update.effective_chat.id,
+            user_id=update.effective_user.id,
+        )
+        is_admin = chat_member.status in ('creator', 'administrator')
+    except Exception:
+        is_admin = False
+
+    if not is_admin:
+        await update.effective_message.reply_markdown_v2(PLAYER_REMOVE_NOT_ADMIN)
+        return
+
+    # Определяем целевого пользователя: reply или @username из аргумента
+    target_tg_id = None
+    if update.effective_message.reply_to_message:
+        target_tg_id = update.effective_message.reply_to_message.from_user.id
+    else:
+        args = update.effective_message.text.split()[1:]
+        if not args:
+            await update.effective_message.reply_markdown_v2(PLAYER_REMOVE_NO_REPLY)
+            return
+        username = args[0].lstrip('@')
+        stmt = select(TGUser).where(TGUser.username == username)
+        target_user = context.db_session.exec(stmt).first()
+        if target_user:
+            target_tg_id = target_user.tg_id
+
+    if target_tg_id is None:
+        await update.effective_message.reply_markdown_v2(PLAYER_REMOVE_NOT_FOUND)
+        return
+
+    stmt = select(TGUser).where(TGUser.tg_id == target_tg_id)
+    target_user = context.db_session.exec(stmt).first()
+    if not target_user:
+        await update.effective_message.reply_markdown_v2(PLAYER_REMOVE_NOT_FOUND)
+        return
+
+    stmt = select(GamePlayer).where(
+        GamePlayer.game_id == context.game.id,
+        GamePlayer.user_id == target_user.id,
+        GamePlayer.is_active == True,
+    )
+    game_player = context.db_session.exec(stmt).first()
+    if not game_player:
+        await update.effective_message.reply_markdown_v2(PLAYER_REMOVE_NOT_FOUND)
+        return
+
+    deactivate_player(context.db_session, context.game.id, target_user.id)
+    await update.effective_message.reply_markdown_v2(
+        PLAYER_REMOVE_SUCCESS.format(username=escape_markdown2(target_user.full_username()))
+    )
 
 
 def build_player_table(player_list: list[tuple[TGUser, int]], inactive_ids: set = None) -> str:
@@ -1174,8 +1228,10 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     excluded_leader_ids = [leader['player_id'] for leader in excluded_leaders_data]
     logger.info(f"Excluded leaders from voting: {excluded_leader_ids}")
 
-    # Вызываем функцию подсчёта результатов с передачей списка исключенных лидеров
-    winners, results = finalize_voting(final_voting, context, excluded_player_ids=excluded_leader_ids)
+    deactivated_ids = get_deactivated_player_ids(context.db_session, context.game.id)
+
+    # Вызываем функцию подсчёта результатов с передачей списка исключенных лидеров и деактивированных
+    winners, results = finalize_voting(final_voting, context, excluded_player_ids=excluded_leader_ids, deactivated_player_ids=deactivated_ids)
 
     # Создаем записи GameResult для победителей
     from bot.handlers.game.voting_helpers import create_game_results_for_winners
