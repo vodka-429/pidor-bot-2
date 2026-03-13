@@ -20,6 +20,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY bot ./bot/
 COPY main.py .
+COPY fix_wrongly_removed.py .
 COPY migrations ./migrations/
 COPY alembic.ini .
 
