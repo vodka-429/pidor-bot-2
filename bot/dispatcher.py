@@ -12,7 +12,7 @@ from bot.handlers.about.commands import about_cmd
 from bot.handlers.db.handlers import open_db_session, \
     tg_user_middleware_handler, close_db_session_handler
 from bot.handlers.game.commands import pidor_cmd, pidorules_cmd, pidoreg_cmd, \
-    pidorunreg_cmd, pidorstats_cmd, pidorall_cmd, pidorme_cmd, \
+    pidorunreg_cmd, pidorremove_cmd, pidorstats_cmd, pidorall_cmd, pidorme_cmd, \
     pidoryearresults_cmd, pidoregmany_cmd, pidormissed_cmd, pidorfinal_cmd, \
     pidorfinalstatus_cmd, handle_vote_callback, pidorfinalclose_cmd, \
     pidorcoinsme_cmd, pidorcoinsstats_cmd, pidorshop_cmd, \
@@ -90,6 +90,7 @@ def init_dispatcher(application: Application, db_engine):
     application.add_handler(CommandHandler('pidoreg', pidoreg_cmd, filters=ne))
     application.add_handler(CommandHandler('pidoregmany', pidoregmany_cmd, filters=ne))
     application.add_handler(CommandHandler('pidorunreg', pidorunreg_cmd, filters=ne))
+    application.add_handler(CommandHandler('pidorremove', pidorremove_cmd, filters=ne))
     application.add_handler(CommandHandler('pidorstats', pidorstats_cmd, filters=ne))
     application.add_handler(CommandHandler('pidorall', pidorall_cmd, filters=ne))
     application.add_handler(CommandHandler('pidorme', pidorme_cmd, filters=ne))

@@ -101,11 +101,10 @@ def sample_players():
 
 @pytest.fixture(autouse=True)
 def mock_membership_checks(request, mocker, mock_context):
-    """Автоматически мокирует проверки членства для всех тестов, кроме test_membership_service.
-    get_active_players возвращает mock_context.game.players, чтобы существующие тесты не ломались."""
+    """Автоматически мокирует get_active_players и get_deactivated_player_ids для всех тестов,
+    кроме test_membership_service. get_active_players возвращает mock_context.game.players."""
     if 'test_membership_service' in request.node.nodeid:
         return
-    mocker.patch('bot.handlers.game.commands.batch_check_membership', new_callable=AsyncMock)
     mocker.patch(
         'bot.handlers.game.commands.get_active_players',
         side_effect=lambda db, game_id: mock_context.game.players if mock_context.game else [],
