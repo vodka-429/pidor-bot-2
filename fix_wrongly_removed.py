@@ -92,7 +92,7 @@ async def main():
             # Пишем в чат
             names = ', '.join(f'@{p.username}' if p.username else p.first_name for p in restored)
             message = (
-                f'мне стыдно\\. ии вызывает аутизм ~~и муцураев~~\\.\n\n'
+                f'мне стыдно\\. ии ~~муцураев~~ вызывает аутизм\\.\n\n'
                 f'бот ошибочно удалил из игры: {names}\n\n'
                 f'все восстановлены, каждому {COINS_COMPENSATION} монет\\.'
             )
