@@ -8,7 +8,10 @@
 4. Даёт им 44 монеты как компенсацию
 5. Пишет итог в чат
 
-Запуск:
+Dry-run (только посмотреть, ничего не меняет):
+    CHAT_ID=-1001392307997 DRY_RUN=1 python fix_wrongly_removed.py
+
+Боевой запуск:
     CHAT_ID=-1001392307997 python fix_wrongly_removed.py
 """
 
@@ -25,6 +28,7 @@ from telegram.error import BadRequest
 load_dotenv()
 
 CHAT_ID = int(os.environ['CHAT_ID'])
+DRY_RUN = os.environ.get('DRY_RUN', '0') == '1'
 COINS_COMPENSATION = 44
 CURRENT_YEAR = datetime.now(tz=ZoneInfo('Europe/Moscow')).year
 
@@ -41,17 +45,18 @@ async def main():
     from bot.handlers.game.coin_service import add_coins
     from bot.handlers.game.membership_service import reactivate_player
 
+    if DRY_RUN:
+        print('=== DRY RUN — ничего не меняется ===\n')
+
     engine = get_engine()
 
     async with Bot(os.environ['TELEGRAM_BOT_API_SECRET']) as bot:
         with Session(engine) as db:
-            # Находим игру по chat_id
             game = db.exec(select(Game).where(Game.chat_id == CHAT_ID)).first()
             if not game:
                 print(f'Игра для чата {CHAT_ID} не найдена')
                 return
 
-            # Находим всех деактивированных игроков
             stmt = (
                 select(TGUser)
                 .join(GamePlayer, (GamePlayer.user_id == TGUser.id) & (GamePlayer.game_id == game.id))
@@ -67,11 +72,11 @@ async def main():
                 try:
                     member = await bot.get_chat_member(chat_id=CHAT_ID, user_id=player.tg_id)
                     if member.status not in ('left', 'kicked'):
-                        # Игрок в чате — восстанавливаем
-                        reactivate_player(db, game.id, player.id)
-                        add_coins(db, game.id, player.id, COINS_COMPENSATION, CURRENT_YEAR, reason='compensation')
                         restored.append(player)
-                        print(f'  ✅ Восстановлен: {player.full_username()} (статус: {member.status})')
+                        print(f'  ✅ Будет восстановлен: {player.full_username()} (статус: {member.status})')
+                        if not DRY_RUN:
+                            reactivate_player(db, game.id, player.id)
+                            add_coins(db, game.id, player.id, COINS_COMPENSATION, CURRENT_YEAR, reason='compensation')
                     else:
                         still_gone.append(player)
                         print(f'  ❌ Реально вышел: {player.full_username()}')
@@ -80,7 +85,6 @@ async def main():
                         still_gone.append(player)
                         print(f'  ❌ Не найден (user not found): {player.full_username()}')
                     else:
-                        # Неясно — не трогаем
                         print(f'  ⚠️  Неизвестная ошибка, пропускаем: {player.full_username()} — {e}')
                 except Exception as e:
                     print(f'  ⚠️  Ошибка, пропускаем: {player.full_username()} — {e}')
@@ -89,15 +93,20 @@ async def main():
                 print('\nНикого восстанавливать не нужно.')
                 return
 
-            # Пишем в чат
             names = ', '.join(f'@{p.username}' if p.username else p.first_name for p in restored)
             message = (
                 f'мне стыдно. ии <s>муцураев</s> вызывает аутизм.\n\n'
                 f'бот ошибочно удалил из игры: {names}\n\n'
                 f'все восстановлены, каждому {COINS_COMPENSATION} монет.'
             )
-            await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode='HTML')
-            print(f'\nСообщение отправлено. Восстановлено: {len(restored)}, осталось деактивированных: {len(still_gone)}')
+
+            print(f'\n--- Сообщение в чат ---\n{message}\n-----------------------')
+
+            if DRY_RUN:
+                print('\nDRY RUN — сообщение не отправлено, БД не изменена.')
+            else:
+                await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode='HTML')
+                print(f'\nГотово. Восстановлено: {len(restored)}, осталось деактивированных: {len(still_gone)}')
 
 
 if __name__ == '__main__':
