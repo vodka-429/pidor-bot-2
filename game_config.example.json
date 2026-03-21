@@ -26,7 +26,11 @@
     "prediction_enabled": true,
     "immunity_enabled": true,
     "double_chance_enabled": true,
-    "give_coins_enabled": true
+    "give_coins_enabled": true,
+    "achievements_enabled": true,
+    "toast_enabled": true,
+    "toast_price": 5,
+    "totalizator_enabled": false
   },
   "chat_overrides": {
     "-1001234567890": {

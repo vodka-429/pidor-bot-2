@@ -255,6 +255,15 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'callback_data': 'shop_toast'
         })
 
+    # Тотализатор
+    if constants.totalizator_enabled:
+        items.append({
+            'name': '🎰 Тотализатор',
+            'price': None,
+            'description': 'Создать ставку или завершить существующую',
+            'callback_data': 'shop_totalizator'
+        })
+
     # Банк чата (всегда доступен)
     items.append({
         'name': '🏦 Банк чата',

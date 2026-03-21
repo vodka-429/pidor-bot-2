@@ -275,6 +275,42 @@ class Toast(SQLModel, table=True):
     receiver: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[Toast.receiver_id]"})
 
 
+class Totalizator(SQLModel, table=True):
+    """Тотализатор — публичный спор с двумя сторонами."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    creator_id: int = Field(foreign_key="tguser.id", nullable=False)
+    title: str
+    stake: int
+    option_yes: str = Field(default="За")
+    option_no: str = Field(default="Против")
+    deadline_year: int
+    deadline_day: int
+    status: str = Field(default="open")  # open | resolved_yes | resolved_no | cancelled
+    message_id: Optional[int] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    resolved_at: Optional[datetime] = Field(default=None)
+
+    game: Game = Relationship()
+    creator: TGUser = Relationship(sa_relationship_kwargs={"foreign_keys": "[Totalizator.creator_id]"})
+
+
+class TotalizatorBet(SQLModel, table=True):
+    """Ставка в тотализаторе."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    totalizator_id: int = Field(foreign_key="totalizator.id", nullable=False)
+    user_id: int = Field(foreign_key="tguser.id", nullable=False)
+    choice: str  # "yes" или "no"
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    totalizator: Totalizator = Relationship()
+    user: TGUser = Relationship()
+
+    __table_args__ = (
+        UniqueConstraint('totalizator_id', 'user_id', name='unique_totalizator_bet'),
+    )
+
+
 class GiveCoinsClick(SQLModel, table=True):
     """История нажатий на кнопку 'Дайте койнов'."""
     id: Optional[int] = Field(default=None, primary_key=True)

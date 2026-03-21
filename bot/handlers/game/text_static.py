@@ -484,6 +484,42 @@ _Комиссия по ставке ЦБ РФ идёт в банк чата_""",
     }
 
 
+TOTALIZATOR_BET_PLACED = "✅ Ставка принята! Поставил(а) {stake} 🪙 за «{option}»"
+TOTALIZATOR_ALREADY_BET = "❌ Ты уже поставил(а) на этот тотализатор!"
+TOTALIZATOR_CLOSED = "❌ Тотализатор уже завершён."
+TOTALIZATOR_DEADLINE_PASSED = "❌ Дедлайн прошёл — ставки больше не принимаются."
+TOTALIZATOR_NOT_ENOUGH_COINS = "❌ Недостаточно монет! Нужно {stake} 🪙, у тебя {balance} 🪙."
+TOTALIZATOR_NOT_REGISTERED = "❌ Ты не зарегистрирован(а) в игре."
+TOTALIZATOR_RESOLVED_WIN = (
+    "🏆 Тотализатор завершён!\n\n"
+    "Победила сторона «{option}»\n"
+    "Каждый победитель получает <b>{per_winner}</b> 🪙"
+)
+TOTALIZATOR_CANCELLED = (
+    "❌ Тотализатор отменён.\n"
+    "Каждый получает обратно {effective} 🪙 "
+    "(комиссия {commission} 🪙 с каждой ставки ушла в банк)."
+)
+TOTALIZATOR_REFUNDED = (
+    "♻️ Все поставили на одну сторону — ставки возвращены.\n"
+    "Каждый получает {effective} 🪙 (комиссия {commission} 🪙 ушла в банк)."
+)
+TOTALIZATOR_CREATE_PROMPT = (
+    "🎰 Отправьте параметры тотализатора одним сообщением:\n"
+    "<code>&lt;ставка&gt; &lt;ДД.ММ.ГГГГ&gt; &lt;описание&gt;</code>\n\n"
+    "Пример:\n<code>15 30.06.2026 Спор с Олей в тимсе</code>"
+)
+TOTALIZATOR_CREATE_LIMIT_PLAYER = "❌ У тебя уже есть открытый тотализатор. Сначала завершите его."
+TOTALIZATOR_CREATE_LIMIT_CHAT = "❌ В чате уже 3 открытых тотализатора. Дождитесь завершения."
+TOTALIZATOR_CREATE_BAD_FORMAT = (
+    "❌ Неверный формат. Отправьте:\n"
+    "<code>&lt;ставка&gt; &lt;ДД.ММ.ГГГГ&gt; &lt;описание&gt;</code>"
+)
+TOTALIZATOR_CREATE_BAD_STAKE = "❌ Ставка должна быть целым числом ≥ 1."
+TOTALIZATOR_CREATE_BAD_DATE = "❌ Неверная дата. Используйте формат ДД.ММ.ГГГГ (например 30.06.2026)."
+TOTALIZATOR_CREATE_DATE_PAST = "❌ Дедлайн должен быть в будущем."
+
+
 def get_rules_message(config) -> str:
     """
     Генерирует сообщение с правилами игры с актуальными ценами из конфигурации.
