@@ -498,11 +498,11 @@ TOTALIZATOR_RESOLVED_WIN = (
 TOTALIZATOR_CANCELLED = (
     "❌ Тотализатор отменён.\n"
     "Каждый получает обратно {effective} 🪙 "
-    "(комиссия {commission} 🪙 с каждой ставки ушла в банк)."
+    "(комиссия {commission} 🪙 с каждого ушла в банк)."
 )
 TOTALIZATOR_REFUNDED = (
     "♻️ Все поставили на одну сторону — ставки возвращены.\n"
-    "Каждый получает {effective} 🪙 (комиссия {commission} 🪙 ушла в банк)."
+    "Каждый получает {effective} 🪙 (комиссия {commission} 🪙 с каждого ушла в банк)."
 )
 TOTALIZATOR_CREATE_PROMPT = (
     "🎰 Отправьте параметры тотализатора одним сообщением:\n"
