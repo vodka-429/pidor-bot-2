@@ -12,7 +12,7 @@ from sqlmodel import select
 from telegram import Update
 from telegram.ext import CallbackContext
 
-from bot.app.models import Game, GamePlayer, TGUser, GameResult, FinalVoting
+from bot.app.models import Game, GamePlayer, TGUser, GameResult, FinalVoting, KVItem
 from bot.handlers.db.handlers import tg_user_from_text
 from bot.handlers.game.phrases import stage1, stage2, stage3, stage4
 from bot.handlers.game.text_static import STATS_PERSONAL, \
@@ -467,6 +467,28 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
 
         # Отправляем финальное сообщение с кнопкой перевыбора
         await send_result_with_reroll_button(update, context, stage4_message, cur_year, cur_day)
+
+        # Уведомление о просроченных тотализаторах
+        if config.constants.totalizator_enabled:
+            from bot.handlers.game.totalizator_service import get_expired_unresolved
+            expired_tots = get_expired_unresolved(context.db_session, context.game.id, cur_year, cur_day)
+            if expired_tots:
+                from sqlmodel import select as sa_select
+                if len(expired_tots) == 1:
+                    tot = expired_tots[0]
+                    creator_stmt = sa_select(TGUser).where(TGUser.id == tot.creator_id)
+                    creator = context.db_session.exec(creator_stmt).first()
+                    creator_name = creator.full_username() if creator else "?"
+                    notify_text = f"⚠️ Тотализатор от {creator_name} «{tot.title}» ожидает завершения! Зайди в /pidorshop"
+                else:
+                    lines = []
+                    for tot in expired_tots:
+                        creator_stmt = sa_select(TGUser).where(TGUser.id == tot.creator_id)
+                        creator = context.db_session.exec(creator_stmt).first()
+                        creator_name = creator.full_username() if creator else "?"
+                        lines.append(f"• «{tot.title}» (от {creator_name})")
+                    notify_text = f"⚠️ {len(expired_tots)} тотализатора(-ов) ожидают завершения:\n" + "\n".join(lines)
+                await update.effective_chat.send_message(notify_text, parse_mode="HTML")
 
         # Проверка на tie-breaker в последний день года
         if last_day:
@@ -2875,3 +2897,432 @@ async def handle_shop_toast_select_callback(update: Update, context: GECallbackC
         f"Toast completed: sender {context.tg_user.id}, receiver {receiver_id}, "
         f"amount {amount_sent}, commission {commission}"
     )
+
+
+# ─── Totalizator handlers ────────────────────────────────────────────────────
+
+@ensure_game
+async def handle_shop_totalizator_callback(update: Update, context: GECallbackContext):
+    """Показать меню тотализатора: создать новый или завершить свой."""
+    from bot.handlers.game.shop_helpers import parse_shop_callback_data
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP
+    from bot.handlers.game.totalizator_service import get_user_open_totalizators
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    query = update.callback_query
+    if query is None:
+        return
+
+    try:
+        _, owner_user_id = parse_shop_callback_data(query.data)
+    except ValueError:
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    if query.from_user.id != owner_user_id:
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    my_tots = get_user_open_totalizators(context.db_session, context.game.id, context.tg_user.id)
+
+    buttons = [[InlineKeyboardButton(
+        "➕ Создать новый",
+        callback_data=f"tot_create_{owner_user_id}"
+    )]]
+    for tot in my_tots:
+        buttons.append([InlineKeyboardButton(
+            f"✅ Завершить: «{tot.title[:30]}»",
+            callback_data=f"tot_resolve_{tot.id}_{owner_user_id}"
+        )])
+    buttons.append([InlineKeyboardButton("⬅️ Назад", callback_data=f"shop_back_{owner_user_id}")])
+
+    keyboard = InlineKeyboardMarkup(buttons)
+    await query.edit_message_text(
+        "🎰 <b>Тотализатор</b>\n\nСоздайте новый или завершите существующий:",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
+    await query.answer()
+
+
+@ensure_game
+async def handle_tot_create_callback(update: Update, context: GECallbackContext):
+    """Начать создание тотализатора — сохранить KVItem и попросить параметры."""
+    from bot.handlers.game.totalizator_service import get_open_totalizators, get_user_open_totalizators
+    from bot.handlers.game.text_static import (
+        SHOP_ERROR_NOT_YOUR_SHOP, TOTALIZATOR_CREATE_PROMPT,
+        TOTALIZATOR_CREATE_LIMIT_PLAYER, TOTALIZATOR_CREATE_LIMIT_CHAT,
+    )
+
+    query = update.callback_query
+    if query is None:
+        return
+
+    # callback_data = tot_create_{owner_user_id}
+    try:
+        owner_user_id = int(query.data.split("_")[-1])
+    except (ValueError, IndexError):
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    if query.from_user.id != owner_user_id:
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    # Лимиты
+    my_tots = get_user_open_totalizators(context.db_session, context.game.id, context.tg_user.id)
+    if len(my_tots) >= 1:
+        await query.answer(TOTALIZATOR_CREATE_LIMIT_PLAYER, show_alert=True)
+        return
+
+    all_open = get_open_totalizators(context.db_session, context.game.id)
+    if len(all_open) >= 3:
+        await query.answer(TOTALIZATOR_CREATE_LIMIT_CHAT, show_alert=True)
+        return
+
+    # Сохраняем KVItem как флаг ожидания ввода
+    chat_id = update.effective_chat.id
+    tg_user_id = context.tg_user.tg_id
+    kv_key = f"tot_create_{tg_user_id}"
+
+    existing = context.db_session.query(KVItem).filter_by(
+        chat_id=chat_id, key=kv_key
+    ).one_or_none()
+    if existing is None:
+        kv_item = KVItem(chat_id=chat_id, key=kv_key, value="1")
+        context.db_session.add(kv_item)
+        context.db_session.commit()
+
+    await query.edit_message_text(TOTALIZATOR_CREATE_PROMPT, parse_mode="HTML")
+    await query.answer()
+
+
+@ensure_game
+async def handle_tot_resolve_callback(update: Update, context: GECallbackContext):
+    """Показать варианты завершения тотализатора (какая сторона победила)."""
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP
+    from bot.handlers.game.totalizator_service import get_totalizator_bets
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from sqlmodel import select as sa_select
+    from bot.app.models import Totalizator as TotModel
+
+    query = update.callback_query
+    if query is None:
+        return
+
+    # callback_data = tot_resolve_{tot_id}_{owner_user_id}
+    try:
+        parts = query.data.split("_")
+        tot_id = int(parts[-2])
+        owner_user_id = int(parts[-1])
+    except (ValueError, IndexError):
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    if query.from_user.id != owner_user_id:
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    stmt = sa_select(TotModel).where(TotModel.id == tot_id)
+    tot = context.db_session.exec(stmt).first()
+    if tot is None or tot.status != "open":
+        await query.answer("❌ Тотализатор не найден или уже завершён.", show_alert=True)
+        return
+
+    if tot.creator_id != context.tg_user.id:
+        await query.answer("❌ Только организатор может завершить тотализатор.", show_alert=True)
+        return
+
+    bets = get_totalizator_bets(context.db_session, tot_id)
+    yes_count = sum(1 for b in bets if b.choice == "yes")
+    no_count = sum(1 for b in bets if b.choice == "no")
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            f"👍 «{tot.option_yes}» победили ({yes_count})",
+            callback_data=f"tot_resolve_{tot_id}_yes_{owner_user_id}"
+        )],
+        [InlineKeyboardButton(
+            f"👎 «{tot.option_no}» победили ({no_count})",
+            callback_data=f"tot_resolve_{tot_id}_no_{owner_user_id}"
+        )],
+        [InlineKeyboardButton(
+            "❌ Отменить (вернуть ставки)",
+            callback_data=f"tot_resolve_{tot_id}_cancel_{owner_user_id}"
+        )],
+    ])
+
+    await query.edit_message_text(
+        f"🎰 <b>Завершение тотализатора</b>\n\n«{tot.title}»\n\nВыберите результат:",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
+    await query.answer()
+
+
+@ensure_game
+async def handle_tot_resolve_confirm_callback(update: Update, context: GECallbackContext):
+    """Выполнить завершение тотализатора с распределением монет."""
+    from bot.handlers.game.text_static import (
+        SHOP_ERROR_NOT_YOUR_SHOP,
+        TOTALIZATOR_RESOLVED_WIN, TOTALIZATOR_CANCELLED, TOTALIZATOR_REFUNDED,
+    )
+    from bot.handlers.game.totalizator_service import resolve_totalizator, format_totalizator_message, get_totalizator_bets
+    from sqlmodel import select as sa_select
+    from bot.app.models import Totalizator as TotModel
+
+    query = update.callback_query
+    if query is None:
+        return
+
+    # callback_data = tot_resolve_{tot_id}_{choice}_{owner_user_id}
+    try:
+        parts = query.data.split("_")
+        owner_user_id = int(parts[-1])
+        choice = parts[-2]  # "yes" | "no" | "cancel"
+        tot_id = int(parts[-3])
+    except (ValueError, IndexError):
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    if query.from_user.id != owner_user_id:
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    stmt = sa_select(TotModel).where(TotModel.id == tot_id)
+    tot = context.db_session.exec(stmt).first()
+    if tot is None or tot.status != "open":
+        await query.answer("❌ Тотализатор уже завершён.", show_alert=True)
+        return
+
+    if tot.creator_id != context.tg_user.id:
+        await query.answer("❌ Только организатор может завершить тотализатор.", show_alert=True)
+        return
+
+    current_dt = current_datetime()
+    cur_year = current_dt.year
+
+    result = resolve_totalizator(context.db_session, tot, choice, cur_year)
+
+    # Формируем итоговое сообщение
+    bets = get_totalizator_bets(context.db_session, tot_id)
+
+    if result['cancelled']:
+        outcome_text = TOTALIZATOR_CANCELLED.format(
+            effective=result['effective'],
+            commission=result['commission'],
+        )
+    elif result['refunded']:
+        outcome_text = TOTALIZATOR_REFUNDED.format(
+            effective=result['effective'],
+            commission=result['commission'],
+        )
+    else:
+        option_name = tot.option_yes if choice == "yes" else tot.option_no
+        outcome_text = TOTALIZATOR_RESOLVED_WIN.format(
+            option=option_name,
+            per_winner=result['per_winner'],
+        )
+
+    # Обновляем исходное сообщение тотализатора (если оно известно)
+    tot_text = format_totalizator_message(tot, bets, context.db_session)
+    final_text = tot_text + "\n\n" + "—" * 20 + "\n\n" + outcome_text
+
+    if tot.message_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=tot.message_id,
+                text=final_text,
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+    await query.edit_message_text(outcome_text, parse_mode="HTML")
+    await query.answer()
+    logger.info(f"Totalizator {tot_id} resolved by {context.tg_user.id}, choice={choice}")
+
+
+@ensure_game
+async def handle_tot_bet_callback(update: Update, context: GECallbackContext):
+    """Принять ставку на тотализатор (любой зарегистрированный игрок)."""
+    from bot.handlers.game.text_static import (
+        TOTALIZATOR_ALREADY_BET, TOTALIZATOR_CLOSED, TOTALIZATOR_DEADLINE_PASSED,
+        TOTALIZATOR_NOT_ENOUGH_COINS, TOTALIZATOR_NOT_REGISTERED, TOTALIZATOR_BET_PLACED,
+    )
+    from bot.handlers.game.totalizator_service import (
+        has_user_bet, place_bet, format_totalizator_message, get_totalizator_bets,
+    )
+    from bot.handlers.game.coin_service import get_balance
+    from sqlmodel import select as sa_select
+    from bot.app.models import Totalizator as TotModel
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    query = update.callback_query
+    if query is None:
+        return
+
+    # callback_data = tot_bet_{tot_id}_{choice}
+    try:
+        parts = query.data.split("_")
+        choice = parts[-1]  # "yes" | "no"
+        tot_id = int(parts[-2])
+    except (ValueError, IndexError):
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    stmt = sa_select(TotModel).where(TotModel.id == tot_id)
+    tot = context.db_session.exec(stmt).first()
+    if tot is None or tot.status != "open":
+        await query.answer(TOTALIZATOR_CLOSED, show_alert=True)
+        return
+
+    current_dt = current_datetime()
+    cur_year = current_dt.year
+    cur_day = current_dt.timetuple().tm_yday
+
+    if (tot.deadline_year, tot.deadline_day) < (cur_year, cur_day):
+        await query.answer(TOTALIZATOR_DEADLINE_PASSED, show_alert=True)
+        return
+
+    # Проверка регистрации
+    active_players = get_active_players(context.db_session, context.game.id)
+    player_ids = {p.id for p in active_players}
+    if context.tg_user.id not in player_ids:
+        await query.answer(TOTALIZATOR_NOT_REGISTERED, show_alert=True)
+        return
+
+    if has_user_bet(context.db_session, tot_id, context.tg_user.id):
+        await query.answer(TOTALIZATOR_ALREADY_BET, show_alert=True)
+        return
+
+    balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+    if balance < tot.stake:
+        await query.answer(
+            TOTALIZATOR_NOT_ENOUGH_COINS.format(stake=tot.stake, balance=balance),
+            show_alert=True
+        )
+        return
+
+    place_bet(context.db_session, tot, context.tg_user.id, choice, cur_year)
+
+    bets = get_totalizator_bets(context.db_session, tot_id)
+    updated_text = format_totalizator_message(tot, bets, context.db_session)
+
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton(f"👍 {tot.option_yes} — {tot.stake} 🪙", callback_data=f"tot_bet_{tot_id}_yes"),
+        InlineKeyboardButton(f"👎 {tot.option_no} — {tot.stake} 🪙", callback_data=f"tot_bet_{tot_id}_no"),
+    ]])
+
+    try:
+        await query.edit_message_text(updated_text, parse_mode="HTML", reply_markup=keyboard)
+    except Exception:
+        pass
+
+    option_name = tot.option_yes if choice == "yes" else tot.option_no
+    await query.answer(
+        TOTALIZATOR_BET_PLACED.format(stake=tot.stake, option=option_name),
+        show_alert=True
+    )
+    logger.info(f"Bet placed: user={context.tg_user.id} tot={tot_id} choice={choice}")
+
+
+@ensure_game
+async def handle_totalizator_creation_text(update: Update, context: GECallbackContext):
+    """Обработать текстовое сообщение с параметрами нового тотализатора."""
+    from bot.handlers.game.text_static import (
+        TOTALIZATOR_CREATE_BAD_FORMAT, TOTALIZATOR_CREATE_BAD_STAKE,
+        TOTALIZATOR_CREATE_BAD_DATE, TOTALIZATOR_CREATE_DATE_PAST,
+    )
+    from bot.handlers.game.totalizator_service import create_totalizator, format_totalizator_message, get_totalizator_bets
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from datetime import datetime as _dt
+
+    if update.message is None or update.message.text is None:
+        return
+
+    chat_id = update.effective_chat.id
+    tg_user_id = context.tg_user.tg_id
+    kv_key = f"tot_create_{tg_user_id}"
+
+    kv_item = context.db_session.query(KVItem).filter_by(
+        chat_id=chat_id, key=kv_key
+    ).one_or_none()
+    if kv_item is None:
+        return  # Not in creation mode
+
+    text = update.message.text.strip()
+    parts = text.split(None, 2)
+    if len(parts) < 3:
+        await update.message.reply_text(TOTALIZATOR_CREATE_BAD_FORMAT, parse_mode="HTML")
+        return
+
+    stake_str, date_str, title = parts
+
+    # Парсим ставку
+    try:
+        stake = int(stake_str)
+        if stake < 1:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text(TOTALIZATOR_CREATE_BAD_STAKE, parse_mode="HTML")
+        return
+
+    from bot.handlers.game.cbr_service import calculate_commission_amount
+    commission = calculate_commission_amount(stake)
+    effective = stake - commission
+    if effective < 1:
+        await update.message.reply_text(
+            f"❌ Ставка слишком мала — после комиссии ({commission} 🪙) не остаётся монет для пула. "
+            f"Попробуйте ставку ≥ {commission + 1} 🪙.",
+            parse_mode="HTML"
+        )
+        return
+
+    # Парсим дату ДД.ММ.ГГГГ
+    try:
+        deadline_dt = _dt.strptime(date_str, "%d.%m.%Y")
+    except ValueError:
+        await update.message.reply_text(TOTALIZATOR_CREATE_BAD_DATE, parse_mode="HTML")
+        return
+
+    current_dt = current_datetime()
+    if deadline_dt.date() <= current_dt.date():
+        await update.message.reply_text(TOTALIZATOR_CREATE_DATE_PAST, parse_mode="HTML")
+        return
+
+    deadline_year = deadline_dt.year
+    deadline_day = deadline_dt.timetuple().tm_yday
+
+    # Создаём тотализатор
+    tot = create_totalizator(
+        context.db_session,
+        game_id=context.game.id,
+        creator_id=context.tg_user.id,
+        title=title,
+        stake=stake,
+        deadline_year=deadline_year,
+        deadline_day=deadline_day,
+    )
+
+    # Удаляем KVItem
+    context.db_session.delete(kv_item)
+    context.db_session.commit()
+
+    # Отправляем объявление с кнопками
+    bets = get_totalizator_bets(context.db_session, tot.id)
+    msg_text = format_totalizator_message(tot, bets, context.db_session)
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton(f"👍 {tot.option_yes} — {stake} 🪙", callback_data=f"tot_bet_{tot.id}_yes"),
+        InlineKeyboardButton(f"👎 {tot.option_no} — {stake} 🪙", callback_data=f"tot_bet_{tot.id}_no"),
+    ]])
+
+    sent = await update.effective_chat.send_message(msg_text, parse_mode="HTML", reply_markup=keyboard)
+
+    # Сохраняем message_id
+    tot.message_id = sent.message_id
+    context.db_session.add(tot)
+    context.db_session.commit()
+
+    logger.info(f"Totalizator {tot.id} created by user {context.tg_user.id} in game {context.game.id}")

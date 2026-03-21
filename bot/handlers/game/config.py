@@ -42,6 +42,7 @@ class GameConstants:
             give_coins_enabled: Включена ли раздача койнов (по умолчанию: True)
             achievements_enabled: Включены ли достижения (по умолчанию: True)
             toast_enabled: Включены ли тосты (по умолчанию: True)
+            totalizator_enabled: Включён ли тотализатор (по умолчанию: False)
     """
     # Цены
     immunity_price: int = 10
@@ -76,6 +77,7 @@ class GameConstants:
     give_coins_enabled: bool = True
     achievements_enabled: bool = True
     toast_enabled: bool = True
+    totalizator_enabled: bool = False
 
 
 @dataclass
@@ -287,6 +289,7 @@ def get_config(chat_id: int) -> ChatConfig:
         'achievements_enabled': global_config.defaults.achievements_enabled,
         'toast_price': global_config.defaults.toast_price,
         'toast_enabled': global_config.defaults.toast_enabled,
+        'totalizator_enabled': global_config.defaults.totalizator_enabled,
     }
 
     # Применяем переопределения для конкретного чата

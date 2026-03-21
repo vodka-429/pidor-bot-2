@@ -24,7 +24,10 @@ from bot.handlers.game.commands import pidor_cmd, pidorules_cmd, pidoreg_cmd, \
     handle_shop_transfer_callback, handle_shop_transfer_select_callback, \
     handle_shop_transfer_amount_callback, handle_shop_bank_callback, handle_shop_back_callback, \
     handle_shop_achievements_callback, \
-    handle_shop_toast_callback, handle_shop_toast_select_callback
+    handle_shop_toast_callback, handle_shop_toast_select_callback, \
+    handle_shop_totalizator_callback, handle_tot_create_callback, \
+    handle_tot_resolve_callback, handle_tot_resolve_confirm_callback, \
+    handle_tot_bet_callback, handle_totalizator_creation_text
 from bot.handlers.kvstore.commands import get_cmd, set_cmd, del_cmd, list_cmd
 from bot.handlers.meme.commands import meme_cmd, memeru_cmd, \
     meme_refresh_callback, memeru_refresh_callback, meme_save_callback, \
@@ -120,6 +123,14 @@ def init_dispatcher(application: Application, db_engine):
     application.add_handler(CallbackQueryHandler(handle_shop_back_callback, pattern=r'^shop_back_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_toast_callback, pattern=r'^shop_toast_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_toast_select_callback, pattern=r'^shop_toast_select_\d+_\d+$'))
+
+    # Totalizator shop handler
+    application.add_handler(CallbackQueryHandler(handle_shop_totalizator_callback, pattern=r'^shop_totalizator_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_tot_create_callback, pattern=r'^tot_create_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_tot_resolve_callback, pattern=r'^tot_resolve_\d+_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_tot_resolve_confirm_callback, pattern=r'^tot_resolve_\d+_(yes|no|cancel)_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_tot_bet_callback, pattern=r'^tot_bet_\d+_(yes|no)$'))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ne, handle_totalizator_creation_text))
 
     # Reroll handler
     application.add_handler(CallbackQueryHandler(handle_reroll_callback, pattern=r'^reroll_'))
