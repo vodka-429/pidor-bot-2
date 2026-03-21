@@ -3036,8 +3036,8 @@ async def handle_tot_resolve_callback(update: Update, context: GECallbackContext
     current_dt = current_datetime()
     cur_year = current_dt.year
     cur_day = current_dt.timetuple().tm_yday
-    if (tot.deadline_year, tot.deadline_day) >= (cur_year, cur_day):
-        await query.answer("⏳ Дедлайн ещё не наступил — завершить можно только после него.", show_alert=True)
+    if (tot.deadline_year, tot.deadline_day) > (cur_year, cur_day):
+        await query.answer("⏳ Дедлайн ещё не наступил — завершить можно только в день дедлайна или после.", show_alert=True)
         return
 
     bets = get_totalizator_bets(context.db_session, tot_id)
