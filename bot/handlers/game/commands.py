@@ -3033,6 +3033,13 @@ async def handle_tot_resolve_callback(update: Update, context: GECallbackContext
         await query.answer("❌ Только организатор может завершить тотализатор.", show_alert=True)
         return
 
+    current_dt = current_datetime()
+    cur_year = current_dt.year
+    cur_day = current_dt.timetuple().tm_yday
+    if (tot.deadline_year, tot.deadline_day) >= (cur_year, cur_day):
+        await query.answer("⏳ Дедлайн ещё не наступил — завершить можно только после него.", show_alert=True)
+        return
+
     bets = get_totalizator_bets(context.db_session, tot_id)
     yes_count = sum(1 for b in bets if b.choice == "yes")
     no_count = sum(1 for b in bets if b.choice == "no")
@@ -3119,9 +3126,17 @@ async def handle_tot_resolve_confirm_callback(update: Update, context: GECallbac
         )
     else:
         option_name = tot.option_yes if choice == "yes" else tot.option_no
+        winner_names = []
+        for bet in result['winners']:
+            from sqlmodel import select as sa_select2
+            u = context.db_session.exec(sa_select2(TGUser).where(TGUser.id == bet.user_id)).first()
+            if u:
+                winner_names.append(u.full_username())
+        winners_line = f"\nПобедители: {', '.join(winner_names)}" if winner_names else ""
         outcome_text = TOTALIZATOR_RESOLVED_WIN.format(
             option=option_name,
             per_winner=result['per_winner'],
+            winners_line=winners_line,
         )
 
     # Обновляем исходное сообщение тотализатора (если оно известно)

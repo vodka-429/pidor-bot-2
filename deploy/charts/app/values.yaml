@@ -22,5 +22,5 @@ gameConfig:
     "-4608252738":
       max_missed_days_for_final_voting: 100
       totalizator_enabled: true
-    # "-1001392307997":
-    #   totalizator_enabled: true
+    "-1001392307997":
+      totalizator_enabled: true
