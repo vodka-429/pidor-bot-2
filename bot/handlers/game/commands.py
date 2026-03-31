@@ -454,6 +454,7 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
                 achievement_data = get_achievement(achievement.achievement_code)
                 if achievement_data:
                     achievement_line = ACHIEVEMENT_EARNED_TEMPLATE.format(
+                        username=html_escape(achievement.user.full_username()),
                         name=html_escape(achievement_data['name']),
                         reward=achievement_data['reward']
                     )
