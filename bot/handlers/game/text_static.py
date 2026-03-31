@@ -157,7 +157,7 @@ COINS_LIST_ITEM = """*{number}\\.* {username} — {amount} койн\\(ов\\)\n"
 COIN_EARNED = """🎉 Поздравляем\\! Вы получили *{amount}* пидор\\-койн\\(ов\\) за победу в розыгрыше\\!"""
 
 # Сообщения для достижений
-ACHIEVEMENT_EARNED_TEMPLATE = "🏆 Достижение! {name}: +{reward} 💰"
+ACHIEVEMENT_EARNED_TEMPLATE = "🏆 Достижение! {username} — {name}: +{reward} 💰"
 ACHIEVEMENTS_EARNED_HEADER = "\n\n🎖️ Новые достижения:"
 
 # Сообщения для просмотра достижений
