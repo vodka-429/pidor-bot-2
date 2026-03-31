@@ -100,6 +100,24 @@ def sample_players():
 
 
 @pytest.fixture(autouse=True)
+def mock_achievement_user_relationship(mock_context):
+    """При db_session.add(UserAchievement) автоматически ставит .user из game.players."""
+    from bot.app.models import UserAchievement
+
+    original_side_effect = mock_context.db_session.add.side_effect
+
+    def add_with_user(obj):
+        if isinstance(obj, UserAchievement) and obj.user is None:
+            players = mock_context.game.players if mock_context.game else []
+            player_map = {p.id: p for p in players}
+            obj.user = player_map.get(obj.user_id)
+        if original_side_effect:
+            return original_side_effect(obj)
+
+    mock_context.db_session.add.side_effect = add_with_user
+
+
+@pytest.fixture(autouse=True)
 def mock_membership_checks(request, mocker, mock_context):
     """Автоматически мокирует get_active_players и get_deactivated_player_ids для всех тестов,
     кроме test_membership_service. get_active_players возвращает mock_context.game.players."""
