@@ -473,7 +473,7 @@ def create_prediction(db_session, game_id: int, user_id: int, predicted_user_ids
     return True, "success", commission
 
 
-def get_active_effects(db_session, game_id: int, user_id: int, current_date: date) -> dict:
+def get_active_effects(db_session, game_id: int, user_id: int, current_date: date, immunity_cooldown_days: int = 7) -> dict:
     """
     Получить информацию об активных эффектах пользователя.
 
@@ -523,9 +523,22 @@ def get_active_effects(db_session, game_id: int, user_id: int, current_date: dat
     )
     prediction_exists = db_session.exec(stmt).first() is not None
 
+    # Проверяем кулдаун покупателя (только если защита не активна на завтра)
+    immunity_on_cooldown = False
+    immunity_cooldown_until = None
+    if not immunity_active and effect.immunity_last_used:
+        last_used_date = effect.immunity_last_used.date() if isinstance(effect.immunity_last_used, datetime) else effect.immunity_last_used
+        cooldown_end = last_used_date + timedelta(days=immunity_cooldown_days)
+        if current_date < cooldown_end:
+            immunity_on_cooldown = True
+            from bot.handlers.game.shop_helpers import format_date_readable
+            immunity_cooldown_until = format_date_readable(cooldown_end.year, cooldown_end.timetuple().tm_yday)
+
     return {
         'immunity_active': immunity_active,
         'immunity_date': immunity_date,
+        'immunity_on_cooldown': immunity_on_cooldown,
+        'immunity_cooldown_until': immunity_cooldown_until,
         'double_chance_bought_today': double_chance_bought_today,
         'prediction_exists': prediction_exists
     }
