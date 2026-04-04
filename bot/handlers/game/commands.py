@@ -1351,6 +1351,7 @@ async def pidorshop_cmd(update: Update, context: GECallbackContext):
     """Открыть магазин пидор-койнов с интерактивным меню"""
     from bot.handlers.game.shop_helpers import create_shop_keyboard, format_shop_menu_message
     from bot.handlers.game.shop_service import get_active_effects
+    from bot.handlers.game.config import get_config
 
     logger.info(f"pidorshop_cmd started for chat {update.effective_chat.id}, user {context.tg_user.id}")
 
@@ -1361,10 +1362,11 @@ async def pidorshop_cmd(update: Update, context: GECallbackContext):
     # Получаем информацию об активных эффектах
     current_dt = current_datetime()
     current_date = current_dt.date()
+    config = get_config(update.effective_chat.id)
 
     active_effects = get_active_effects(
         context.db_session, context.game.id, context.tg_user.id,
-        current_date
+        current_date, immunity_cooldown_days=config.constants.immunity_cooldown_days
     )
 
     # Создаём клавиатуру магазина с owner_user_id для проверки прав и информацией об активных эффектах
@@ -2577,6 +2579,7 @@ async def handle_shop_predict_cancel_callback(update: Update, context: GECallbac
     from bot.handlers.game.shop_service import get_active_effects
     from bot.handlers.game.prediction_service import delete_prediction_draft
     from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP
+    from bot.handlers.game.config import get_config
 
     query = update.callback_query
 
@@ -2623,9 +2626,10 @@ async def handle_shop_predict_cancel_callback(update: Update, context: GECallbac
     balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
 
     # Получаем информацию об активных эффектах
+    config = get_config(update.effective_chat.id)
     active_effects = get_active_effects(
         context.db_session, context.game.id, context.tg_user.id,
-        current_date
+        current_date, immunity_cooldown_days=config.constants.immunity_cooldown_days
     )
 
     # Создаём клавиатуру магазина
@@ -2652,6 +2656,7 @@ async def handle_shop_back_callback(update: Update, context: GECallbackContext):
     from bot.handlers.game.shop_helpers import parse_shop_callback_data, create_shop_keyboard, format_shop_menu_message
     from bot.handlers.game.shop_service import get_active_effects
     from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP
+    from bot.handlers.game.config import get_config
 
     query = update.callback_query
 
@@ -2684,9 +2689,10 @@ async def handle_shop_back_callback(update: Update, context: GECallbackContext):
     current_dt = current_datetime()
     current_date = current_dt.date()
 
+    config = get_config(update.effective_chat.id)
     active_effects = get_active_effects(
         context.db_session, context.game.id, context.tg_user.id,
-        current_date
+        current_date, immunity_cooldown_days=config.constants.immunity_cooldown_days
     )
 
     # Создаём клавиатуру магазина

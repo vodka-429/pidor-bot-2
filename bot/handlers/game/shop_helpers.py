@@ -137,9 +137,18 @@ def create_shop_keyboard(owner_user_id: int, chat_id: int, active_effects: dict 
             elif item['callback_data'] == 'shop_predict' and active_effects.get('prediction_exists'):
                 is_active = True
 
+        # Проверяем кулдаун иммунитета для кнопки
+        is_cooldown = (
+            active_effects
+            and item['callback_data'] == 'shop_immunity'
+            and active_effects.get('immunity_on_cooldown')
+        )
+
         # Формируем текст кнопки с индикатором активности
         if is_active:
             button_text = f"✅ {item['name']} - {item['price']} 🪙"
+        elif is_cooldown:
+            button_text = f"⏳ {item['name']} - {item['price']} 🪙"
         elif item['price'] is None:
             # Для действий без цены (передача, банк)
             button_text = item['name']
@@ -390,6 +399,9 @@ def format_shop_menu_message(balance: int, chat_id: int, user_name: str = None, 
             if item['callback_data'] == 'shop_immunity' and active_effects.get('immunity_active'):
                 date = active_effects.get('immunity_date', '')
                 status_info = f"\n✅ _Активна на {escape_markdown2(date)}_"
+            elif item['callback_data'] == 'shop_immunity' and active_effects.get('immunity_on_cooldown'):
+                until = active_effects.get('immunity_cooldown_until', '')
+                status_info = f"\n⏳ _Кулдаун до {escape_markdown2(until)}_"
             elif item['callback_data'] == 'shop_double' and active_effects.get('double_chance_bought_today'):
                 status_info = "\n✅ _Уже куплен на завтра_"
             elif item['callback_data'] == 'shop_predict' and active_effects.get('prediction_exists'):

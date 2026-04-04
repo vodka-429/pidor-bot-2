@@ -141,6 +141,7 @@ def mock_shop_effects(request, mocker):
     mock_effect = MagicMock()
     mock_effect.immunity_until = None
     mock_effect.double_chance_until = None
+    mock_effect.immunity_last_used = None
     # Патчим в обоих местах - в shop_service и в game_effects_service
     mocker.patch('bot.handlers.game.shop_service.get_or_create_player_effects', return_value=mock_effect)
     mocker.patch('bot.handlers.game.game_effects_service.get_or_create_player_effects', return_value=mock_effect)
