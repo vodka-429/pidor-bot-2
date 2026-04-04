@@ -2,7 +2,7 @@
 import logging
 from collections import Counter
 from datetime import date, datetime
-from typing import List, Set, Tuple
+from typing import List, Optional, Set, Tuple
 from unittest.mock import MagicMock
 
 from sqlmodel import select
@@ -101,8 +101,13 @@ def check_winner_immunity(
     game_id: int,
     winner: TGUser,
     current_date: date
-) -> bool:
-    """Проверить, защищён ли победитель."""
+) -> Optional[int]:
+    """Проверить, защищён ли победитель.
+
+    Returns:
+        immunity_buyer_id если защищён (может совпадать с winner.id при самозащите),
+        None если не защищён.
+    """
     winner_effect = get_or_create_player_effects(db_session, game_id, winner.id)
 
     current_year = current_date.year
@@ -112,9 +117,12 @@ def check_winner_immunity(
 
     if is_protected:
         logger.info(f"Winner {winner.id} ({winner.full_username()}) is protected on {current_year}-{current_day}")
+        db_session.add(winner_effect)
+        # Если buyer_id не заполнен (старые записи до фичи), считаем самозащитой
+        return winner_effect.immunity_buyer_id if winner_effect.immunity_buyer_id is not None else winner.id
 
     db_session.add(winner_effect)
-    return is_protected
+    return None
 
 
 def reset_double_chance(

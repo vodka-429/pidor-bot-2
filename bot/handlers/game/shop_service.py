@@ -284,12 +284,16 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
     return items
 
 
-def buy_immunity(db_session, game_id: int, user_id: int, year: int, current_date: date) -> tuple[bool, str, int]:
+def buy_immunity(db_session, game_id: int, buyer_id: int, target_id: int, year: int, current_date: date) -> tuple[bool, str, int]:
     """
-    Купить защиту от пидора. Защита действует на СЛЕДУЮЩИЙ день.
+    Купить защиту от пидора для себя или другого игрока. Защита действует на СЛЕДУЮЩИЙ день.
+
+    Cooldown проверяется на покупателе (buyer_id).
+    Один игрок может быть защищён только один раз на день (первый купивший занимает слот).
 
     Returns:
         Кортеж (success, message, commission_amount)
+        При ошибке "already_protected": message = "already_protected:{existing_buyer_id}"
     """
     # Получаем конфигурацию для чата по game_id
     config = get_config_by_game_id(db_session, game_id)
@@ -300,40 +304,46 @@ def buy_immunity(db_session, game_id: int, user_id: int, year: int, current_date
         logger.debug(f"Immunity disabled for game {game_id}")
         return False, "feature_disabled", 0
 
-    effect = get_or_create_player_effects(db_session, game_id, user_id)
+    buyer_effect = get_or_create_player_effects(db_session, game_id, buyer_id)
 
-    # Вычисляем завтрашний день (день действия защиты)
-    target_year, target_day = calculate_next_day(current_date, year)
-
-    # Проверяем, не активна ли уже защита на завтра
-    if effect.immunity_year == target_year and effect.immunity_day == target_day:
-        logger.debug(f"Immunity already active for {target_year}-{target_day}")
-        return False, f"already_active:{target_year}:{target_day}", 0
-
-    # Проверяем кулдаун (дней с последнего использования)
-    if effect.immunity_last_used:
-        # immunity_last_used это datetime, нужно преобразовать в date
-        last_used_date = effect.immunity_last_used.date() if isinstance(effect.immunity_last_used, datetime) else effect.immunity_last_used
+    # Проверяем кулдаун на покупателе (дней с последнего использования)
+    if buyer_effect.immunity_last_used:
+        last_used_date = buyer_effect.immunity_last_used.date() if isinstance(buyer_effect.immunity_last_used, datetime) else buyer_effect.immunity_last_used
         cooldown_end = last_used_date + timedelta(days=constants.immunity_cooldown_days)
         if current_date < cooldown_end:
             return False, f"cooldown:{cooldown_end.isoformat()}", 0
 
-    # Обрабатываем покупку с комиссией
+    # Вычисляем завтрашний день (день действия защиты)
+    target_year, target_day = calculate_next_day(current_date, year)
+
+    # Проверяем, не занят ли уже слот защиты у цели
+    target_effect = get_or_create_player_effects(db_session, game_id, target_id)
+    if target_effect.immunity_year == target_year and target_effect.immunity_day == target_day:
+        existing_buyer_id = target_effect.immunity_buyer_id if target_effect.immunity_buyer_id is not None else target_id
+        logger.debug(f"Target {target_id} already protected for {target_year}-{target_day} by {existing_buyer_id}")
+        return False, f"already_protected:{existing_buyer_id}", 0
+
+    # Обрабатываем покупку с комиссией (списываем с покупателя)
     success, message, commission = process_purchase(
-        db_session, game_id, user_id, constants.immunity_price, year, "shop_immunity"
+        db_session, game_id, buyer_id, constants.immunity_price, year, "shop_immunity"
     )
 
     if not success:
         return False, message, 0
 
-    # Устанавливаем защиту на завтра
-    effect.immunity_year = target_year
-    effect.immunity_day = target_day
-    effect.immunity_last_used = current_date
+    # Устанавливаем защиту на цель
+    target_effect.immunity_year = target_year
+    target_effect.immunity_day = target_day
+    target_effect.immunity_buyer_id = buyer_id
 
+    # Обновляем кулдаун на покупателе
+    buyer_effect.immunity_last_used = current_date
+
+    db_session.add(target_effect)
+    db_session.add(buyer_effect)
     db_session.commit()
 
-    logger.info(f"User {user_id} bought immunity in game {game_id} for {target_year}-{target_day}, commission: {commission}")
+    logger.info(f"User {buyer_id} bought immunity for {target_id} in game {game_id} for {target_year}-{target_day}, commission: {commission}")
     return True, "success", commission
 
 

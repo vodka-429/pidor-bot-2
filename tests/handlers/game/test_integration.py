@@ -205,12 +205,17 @@ async def test_reroll_with_immunity_protection(mock_update, mock_context, mock_g
     mocker.patch('bot.handlers.game.prediction_service.process_predictions_for_reroll', return_value=[])
 
     # Mock selection result: защита сработала, перевыбран другой игрок
+    # immunity_buyer_id=None — старое поведение без покупателя (обратная совместимость)
     mock_selection_result = MagicMock()
     mock_selection_result.winner = final_winner
     mock_selection_result.all_protected = False
     mock_selection_result.had_immunity = True  # Защита сработала!
     mock_selection_result.protected_player = protected_player
+    mock_selection_result.immunity_buyer_id = None  # Нет покупателя — только базовая награда
     mock_select.return_value = mock_selection_result
+
+    # Mock config with immunity_buyer_reward
+    mock_config.constants.immunity_buyer_reward = 30
 
     # Execute reroll
     old_winner_result, new_winner_result, selection_result = execute_reroll(
@@ -227,6 +232,7 @@ async def test_reroll_with_immunity_protection(mock_update, mock_context, mock_g
     )
 
     # Verify coins were added to protected player (immunity reward) and final winner
+    # No buyer reward since immunity_buyer_id=None
     assert mock_add.call_count == 2
     mock_add.assert_any_call(
         mock_context.db_session, game_id, protected_player.id, COINS_PER_WIN, year, "immunity_save_reroll", auto_commit=False

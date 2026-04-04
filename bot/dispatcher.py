@@ -16,7 +16,7 @@ from bot.handlers.game.commands import pidor_cmd, pidorules_cmd, pidoreg_cmd, \
     pidoryearresults_cmd, pidoregmany_cmd, pidormissed_cmd, pidorfinal_cmd, \
     pidorfinalstatus_cmd, handle_vote_callback, pidorfinalclose_cmd, \
     pidorcoinsme_cmd, pidorcoinsstats_cmd, pidorshop_cmd, \
-    handle_shop_immunity_callback, handle_shop_double_callback, \
+    handle_shop_immunity_callback, handle_shop_immunity_target_callback, handle_shop_double_callback, \
     handle_shop_predict_callback, handle_shop_predict_select_callback, \
     handle_shop_predict_confirm_callback, handle_shop_predict_cancel_callback, \
     handle_shop_double_confirm_callback, handle_reroll_callback, \
@@ -109,6 +109,7 @@ def init_dispatcher(application: Application, db_engine):
     # PidorShop handlers
     application.add_handler(CommandHandler('pidorshop', pidorshop_cmd, filters=ne))
     application.add_handler(CallbackQueryHandler(handle_shop_immunity_callback, pattern=r'^shop_immunity_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_immunity_target_callback, pattern=r'^shop_immunity_target_\d+_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_double_callback, pattern=r'^shop_double_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_double_confirm_callback, pattern=r'^shop_double_confirm_\d+_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_predict_callback, pattern=r'^shop_predict_\d+$'))

@@ -153,7 +153,8 @@ class GamePlayerEffect(SQLModel, table=True):
     # Защита от пидора (year+day)
     immunity_year: Optional[int] = Field(default=None)
     immunity_day: Optional[int] = Field(default=None)
-    immunity_last_used: Optional[datetime] = Field(default=None)  # Для кулдауна
+    immunity_last_used: Optional[datetime] = Field(default=None)  # Для кулдауна (на покупателе)
+    immunity_buyer_id: Optional[int] = Field(default=None)  # Кто купил защиту
 
     # Двойной шанс теперь хранится в отдельной таблице DoubleChancePurchase
     # Поля double_chance_until и double_chance_bought_by УДАЛЕНЫ

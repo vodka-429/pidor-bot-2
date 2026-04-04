@@ -205,7 +205,7 @@ def test_shop_with_custom_prices(custom_config_file, reset_global_config, mock_d
         mocker.patch('bot.handlers.game.transfer_service.get_or_create_chat_bank', return_value=mock_bank)
 
         # Test immunity purchase with custom price (8 coins)
-        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, user_id, year, current_date)
         assert success is True
         mock_spend.assert_called_with(mock_db_session, game_id, user_id, 8, year, "shop_immunity", auto_commit=False)
 
@@ -497,7 +497,7 @@ def test_feature_flags_prevent_operations(feature_flags_config_file, reset_globa
         mocker.patch('bot.handlers.game.transfer_service.get_or_create_chat_bank', return_value=MagicMock(balance=0))
 
         # Attempt to buy immunity should return failure with "feature_disabled" message
-        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, user_id, year, current_date)
         assert success is False
         assert message == "feature_disabled"
         assert commission == 0

@@ -138,11 +138,17 @@ def execute_reroll(
     # Получаем награду за победу из конфигурации
     coins_per_win = config.constants.coins_per_win
 
-    # Если сработала защита при перевыборе - начисляем койны защищённому игроку
+    # Если сработала защита при перевыборе - начисляем койны защищённому и покупателю
     if selection_result.had_immunity and selection_result.protected_player:
         protected_player = selection_result.protected_player
         add_coins(db_session, game_id, protected_player.id, coins_per_win, year, "immunity_save_reroll", auto_commit=False)
         logger.info(f"Protection activated during reroll for player {protected_player.id}, awarded {coins_per_win} coins")
+
+        buyer_id = selection_result.immunity_buyer_id
+        if buyer_id:
+            immunity_buyer_reward = config.constants.immunity_buyer_reward
+            add_coins(db_session, game_id, buyer_id, immunity_buyer_reward, year, "immunity_buyer_reward_reroll", auto_commit=False)
+            logger.info(f"Awarded {immunity_buyer_reward} coins to immunity buyer {buyer_id} during reroll")
 
     # Обновляем GameResult
     game_result.original_winner_id = old_winner_id

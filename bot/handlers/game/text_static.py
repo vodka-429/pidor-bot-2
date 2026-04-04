@@ -253,10 +253,22 @@ def get_immunity_messages(config) -> dict:
 Списано: {c.immunity_price} койнов
 Комиссия в банк: {{commission}} 🪙
 Новый баланс: {{balance}} койн\\(ов\\)""",
+        'purchase_success_for_other': f"""✅ *Защита куплена\\!*
+
+Вы защитили *{{target_username}}* на *{{date}}*\\.
+Списано: {c.immunity_price} койнов
+Комиссия в банк: {{commission}} 🪙
+Новый баланс: {{balance}} койн\\(ов\\)""",
         'error_insufficient_funds': f"❌ Недостаточно средств\\! Нужно {c.immunity_price} койнов\\, у вас: {{balance}}",
         'error_already_active': "❌ Защита уже активна на *{date}*\\!",
+        'error_already_protected': "❌ *{{target_username}}* уже защищён игроком *{{buyer_username}}*\\!",
         'error_cooldown': "❌ Защита на кулдауне\\! Можно использовать снова с *{date}*",
-        'activated_in_game': "🛡️ <b>{username}</b> был(а) защищён(а) от выбора! Перевыбираем...\n\n<code>🎉 {username_plain}: +{amount} пидор-койн(ов) за спасение</code>"
+        'activated_in_game': "🛡️ <b>{protected_username}</b> был(а) защищён(а) от выбора! Перевыбираем...\n\n<code>🎉 {protected_username_plain}: +{protected_amount} пидор-койн(ов) за спасение\n💰 {buyer_username_plain}: +{buyer_amount} пидор-койн(ов) за покупку защиты</code>",
+        'select_player': """🛡️ *Выберите игрока для защиты*
+
+Кого вы хотите защитить от пидора\?
+
+_Защита активируется на следующий день\\._"""
     }
 
 

@@ -24,6 +24,7 @@ class SelectionResult:
     had_double_chance: bool  # Был ли у победителя двойной шанс
     all_protected: bool  # Были ли все игроки защищены
     protected_player: Optional[TGUser] = None  # Игрок, который был защищён (если была защита)
+    immunity_buyer_id: Optional[int] = None  # Кто купил защиту сработавшему игроку
 
 
 def build_selection_context(
@@ -119,22 +120,27 @@ def select_winner_with_effects(
     # Проверяем защиту победителя только если она включена
     had_immunity = False
     protected_player = None
-    if immunity_enabled and check_winner_immunity(db_session, game_id, winner, current_date):
-        logger.info(f"Winner {winner.id} ({winner.full_username()}) is protected, reselecting")
-        had_immunity = True
-        protected_player = winner  # Сохраняем защищённого игрока
+    immunity_buyer_id = None
+    if immunity_enabled:
+        buyer_id = check_winner_immunity(db_session, game_id, winner, current_date)
+        if buyer_id is not None:
+            logger.info(f"Winner {winner.id} ({winner.full_username()}) is protected, reselecting")
+            had_immunity = True
+            protected_player = winner  # Сохраняем защищённого игрока
+            immunity_buyer_id = buyer_id
 
-        # Перевыбираем из незащищенных игроков
-        winner = random.choice(unprotected_players)
-        logger.info(f"Reselected winner after immunity: {winner.full_username()}")
+            # Перевыбираем из незащищенных игроков
+            winner = random.choice(unprotected_players)
+            logger.info(f"Reselected winner after immunity: {winner.full_username()}")
 
-        # Обновляем информацию о двойном шансе для нового победителя
-        winner_had_double_chance = winner.id in players_with_double_chance
+            # Обновляем информацию о двойном шансе для нового победителя
+            winner_had_double_chance = winner.id in players_with_double_chance
 
     return SelectionResult(
         winner=winner,
         had_immunity=had_immunity,
         had_double_chance=winner_had_double_chance,
         all_protected=False,
-        protected_player=protected_player
+        protected_player=protected_player,
+        immunity_buyer_id=immunity_buyer_id
     )
