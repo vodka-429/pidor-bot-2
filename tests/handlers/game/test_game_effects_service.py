@@ -243,7 +243,7 @@ def test_build_selection_pool_multiple_double_chance(mock_db_session):
 
 @pytest.mark.unit
 def test_check_winner_immunity_active(mock_db_session):
-    """Test check_winner_immunity returns True when winner is protected."""
+    """Test check_winner_immunity returns buyer_id when winner is protected."""
     # Setup
     game_id = 1
     current_date = date(2024, 6, 15)  # Day 167
@@ -251,12 +251,13 @@ def test_check_winner_immunity_active(mock_db_session):
     current_day = 167
     winner = TGUser(id=1, tg_id=101, first_name="Winner", username="winner")
 
-    # Mock effect with active immunity for today
+    # Mock effect with active immunity for today (self-protection: buyer_id = None → fallback to winner.id)
     effect = GamePlayerEffect(
         game_id=game_id,
         user_id=winner.id,
         immunity_year=current_year,
-        immunity_day=current_day
+        immunity_day=current_day,
+        immunity_buyer_id=None
     )
 
     # Mock get_or_create_player_effects
@@ -272,8 +273,9 @@ def test_check_winner_immunity_active(mock_db_session):
         # Execute
         result = check_winner_immunity(mock_db_session, game_id, winner, current_date)
 
-        # Verify
-        assert result is True
+        # Verify: returns winner.id (self-protection fallback) when buyer_id is None
+        assert result is not None
+        assert result == winner.id
     finally:
         ges.get_or_create_player_effects = original_get_effects
 
@@ -301,8 +303,8 @@ def test_check_winner_immunity_expired(mock_db_session):
     # Execute
     result = check_winner_immunity(mock_db_session, game_id, winner, current_date)
 
-    # Verify
-    assert result is False
+    # Verify: returns None when not protected
+    assert result is None
 
 
 @pytest.mark.unit

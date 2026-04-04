@@ -17,7 +17,7 @@ class GameConstants:
             reroll_price: Цена перевыбора пидора дня (по умолчанию: 15)
 
         Награды (в пидоркоинах):
-            coins_per_win: Награда за победу в игре (по умолчанию: 4)
+            coins_per_win: Награда за победу в игре (по умолчанию: 5)
             coins_per_command: Награда за использование команды (по умолчанию: 1)
             self_pidor_multiplier: Множитель награды при самовыборе (по умолчанию: 2)
             prediction_reward: Награда за правильное предсказание (по умолчанию: 30)
@@ -52,12 +52,13 @@ class GameConstants:
     toast_price: int = 5
 
     # Награды
-    coins_per_win: int = 4
+    coins_per_win: int = 5
     coins_per_command: int = 1
     self_pidor_multiplier: int = 2
     prediction_reward: int = 30
     give_coins_amount: int = 1
     give_coins_winner_amount: int = 2
+    immunity_buyer_reward: int = 30
 
     # Лимиты
     max_missed_days_for_final_voting: int = 10
@@ -275,6 +276,7 @@ def get_config(chat_id: int) -> ChatConfig:
         'prediction_reward': global_config.defaults.prediction_reward,
         'give_coins_amount': global_config.defaults.give_coins_amount,
         'give_coins_winner_amount': global_config.defaults.give_coins_winner_amount,
+        'immunity_buyer_reward': global_config.defaults.immunity_buyer_reward,
         'max_missed_days_for_final_voting': global_config.defaults.max_missed_days_for_final_voting,
         'immunity_cooldown_days': global_config.defaults.immunity_cooldown_days,
         'transfer_min_amount': global_config.defaults.transfer_min_amount,

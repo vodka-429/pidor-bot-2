@@ -268,8 +268,8 @@ async def test_immunity_message_shown(mock_update, mock_context, mock_game, samp
     immunity_call_found = False
     for call in calls:
         call_str = str(call)
-        # Check for "+4" coins award and HTML parse mode (no balance display)
-        if "+4" in call_str and "пидор-койн" in call_str:
+        # Check for "+5" coins award and HTML parse mode (no balance display)
+        if "+5" in call_str and "пидор-койн" in call_str:
             immunity_call_found = True
             break
 
@@ -1704,7 +1704,7 @@ def test_immunity_purchase_adds_commission_to_bank(mock_db_session, mock_game, s
 
     # Buy immunity
     success, message, commission = buy_immunity(
-        mock_db_session, game_id, user_id, year, current_date
+        mock_db_session, game_id, user_id, user_id, year, current_date
     )
 
     # Verify purchase was successful

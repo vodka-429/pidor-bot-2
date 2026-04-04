@@ -73,7 +73,7 @@ def test_game_constants_defaults():
     assert constants.reroll_price == 15
 
     # Награды
-    assert constants.coins_per_win == 4
+    assert constants.coins_per_win == 5
     assert constants.coins_per_command == 1
     assert constants.self_pidor_multiplier == 2
     assert constants.prediction_reward == 30

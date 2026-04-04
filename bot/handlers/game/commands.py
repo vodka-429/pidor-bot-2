@@ -325,18 +325,34 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         # Если сработала защита - показываем сообщение и начисляем койны
         if selection_result.had_immunity and selection_result.protected_player:
             protected_player = selection_result.protected_player
+            buyer_id = selection_result.immunity_buyer_id
 
-            # Начисляем койны защищенному игроку за то, что его выбрали
+            # Начисляем койны защищённому игроку
             add_coins(context.db_session, context.game.id, protected_player.id, config.constants.coins_per_win, cur_year, "immunity_save", auto_commit=False)
             logger.debug(f"Awarded {config.constants.coins_per_win} coins to protected player {protected_player.id}")
 
-            # Показываем сообщение о срабатывании защиты с информацией о койнах
+            # Начисляем бонус покупателю (может совпадать с защищённым при самозащите)
+            if buyer_id:
+                add_coins(context.db_session, context.game.id, buyer_id, config.constants.immunity_buyer_reward, cur_year, "immunity_buyer_reward", auto_commit=False)
+                logger.debug(f"Awarded {config.constants.immunity_buyer_reward} coins to immunity buyer {buyer_id}")
+
+            # Показываем сообщение о срабатывании защиты
             from html import escape as html_escape
+            from sqlmodel import select as sa_select
+            buyer_username = protected_player.full_username()
+            if buyer_id and buyer_id != protected_player.id:
+                stmt = sa_select(TGUser).where(TGUser.id == buyer_id)
+                buyer_user = context.db_session.exec(stmt).first()
+                if buyer_user:
+                    buyer_username = buyer_user.full_username()
+
             await update.effective_chat.send_message(
                 immunity_msgs['activated_in_game'].format(
-                    username=html_escape(protected_player.full_username()),
-                    username_plain=protected_player.full_username(),
-                    amount=config.constants.coins_per_win
+                    protected_username=html_escape(protected_player.full_username()),
+                    protected_username_plain=protected_player.full_username(),
+                    protected_amount=config.constants.coins_per_win,
+                    buyer_username_plain=buyer_username,
+                    buyer_amount=config.constants.immunity_buyer_reward
                 ),
                 parse_mode="HTML"
             )
@@ -1372,9 +1388,8 @@ async def pidorshop_cmd(update: Update, context: GECallbackContext):
 
 @ensure_game
 async def handle_shop_immunity_callback(update: Update, context: GECallbackContext):
-    """Обработчик покупки защиты от пидора"""
-    from bot.handlers.game.shop_helpers import parse_shop_callback_data
-    from bot.handlers.game.shop_service import buy_immunity
+    """Обработчик нажатия кнопки защиты — показывает выбор игрока"""
+    from bot.handlers.game.shop_helpers import parse_shop_callback_data, create_double_chance_keyboard
     from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP, get_immunity_messages
     from bot.handlers.game.config import get_config
 
@@ -1385,120 +1400,154 @@ async def handle_shop_immunity_callback(update: Update, context: GECallbackConte
         return
 
     logger.info(f"Shop immunity callback from user {query.from_user.id} in chat {update.effective_chat.id}")
-    logger.info(f"Callback data: {query.data}")
 
     try:
-        # Парсим callback_data для получения item_type и owner_user_id
         item_type, owner_user_id = parse_shop_callback_data(query.data)
-        logger.info(f"Parsed callback: item_type={item_type}, owner_user_id={owner_user_id}")
-        logger.info(f"Callback data: {query.data}")
-        logger.info(f"Query from user ID: {query.from_user.id}")
-        logger.info(f"Owner user ID: {owner_user_id}")
-        logger.info(f"Context TGUser ID: {context.tg_user.id}")
-        logger.info(f"Context TGUser TG_ID: {context.tg_user.tg_id}")
-        logger.info(f"Match check: {query.from_user.id} == {owner_user_id} -> {query.from_user.id == owner_user_id}")
-        logger.info(f"TGUser ID vs TG_ID: {context.tg_user.id} vs {context.tg_user.tg_id}")
     except ValueError as e:
         logger.error(f"Failed to parse callback_data: {e}")
         await query.answer("❌ Ошибка обработки запроса")
         return
 
-    # ВАЖНО: Проверяем, что нажавший кнопку - это владелец магазина
     if query.from_user.id != owner_user_id:
         logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
-        logger.warning(f"Callback data was: {query.data}")
         await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
         return
 
-    # Получаем конфигурацию и сообщения
     config = get_config(update.effective_chat.id)
     immunity_msgs = get_immunity_messages(config)
 
-    # Получаем текущую дату
+    players = get_active_players(context.db_session, context.game.id)
+
+    if len(players) < 1:
+        await query.answer("❌ Нет игроков для защиты", show_alert=True)
+        return
+
+    # Переиспользуем клавиатуру двойного шанса с другим callback_prefix
+    keyboard = create_double_chance_keyboard(
+        players, owner_user_id=context.tg_user.tg_id, callback_prefix="shop_immunity_target"
+    )
+
+    try:
+        await query.edit_message_text(
+            text=immunity_msgs['select_player'],
+            parse_mode="MarkdownV2",
+            reply_markup=keyboard
+        )
+        await query.answer()
+        logger.info(f"Showed immunity player selection for user {context.tg_user.id}")
+    except Exception as e:
+        logger.error(f"Failed to show immunity selection: {e}")
+        await query.answer("❌ Ошибка при отображении списка игроков")
+
+
+@ensure_game
+async def handle_shop_immunity_target_callback(update: Update, context: GECallbackContext):
+    """Обработчик выбора цели для защиты и покупки"""
+    from bot.handlers.game.shop_service import buy_immunity
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP, get_immunity_messages
+    from bot.handlers.game.shop_helpers import format_date_readable
+    from bot.handlers.game.shop_service import get_or_create_player_effects
+    from sqlmodel import select as sa_select
+
+    query = update.callback_query
+
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    logger.info(f"Shop immunity target callback from user {query.from_user.id}, data: {query.data}")
+
+    try:
+        # Формат: shop_immunity_target_{target_user_id}_{owner_user_id}
+        parts = query.data.split('_')
+        owner_user_id = int(parts[-1])
+        target_user_id = int(parts[-2])
+    except (ValueError, IndexError) as e:
+        logger.error(f"Failed to parse callback_data: {e}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    if query.from_user.id != owner_user_id:
+        logger.warning(f"Shop ownership mismatch: User {query.from_user.id} tried to use shop of user {owner_user_id}")
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    from bot.handlers.game.config import get_config
+    config = get_config(update.effective_chat.id)
+    immunity_msgs = get_immunity_messages(config)
     current_dt = current_datetime()
     current_date = current_dt.date()
     cur_year = current_dt.year
 
-    # Вызываем функцию покупки защиты
     success, message, commission = buy_immunity(
         context.db_session,
         context.game.id,
         context.tg_user.id,
+        target_user_id,
         cur_year,
         current_date
     )
 
     if success:
-        # Получаем новый баланс
         balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+        target_effect = get_or_create_player_effects(context.db_session, context.game.id, target_user_id)
+        date_str = escape_markdown2(format_date_readable(target_effect.immunity_year, target_effect.immunity_day))
 
-        # Получаем информацию о дате действия защиты
-        from bot.handlers.game.shop_service import get_or_create_player_effects
-        from bot.handlers.game.shop_helpers import format_date_readable
-        effect = get_or_create_player_effects(context.db_session, context.game.id, context.tg_user.id)
-        date_str = escape_markdown2(format_date_readable(effect.immunity_year, effect.immunity_day))
+        if target_user_id == context.tg_user.id:
+            response_text = immunity_msgs['purchase_success'].format(
+                date=date_str,
+                balance=format_number(balance),
+                commission=format_number(commission)
+            )
+            await query.answer("✅ Защита куплена!", show_alert=True)
+        else:
+            stmt = sa_select(TGUser).where(TGUser.id == target_user_id)
+            target_user = context.db_session.exec(stmt).first()
+            target_username = escape_markdown2(target_user.full_username()) if target_user else str(target_user_id)
+            response_text = immunity_msgs['purchase_success_for_other'].format(
+                target_username=target_username,
+                date=date_str,
+                balance=format_number(balance),
+                commission=format_number(commission)
+            )
+            await query.answer("✅ Защита куплена!", show_alert=True)
 
-        response_text = immunity_msgs['purchase_success'].format(
-            date=date_str,
-            balance=format_number(balance),
-            commission=format_number(commission)
-        )
-        await query.answer("✅ Защита куплена!", show_alert=True)
-        logger.info(f"User {context.tg_user.id} bought immunity in game {context.game.id}")
+        logger.info(f"User {context.tg_user.id} bought immunity for {target_user_id} in game {context.game.id}")
+        try:
+            await query.edit_message_text(text=response_text, parse_mode="MarkdownV2")
+        except Exception as e:
+            logger.error(f"Failed to update message: {e}")
     else:
-        # Обрабатываем ошибки
         if message == "insufficient_funds":
             balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
             response_text = immunity_msgs['error_insufficient_funds'].format(balance=format_number(balance))
-        elif message.startswith("already_active:"):
-            # Формат: "already_active:year:day"
-            parts = message.split(":")
-            year = int(parts[1])
-            day = int(parts[2])
-            from bot.handlers.game.shop_helpers import format_date_readable
-            date_str = escape_markdown2(format_date_readable(year, day))
-            response_text = immunity_msgs['error_already_active'].format(date=date_str)
+        elif message.startswith("already_protected:"):
+            existing_buyer_id = int(message.split(":")[1])
+            stmt = sa_select(TGUser).where(TGUser.id == existing_buyer_id)
+            buyer_user = context.db_session.exec(stmt).first()
+            buyer_username = escape_markdown2(buyer_user.full_username()) if buyer_user else str(existing_buyer_id)
+            stmt2 = sa_select(TGUser).where(TGUser.id == target_user_id)
+            target_user = context.db_session.exec(stmt2).first()
+            target_username = escape_markdown2(target_user.full_username()) if target_user else str(target_user_id)
+            response_text = immunity_msgs['error_already_protected'].format(
+                target_username=target_username,
+                buyer_username=buyer_username
+            )
         elif message.startswith("cooldown:"):
-            # Формат: "cooldown:YYYY-MM-DD"
             cooldown_date = message.split(":")[1]
-            from datetime import datetime
-            from bot.handlers.game.shop_helpers import format_date_readable
-            date_obj = datetime.fromisoformat(cooldown_date)
+            from datetime import datetime as dt_class
+            date_obj = dt_class.fromisoformat(cooldown_date)
             date_str = escape_markdown2(format_date_readable(date_obj.year, date_obj.timetuple().tm_yday))
             response_text = immunity_msgs['error_cooldown'].format(date=date_str)
         else:
             response_text = "❌ Произошла ошибка при покупке"
 
         await query.answer("❌ Не удалось купить", show_alert=True)
-        logger.warning(f"User {context.tg_user.id} failed to buy immunity: {message}")
-
-    # Обновляем сообщение магазина с новым балансом и активными эффектами
-    try:
-        from bot.handlers.game.shop_helpers import create_shop_keyboard, format_shop_menu_message
-        from bot.handlers.game.shop_service import get_active_effects
-
-        balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
-
-        # Получаем обновлённую информацию об активных эффектах
-        current_dt = current_datetime()
-        current_date = current_dt.date()
-
-        active_effects = get_active_effects(
-            context.db_session, context.game.id, context.tg_user.id,
-            current_date
-        )
-
-        keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id, chat_id=update.effective_chat.id, active_effects=active_effects)
-        user_name = context.tg_user.full_username()
-        message_text = format_shop_menu_message(balance, update.effective_chat.id, user_name, active_effects)
-
-        await query.edit_message_text(
-            text=message_text,
-            parse_mode="MarkdownV2",
-            reply_markup=keyboard
-        )
-    except Exception as e:
-        logger.error(f"Failed to update shop message: {e}")
+        logger.warning(f"User {context.tg_user.id} failed to buy immunity for {target_user_id}: {message}")
+        try:
+            await query.edit_message_text(text=response_text, parse_mode="MarkdownV2")
+        except Exception as e:
+            logger.error(f"Failed to update message with error: {e}")
 
 
 @ensure_game
@@ -2108,7 +2157,16 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
     # Информация о защите (если сработала при перевыборе)
     if selection_result.had_immunity and selection_result.protected_player:
         protected_player = selection_result.protected_player
-        protection_info = f"\n\n🛡️ <b>Защита сработала!</b> {html_escape(protected_player.full_username())} был(а) защищён(а) и получил(а) +{config.constants.coins_per_win} 💰"
+        buyer_id = selection_result.immunity_buyer_id
+        buyer_info = ""
+        if buyer_id and buyer_id != protected_player.id:
+            stmt = select(TGUser).where(TGUser.id == buyer_id)
+            buyer_user = context.db_session.exec(stmt).first()
+            if buyer_user:
+                buyer_info = f", {html_escape(buyer_user.full_username())} получил(а) +{config.constants.immunity_buyer_reward} 💰 за покупку защиты"
+        elif buyer_id == protected_player.id:
+            buyer_info = f" и получил(а) ещё +{config.constants.immunity_buyer_reward} 💰 как покупатель"
+        protection_info = f"\n\n🛡️ <b>Защита сработала!</b> {html_escape(protected_player.full_username())} был(а) защищён(а) и получил(а) +{config.constants.coins_per_win} 💰{buyer_info}"
 
     # Информация о двойном шансе (если сработал при перевыборе)
     if selection_result.had_double_chance:

@@ -268,7 +268,7 @@ def test_buy_immunity_success(mock_db_session):
     mock_config = ChatConfig(chat_id=123, constants=GameConstants())
     with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
         # Execute
-        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, user_id, year, current_date)
 
         # Verify
         assert success is True
@@ -324,7 +324,7 @@ def test_buy_immunity_insufficient_funds(mock_db_session):
     mock_config = ChatConfig(chat_id=123, constants=GameConstants())
     with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
         # Execute
-        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, user_id, year, current_date)
 
         # Verify
         assert success is False
@@ -371,12 +371,12 @@ def test_buy_immunity_already_active(mock_db_session):
     mock_config = ChatConfig(chat_id=123, constants=GameConstants())
     with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
         # Execute
-        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, user_id, year, current_date)
 
         # Verify
         assert success is False
-        assert message.startswith("already_active:")
-        assert "2024:168" in message
+        # Теперь возвращается already_protected, т.к. target уже защищён (buyer_id = user_id для самозащиты)
+        assert message.startswith("already_protected:")
         assert commission == 0  # При ошибке комиссия 0
 
 
@@ -420,7 +420,7 @@ def test_buy_immunity_cooldown(mock_db_session):
     mock_config = ChatConfig(chat_id=123, constants=GameConstants())
     with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
         # Execute
-        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, user_id, year, current_date)
 
         # Verify
         assert success is False
@@ -988,7 +988,7 @@ def test_buy_immunity_year_day_logic(mock_db_session):
     mock_config = ChatConfig(chat_id=123, constants=GameConstants())
     with patch('bot.handlers.game.shop_service.get_config_by_game_id', return_value=mock_config):
         # Execute
-        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, year, current_date)
+        success, message, commission = buy_immunity(mock_db_session, game_id, user_id, user_id, year, current_date)
 
         # Verify
         assert success is True

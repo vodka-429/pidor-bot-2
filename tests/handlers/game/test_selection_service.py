@@ -258,8 +258,8 @@ def test_select_winner_with_effects_immunity_and_double_chance(mock_db_session, 
             # Second call: select from unprotected_players (returns player[1])
             mock_choice.side_effect = [players[0], players[1]]
 
-            # Mock check_winner_immunity to return True for player[0]
-            mock_check.return_value = True
+            # Mock check_winner_immunity to return buyer_id (truthy) for player[0]
+            mock_check.return_value = players[0].id
 
             result = select_winner_with_effects(mock_db_session, game_id, players, current_date)
 

@@ -785,7 +785,7 @@ async def test_pidor_cmd_awards_coins_to_winner_and_executor(mock_update, mock_c
     assert winner_call[0][0] == mock_context.db_session  # db_session
     assert winner_call[0][1] == mock_game.id  # game_id
     assert winner_call[0][2] == sample_players[0].id  # winner_id
-    assert winner_call[0][3] == 4  # COINS_PER_WIN
+    assert winner_call[0][3] == 5  # COINS_PER_WIN
     assert winner_call[0][4] == 2024  # year
     assert winner_call[0][5] == "pidor_win"  # reason
     assert winner_call[1]['auto_commit'] == False  # auto_commit=False
@@ -913,12 +913,12 @@ async def test_pidor_cmd_self_pidor_case(mock_update, mock_context, mock_game, s
     # Verify: add_coins was called only once (special self-pidor coins)
     assert mock_add_coins.call_count == 1
 
-    # Verify: Special self-pidor coins were awarded (COINS_PER_WIN * SELF_PIDOR_MULTIPLIER = 4 * 2 = 8)
+    # Verify: Special self-pidor coins were awarded (COINS_PER_WIN * SELF_PIDOR_MULTIPLIER = 5 * 2 = 10)
     self_pidor_call = mock_add_coins.call_args_list[0]
     assert self_pidor_call[0][0] == mock_context.db_session  # db_session
     assert self_pidor_call[0][1] == mock_game.id  # game_id
     assert self_pidor_call[0][2] == sample_players[0].id  # winner/executor id
-    assert self_pidor_call[0][3] == 8  # COINS_PER_WIN * SELF_PIDOR_MULTIPLIER
+    assert self_pidor_call[0][3] == 10  # COINS_PER_WIN * SELF_PIDOR_MULTIPLIER
     assert self_pidor_call[0][4] == 2024  # year
     assert self_pidor_call[0][5] == "self_pidor_win"  # reason
     assert self_pidor_call[1]['auto_commit'] == False  # auto_commit=False

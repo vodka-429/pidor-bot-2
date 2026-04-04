@@ -8,6 +8,7 @@ from telegram.ext import CallbackContext
 from bot.handlers.game.commands import (
     pidorshop_cmd,
     handle_shop_immunity_callback,
+    handle_shop_immunity_target_callback,
     handle_shop_double_callback,
     handle_shop_double_confirm_callback,
     handle_shop_predict_callback,
@@ -104,120 +105,95 @@ async def test_pidorshop_cmd_shows_balance(mock_update, mock_context, mock_db_se
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_shop_immunity_callback_success(mock_update, mock_callback_query, mock_context, mock_db_session, sample_players):
-    """Test successful immunity purchase."""
-    # Setup callback data
+async def test_handle_shop_immunity_callback_success(mock_update, mock_callback_query, mock_db_session, sample_players):
+    """Test that immunity callback shows player selection keyboard."""
     mock_callback_query.data = "shop_immunity_100"
     mock_callback_query.from_user.id = 100
 
-    # Mock get_or_create_player_effects
-    effect = GamePlayerEffect(
-        id=1,
-        game_id=1,
-        user_id=100,
-        immunity_until=None,
-        immunity_last_used=None,
-        double_chance_until=None
-    )
+    context = MagicMock(spec=CallbackContext)
+    context.db_session = mock_db_session
+    context.tg_user = sample_players[0]
 
-    with patch('bot.handlers.game.shop_service.get_or_create_player_effects', return_value=effect):
-        with patch('bot.handlers.game.coin_service.get_balance', return_value=100):
-            with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
-                mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
+    class SimpleGame:
+        def __init__(self):
+            self.id = 1
+            self.players = sample_players
 
-                await handle_shop_immunity_callback(mock_update, mock_context)
+    game = SimpleGame()
+    mock_db_session.query.return_value.filter_by.return_value.one_or_none.return_value = game
 
-    # Verify success response
-    mock_callback_query.answer.assert_called_once()
-    assert "✅" in mock_callback_query.answer.call_args[0][0]
+    await handle_shop_immunity_callback(mock_update, context)
+
+    # Should show player selection, not alert
+    mock_callback_query.edit_message_text.assert_called_once()
+    call_args = mock_callback_query.edit_message_text.call_args
+    assert "reply_markup" in call_args[1]
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_shop_immunity_callback_insufficient_funds(mock_update, mock_callback_query, mock_context, mock_db_session):
-    """Test immunity purchase with insufficient funds."""
-    # Setup callback data
-    mock_callback_query.data = "shop_immunity_100"
+async def test_handle_shop_immunity_target_callback_insufficient_funds(mock_update, mock_callback_query, mock_context, mock_db_session):
+    """Test immunity target callback with insufficient funds."""
+    mock_callback_query.data = "shop_immunity_target_1_100"
     mock_callback_query.from_user.id = 100
 
-    # Mock get_or_create_player_effects
-    effect = GamePlayerEffect(
-        id=1,
-        game_id=1,
-        user_id=100,
-        immunity_until=None,
-        immunity_last_used=None,
-        double_chance_until=None
-    )
+    with patch('bot.handlers.game.shop_service.buy_immunity', return_value=(False, "insufficient_funds", 0)):
+        with patch('bot.handlers.game.config.get_config'):
+            with patch('bot.handlers.game.text_static.get_immunity_messages', return_value={
+                'error_insufficient_funds': '❌ Недостаточно монет. Баланс: {balance}'
+            }):
+                with patch('bot.handlers.game.commands.get_balance', return_value=5):
+                    with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
+                        mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
+                        await handle_shop_immunity_target_callback(mock_update, mock_context)
 
-    with patch('bot.handlers.game.shop_service.get_or_create_player_effects', return_value=effect):
-        with patch('bot.handlers.game.coin_service.get_balance', return_value=5):
-            with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
-                mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
-
-                await handle_shop_immunity_callback(mock_update, mock_context)
-
-    # Verify error response
     mock_callback_query.answer.assert_called_once()
     assert "❌" in mock_callback_query.answer.call_args[0][0]
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_shop_immunity_callback_already_active(mock_update, mock_callback_query, mock_context, mock_db_session):
-    """Test immunity purchase when already active."""
-    # Setup callback data
-    mock_callback_query.data = "shop_immunity_100"
+async def test_handle_shop_immunity_target_callback_already_protected(mock_update, mock_callback_query, mock_context, mock_db_session):
+    """Test immunity target callback when target is already protected by another buyer."""
+    mock_callback_query.data = "shop_immunity_target_2_100"
     mock_callback_query.from_user.id = 100
 
-    # Mock get_or_create_player_effects with active immunity
-    effect = GamePlayerEffect(
-        id=1,
-        game_id=1,
-        user_id=100,
-        immunity_until=date(2024, 1, 20),  # Active until future date
-        immunity_last_used=date(2024, 1, 14),
-        double_chance_until=None
-    )
+    buyer_user = MagicMock()
+    buyer_user.full_username.return_value = "@buyer"
+    target_user = MagicMock()
+    target_user.full_username.return_value = "@target"
 
-    with patch('bot.handlers.game.shop_service.get_or_create_player_effects', return_value=effect):
-        with patch('bot.handlers.game.coin_service.get_balance', return_value=100):
-            with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
-                mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
+    mock_db_session.exec.return_value.first.side_effect = [buyer_user, target_user]
 
-                await handle_shop_immunity_callback(mock_update, mock_context)
+    with patch('bot.handlers.game.shop_service.buy_immunity', return_value=(False, "already_protected:99", 0)):
+        with patch('bot.handlers.game.config.get_config'):
+            with patch('bot.handlers.game.text_static.get_immunity_messages', return_value={
+                'error_already_protected': '❌ {target_username} уже защищён игроком {buyer_username}!'
+            }):
+                with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
+                    mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
+                    await handle_shop_immunity_target_callback(mock_update, mock_context)
 
-    # Verify error response
     mock_callback_query.answer.assert_called_once()
     assert "❌" in mock_callback_query.answer.call_args[0][0]
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_shop_immunity_callback_cooldown(mock_update, mock_callback_query, mock_context, mock_db_session):
-    """Test immunity purchase when on cooldown."""
-    # Setup callback data
-    mock_callback_query.data = "shop_immunity_100"
+async def test_handle_shop_immunity_target_callback_cooldown(mock_update, mock_callback_query, mock_context, mock_db_session):
+    """Test immunity target callback when buyer is on cooldown."""
+    mock_callback_query.data = "shop_immunity_target_1_100"
     mock_callback_query.from_user.id = 100
 
-    # Mock get_or_create_player_effects with recent usage (within 7 days)
-    effect = GamePlayerEffect(
-        id=1,
-        game_id=1,
-        user_id=100,
-        immunity_until=None,  # Not active
-        immunity_last_used=date(2024, 1, 10),  # Used 5 days ago
-        double_chance_until=None
-    )
+    with patch('bot.handlers.game.shop_service.buy_immunity', return_value=(False, "cooldown:2024-01-10", 0)):
+        with patch('bot.handlers.game.config.get_config'):
+            with patch('bot.handlers.game.text_static.get_immunity_messages', return_value={
+                'error_cooldown': '❌ Кулдаун до {date}'
+            }):
+                with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
+                    mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
+                    await handle_shop_immunity_target_callback(mock_update, mock_context)
 
-    with patch('bot.handlers.game.shop_service.get_or_create_player_effects', return_value=effect):
-        with patch('bot.handlers.game.coin_service.get_balance', return_value=100):
-            with patch('bot.handlers.game.commands.current_datetime') as mock_dt:
-                mock_dt.return_value = datetime(2024, 1, 15, 12, 0, 0)
-
-                await handle_shop_immunity_callback(mock_update, mock_context)
-
-    # Verify error response
     mock_callback_query.answer.assert_called_once()
     assert "❌" in mock_callback_query.answer.call_args[0][0]
 

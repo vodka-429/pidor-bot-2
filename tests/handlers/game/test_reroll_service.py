@@ -499,12 +499,16 @@ def test_execute_reroll_with_immunity_protection(mock_db_session, sample_players
         mock_get_config.return_value = mock_config
 
         # Мокаем результат выбора: защита сработала, перевыбран другой игрок
+        # immunity_buyer_id=None — старое поведение (обратная совместимость)
         mock_selection_result = MagicMock()
         mock_selection_result.winner = final_winner
         mock_selection_result.all_protected = False
         mock_selection_result.had_immunity = True  # Защита сработала!
         mock_selection_result.protected_player = protected_player
+        mock_selection_result.immunity_buyer_id = None
         mock_select.return_value = mock_selection_result
+
+        mock_config.constants.immunity_buyer_reward = 30
 
         old_winner_result, new_winner_result, selection_result = execute_reroll(
             mock_db_session, game_id, year, day, initiator_id, sample_players, current_date
