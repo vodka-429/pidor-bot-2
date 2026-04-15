@@ -126,3 +126,60 @@ def get_leaderboard_by_year(db_session, game_id: int, year: int, limit: int = 50
         .limit(limit)
 
     return db_session.exec(stmt).all()
+
+
+def compute_redistribution_swap(
+    db_session,
+    game_id: int,
+    cur_year: int,
+    winner: TGUser,
+    active_players: List[TGUser],
+) -> Optional[Tuple[TGUser, int, int, int]]:
+    """
+    Рассчитать своп монет для self-pidor из bottom-N%.
+
+    Вызывать ПОСЛЕ add_coins(self_pidor_coins, auto_commit=False) —
+    autoflush включит их в leaderboard-запрос автоматически.
+
+    Returns:
+        (rich_user, winner_final_coins, rich_coins, delta) или None.
+        После свопа: winner → rich_coins, rich_user → winner_final_coins.
+    """
+    n = len(active_players)
+    if n <= 10:
+        return None
+    swap_size = max(1, round(n * 0.1))
+
+    active_ids = {p.id for p in active_players}
+    raw = get_leaderboard_by_year(db_session, game_id, cur_year, limit=n + 20)
+
+    board = [(u, c) for u, c in raw if u.id in active_ids]
+
+    board_ids = {u.id for u, _ in board}
+    for p in active_players:
+        if p.id not in board_ids:
+            board.append((p, 0))
+
+    board.sort(key=lambda x: x[1], reverse=True)
+
+    # Bottom-N по возрастанию (беднейший первый)
+    bottom_n = sorted(board[-swap_size:], key=lambda x: x[1])
+    if not any(u.id == winner.id for u, _ in bottom_n):
+        return None
+
+    winner_final = next(c for u, c in board if u.id == winner.id)
+    winner_idx = next(i for i, (u, _) in enumerate(bottom_n) if u.id == winner.id)
+    rich_user, rich_coins = board[winner_idx]
+
+    if rich_user.id == winner.id:
+        return None
+
+    delta = rich_coins - winner_final
+    if delta <= 0:
+        return None
+
+    logger.debug(
+        f"Redistribution swap: winner {winner.id} ({winner_final} coins) "
+        f"↔ rich {rich_user.id} ({rich_coins} coins), delta={delta}"
+    )
+    return (rich_user, winner_final, rich_coins, delta)

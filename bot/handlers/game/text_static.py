@@ -149,6 +149,12 @@ VOTING_ENDED_RESPONSE = "пішов в хуй"
 COIN_INFO = """\n\n<code>🎉 {winner_username}: +{amount} пидор-койн(ов)</code>\n<code>🎉 {executor_username}: +{executor_amount} пидор-койн(ов) за запуск команды</code>"""
 COIN_INFO_SELF_PIDOR = """\n\n<code>🎉 Сам себе пидор! +{amount} пидор-койн(ов)</code>"""
 
+COIN_SWAP_MESSAGE = (
+    "🔄 <b>Перераспределение богатства!</b>\n\n"
+    "<b>{poor_name}</b>: {poor_before} → {poor_after} монет(ы)\n"
+    "<b>{rich_name}</b>: {rich_before} → {rich_after} монет(ы)"
+)
+
 # Сообщения для команд пидор-койнов
 COINS_PERSONAL = """{username}, у тебя *{amount}* пидор\\-койн\\(ов\\)\\!"""
 COINS_CURRENT_YEAR = """Топ\\-50 по *пидор\\-койнам* за текущий год\\:\n\n{player_stats}\nВсего участников — {player_count}"""
