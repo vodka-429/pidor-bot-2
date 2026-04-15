@@ -22,5 +22,11 @@ gameConfig:
     "-4608252738":
       max_missed_days_for_final_voting: 100
       totalizator_enabled: true
+      coin_swap_enabled: true
     "-1001392307997":
       totalizator_enabled: true
+      coin_swap_enabled: true
+    "-1002189152002":
+      reroll_enabled: false
+    "-1003671793100":
+      reroll_enabled: false

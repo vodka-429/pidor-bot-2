@@ -43,6 +43,7 @@ class GameConstants:
             achievements_enabled: Включены ли достижения (по умолчанию: True)
             toast_enabled: Включены ли тосты (по умолчанию: True)
             totalizator_enabled: Включён ли тотализатор (по умолчанию: False)
+            coin_swap_enabled: Включён ли своп монет при self-pidor из bottom-N (по умолчанию: False)
     """
     # Цены
     immunity_price: int = 10
@@ -79,6 +80,7 @@ class GameConstants:
     achievements_enabled: bool = True
     toast_enabled: bool = True
     totalizator_enabled: bool = False
+    coin_swap_enabled: bool = False
 
 
 @dataclass

@@ -23,15 +23,15 @@ from bot.handlers.game.text_static import STATS_PERSONAL, \
     YEAR_RESULTS_MSG, YEAR_RESULTS_ANNOUNCEMENT, REGISTRATION_MANY_SUCCESS, \
     ERROR_ALREADY_REGISTERED_MANY, VOTING_ENDED_RESPONSE, \
     FINAL_VOTING_CLOSE_ERROR_NOT_AUTHORIZED, COIN_INFO, \
-    COINS_PERSONAL, COINS_CURRENT_YEAR, COINS_ALL_TIME, COINS_LIST_ITEM, COIN_EARNED, COIN_INFO_SELF_PIDOR, \
+    COINS_PERSONAL, COINS_CURRENT_YEAR, COINS_ALL_TIME, COINS_LIST_ITEM, COIN_EARNED, COIN_INFO_SELF_PIDOR, COIN_SWAP_MESSAGE, \
     PLAYER_REMOVE_SUCCESS, PLAYER_REMOVE_NONE, PLAYER_REMOVE_NOT_ADMIN
 from bot.handlers.game.membership_service import (
     get_active_players, get_deactivated_player_ids, reactivate_player, remove_inactive_players
 )
 from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders
 from bot.handlers.game.config import is_test_chat, get_config
-from bot.handlers.game.coin_service import add_coins, get_balance, get_leaderboard, get_leaderboard_by_year
-from bot.handlers.game.shop_service import is_leap_year, get_days_in_year
+from bot.handlers.game.coin_service import add_coins, get_balance, get_leaderboard, get_leaderboard_by_year, compute_redistribution_swap
+from bot.handlers.game.shop_service import is_leap_year, get_days_in_year, spend_coins
 from bot.utils import escape_markdown2, escape_word, format_number, ECallbackContext, get_allowed_final_voting_closers
 
 # Получаем логгер для этого модуля
@@ -380,6 +380,18 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
             add_coins(context.db_session, context.game.id, context.tg_user.id, config.constants.coins_per_command, cur_year, "command_execution", auto_commit=False)
             logger.debug(f"Awarded {config.constants.coins_per_command} coin to command executor {context.tg_user.id}")
 
+        # Своп монет при self-pidor из bottom-N (после начисления монет — autoflush включит их в запрос)
+        _coin_swap = None
+        if is_self_pidor and config.constants.coin_swap_enabled:
+            _coin_swap = compute_redistribution_swap(
+                context.db_session, context.game.id, cur_year, winner, players
+            )
+            if _coin_swap:
+                rich_user, winner_final, rich_coins, delta = _coin_swap
+                add_coins(context.db_session, context.game.id, winner.id, delta, cur_year, "coin_swap_receive", auto_commit=False)
+                spend_coins(context.db_session, context.game.id, rich_user.id, delta, cur_year, "coin_swap_give", auto_commit=False)
+                logger.info(f"Coin swap: {winner.id} +{delta} ({winner_final}->{rich_coins}), {rich_user.id} -{delta}")
+
         # Обрабатываем предсказания на текущий день
         predictions_results = process_predictions(
             context.db_session, context.game.id, cur_year, cur_day, winner.id
@@ -484,6 +496,22 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
 
         # Отправляем финальное сообщение с кнопкой перевыбора
         await send_result_with_reroll_button(update, context, stage4_message, cur_year, cur_day)
+
+        # Сообщение о свопе монет (если сработал)
+        if _coin_swap:
+            from html import escape as html_escape
+            rich_user, winner_final, rich_coins, delta = _coin_swap
+            await update.effective_chat.send_message(
+                COIN_SWAP_MESSAGE.format(
+                    poor_name=html_escape(winner.full_username()),
+                    rich_name=html_escape(rich_user.full_username()),
+                    poor_before=winner_final,
+                    poor_after=rich_coins,
+                    rich_before=rich_coins,
+                    rich_after=winner_final,
+                ),
+                parse_mode="HTML"
+            )
 
         # Уведомление о просроченных тотализаторах
         if config.constants.totalizator_enabled:

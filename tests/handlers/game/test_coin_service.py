@@ -1,15 +1,22 @@
 """Tests for coin service functionality."""
 import pytest
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, patch
 from datetime import datetime
 
 from bot.handlers.game.coin_service import (
     add_coins,
     get_balance,
     get_leaderboard,
-    get_leaderboard_by_year
+    get_leaderboard_by_year,
+    compute_redistribution_swap,
 )
 from bot.app.models import PidorCoinTransaction, TGUser
+
+
+def _make_player(player_id: int) -> MagicMock:
+    p = MagicMock(spec=TGUser)
+    p.id = player_id
+    return p
 
 
 @pytest.mark.unit
@@ -342,3 +349,110 @@ def test_get_balance_handles_negative_transactions(mock_db_session):
 
     # Verify correct balance is returned after deductions
     assert result == expected_balance
+
+
+# ---- compute_redistribution_swap ----
+
+@pytest.mark.unit
+@patch("bot.handlers.game.coin_service.get_leaderboard_by_year")
+def test_compute_redistribution_swap_basic(mock_leaderboard, mock_db_session):
+    """Winner is the poorest of 11 players — swaps with richest."""
+    players = [_make_player(i) for i in range(1, 12)]  # 11 players
+    winner = players[-1]  # poorest
+
+    # leaderboard descending: richest first, winner last (post-win balance = 22)
+    board = [(players[i], 100 - i * 5) for i in range(10)] + [(winner, 22)]
+    mock_leaderboard.return_value = board
+
+    result = compute_redistribution_swap(mock_db_session, 1, 2026, winner, players)
+
+    assert result is not None
+    rich_user, winner_final, rich_coins, delta = result
+    assert rich_user.id == players[0].id   # richest = player 1
+    assert winner_final == 22
+    assert rich_coins == 100
+    assert delta == 78  # 100 - 22
+
+
+@pytest.mark.unit
+@patch("bot.handlers.game.coin_service.get_leaderboard_by_year")
+def test_compute_redistribution_swap_too_few_players(mock_leaderboard, mock_db_session):
+    """Returns None when active_players <= 10."""
+    players = [_make_player(i) for i in range(1, 11)]  # exactly 10 players
+    winner = players[-1]
+
+    board = [(players[i], 50 - i * 4) for i in range(9)] + [(winner, 1)]
+    mock_leaderboard.return_value = board
+
+    result = compute_redistribution_swap(mock_db_session, 1, 2026, winner, players)
+    assert result is None
+
+
+@pytest.mark.unit
+@patch("bot.handlers.game.coin_service.get_leaderboard_by_year")
+def test_compute_redistribution_swap_winner_not_in_bottom(mock_leaderboard, mock_db_session):
+    """Returns None when winner is not in bottom-N."""
+    players = [_make_player(i) for i in range(1, 12)]
+    winner = players[0]  # richest player
+
+    board = [(winner, 200)] + [(players[i], 100 - i * 8) for i in range(1, 11)]
+    mock_leaderboard.return_value = board
+
+    result = compute_redistribution_swap(mock_db_session, 1, 2026, winner, players)
+    assert result is None
+
+
+@pytest.mark.unit
+@patch("bot.handlers.game.coin_service.get_leaderboard_by_year")
+def test_compute_redistribution_swap_delta_zero(mock_leaderboard, mock_db_session):
+    """Returns None when winner_final >= rich_coins (delta <= 0)."""
+    players = [_make_player(i) for i in range(1, 12)]
+    winner = players[-1]
+
+    # winner has same coins as richest
+    board = [(players[i], 50) for i in range(10)] + [(winner, 50)]
+    mock_leaderboard.return_value = board
+
+    result = compute_redistribution_swap(mock_db_session, 1, 2026, winner, players)
+    assert result is None
+
+
+@pytest.mark.unit
+@patch("bot.handlers.game.coin_service.get_leaderboard_by_year")
+def test_compute_redistribution_swap_zero_coins_player(mock_leaderboard, mock_db_session):
+    """Player with 0 coins (not in leaderboard) is added to board correctly."""
+    players = [_make_player(i) for i in range(1, 12)]
+    winner = players[-1]  # not in leaderboard → 0 coins
+
+    # leaderboard only has first 10 players, winner missing
+    board = [(players[i], 100 - i * 5) for i in range(10)]
+    mock_leaderboard.return_value = board
+
+    result = compute_redistribution_swap(mock_db_session, 1, 2026, winner, players)
+
+    assert result is not None
+    rich_user, winner_final, rich_coins, delta = result
+    assert winner_final == 0
+    assert rich_user.id == players[0].id
+    assert delta == 100  # 100 - 0
+
+
+@pytest.mark.unit
+@patch("bot.handlers.game.coin_service.get_leaderboard_by_year")
+def test_compute_redistribution_swap_correct_index_mapping(mock_leaderboard, mock_db_session):
+    """2nd-to-last maps to 2nd richest (swap_size=2 with 20 players)."""
+    players = [_make_player(i) for i in range(1, 21)]  # 20 players → swap_size=2
+    winner = players[-2]  # 2nd poorest
+
+    board = sorted(
+        [(players[i], (20 - i) * 10) for i in range(20)],
+        key=lambda x: x[1], reverse=True
+    )
+    mock_leaderboard.return_value = board
+
+    result = compute_redistribution_swap(mock_db_session, 1, 2026, winner, players)
+
+    assert result is not None
+    rich_user, _, _, _ = result
+    # 2nd-to-last (winner_idx=1 in bottom ascending) → maps to board[1] = 2nd richest
+    assert rich_user.id == players[1].id
