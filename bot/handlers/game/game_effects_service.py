@@ -46,22 +46,49 @@ def filter_protected_players(
     return unprotected_players, protected_players
 
 
+def is_player_birthday(player: TGUser, current_date: date) -> bool:
+    """Проверяет, что сегодня у игрока день рождения.
+
+    29 февраля в невисокосный год считаем за 28.02 — иначе человек никогда
+    не получит бонус.
+    """
+    month = getattr(player, 'birth_month', None)
+    day = getattr(player, 'birth_day', None)
+    if month is None or day is None:
+        return False
+
+    if month == current_date.month and day == current_date.day:
+        return True
+
+    # 29.02 в невисокосный год → отмечаем 28.02
+    is_leap = (current_date.year % 4 == 0 and current_date.year % 100 != 0) or current_date.year % 400 == 0
+    if month == 2 and day == 29 and not is_leap and current_date.month == 2 and current_date.day == 28:
+        return True
+
+    return False
+
+
 def build_selection_pool(
     db_session,
     game_id: int,
     players: List[TGUser],
-    current_date: date
-) -> Tuple[List[TGUser], Set[int]]:
+    current_date: date,
+    birthday_multiplier: int = 1,
+) -> Tuple[List[TGUser], Set[int], Set[int]]:
     """
-    Создать пул выбора с учётом двойного шанса.
+    Создать пул выбора с учётом двойного шанса и бонуса именинника.
 
     Игроки с активным двойным шансом добавляются в пул экспоненциально:
     1 покупка = 2^1 = 2 записи, 2 покупки = 2^2 = 4 записи, и т.д.
+
+    Если у игрока сегодня день рождения, его количество записей домножается
+    на `birthday_multiplier`. При `birthday_multiplier == 1` фича отключена.
     """
     from bot.app.models import DoubleChancePurchase
 
     selection_pool = []
     players_with_double_chance = set()
+    players_with_birthday = set()
 
     current_year = current_date.year
     current_day = current_date.timetuple().tm_yday
@@ -80,20 +107,31 @@ def build_selection_pool(
 
     for player in players:
         purchase_count = purchase_counts.get(player.id, 0)
+        has_birthday = birthday_multiplier > 1 and is_player_birthday(player, current_date)
 
-        if purchase_count > 0:
-            # Экспоненциальная логика: 2^n записей
-            entries_count = 2 ** purchase_count
-            for _ in range(entries_count):
-                selection_pool.append(player)
-            players_with_double_chance.add(player.id)
-            logger.debug(f"Player {player.id} ({player.full_username()}) has {purchase_count} double chance purchase(s), added {entries_count} times")
-        else:
-            # Добавляем игрока один раз
+        entries_count = (2 ** purchase_count) if purchase_count > 0 else 1
+        if has_birthday:
+            entries_count *= birthday_multiplier
+            players_with_birthday.add(player.id)
+
+        for _ in range(entries_count):
             selection_pool.append(player)
 
-    logger.info(f"Built selection pool: {len(selection_pool)} entries, {len(players_with_double_chance)} players with double chance")
-    return selection_pool, players_with_double_chance
+        if purchase_count > 0:
+            players_with_double_chance.add(player.id)
+
+        if entries_count > 1:
+            logger.debug(
+                f"Player {player.id} ({player.full_username()}) entries={entries_count} "
+                f"(double_chance={purchase_count}, birthday={has_birthday})"
+            )
+
+    logger.info(
+        f"Built selection pool: {len(selection_pool)} entries, "
+        f"{len(players_with_double_chance)} with double chance, "
+        f"{len(players_with_birthday)} with birthday"
+    )
+    return selection_pool, players_with_double_chance, players_with_birthday
 
 
 def check_winner_immunity(

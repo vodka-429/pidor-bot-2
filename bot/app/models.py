@@ -23,6 +23,8 @@ class TGUser(SQLModel, table=True):
     last_name: Optional[str]
     lang_code: str = 'en'
     is_blocked: bool = False
+    birth_month: Optional[int] = Field(default=None)
+    birth_day: Optional[int] = Field(default=None)
 
     games: List['Game'] = Relationship(back_populates="players", link_model=GamePlayer)
     game_results: List['GameResult'] = Relationship(

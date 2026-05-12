@@ -25,6 +25,12 @@ class SelectionResult:
     all_protected: bool  # Были ли все игроки защищены
     protected_player: Optional[TGUser] = None  # Игрок, который был защищён (если была защита)
     immunity_buyer_id: Optional[int] = None  # Кто купил защиту сработавшему игроку
+    had_birthday_bonus: bool = False  # Был ли у победителя бонус именинника
+    birthday_players: List[TGUser] = None  # Все именинники среди игроков (для анонса)
+
+    def __post_init__(self):
+        if self.birthday_players is None:
+            self.birthday_players = []
 
 
 def build_selection_context(
@@ -32,8 +38,9 @@ def build_selection_context(
     game_id: int,
     players: List[TGUser],
     current_date: date,
-    immunity_enabled: bool = True
-) -> tuple[List[TGUser], List[TGUser], List[TGUser], Set[int]]:
+    immunity_enabled: bool = True,
+    birthday_multiplier: int = 1,
+) -> tuple[List[TGUser], List[TGUser], List[TGUser], Set[int], Set[int]]:
     """
     Подготовить контекст для выбора победителя.
 
@@ -43,13 +50,15 @@ def build_selection_context(
         players: Список всех игроков
         current_date: Текущая дата
         immunity_enabled: Включена ли защита (по умолчанию True)
+        birthday_multiplier: Множитель для именинника (1 = фича отключена)
 
     Returns:
         Кортеж из:
-        - selection_pool: Пул для выбора (с учётом двойного шанса)
+        - selection_pool: Пул для выбора (с учётом двойного шанса и ДР)
         - unprotected_players: Незащищённые игроки
         - protected_players: Защищённые игроки
         - players_with_double_chance: Множество ID игроков с двойным шансом
+        - players_with_birthday: Множество ID именинников
     """
     # Если защита включена, фильтруем защищённых игроков
     if immunity_enabled:
@@ -61,19 +70,26 @@ def build_selection_context(
         unprotected_players = players
         protected_players = []
 
-    # Создаём пул выбора с учётом двойного шанса
-    selection_pool, players_with_double_chance = build_selection_pool(
-        db_session, game_id, players, current_date
+    # Создаём пул выбора с учётом двойного шанса и бонуса именинника
+    selection_pool, players_with_double_chance, players_with_birthday = build_selection_pool(
+        db_session, game_id, players, current_date, birthday_multiplier=birthday_multiplier
     )
 
     logger.debug(
         f"Selection context: {len(selection_pool)} in pool, "
         f"{len(unprotected_players)} unprotected, "
         f"{len(protected_players)} protected, "
-        f"{len(players_with_double_chance)} with double chance"
+        f"{len(players_with_double_chance)} with double chance, "
+        f"{len(players_with_birthday)} with birthday"
     )
 
-    return selection_pool, unprotected_players, protected_players, players_with_double_chance
+    return (
+        selection_pool,
+        unprotected_players,
+        protected_players,
+        players_with_double_chance,
+        players_with_birthday,
+    )
 
 
 def select_winner_with_effects(
@@ -81,10 +97,11 @@ def select_winner_with_effects(
     game_id: int,
     players: List[TGUser],
     current_date: date,
-    immunity_enabled: bool = True
+    immunity_enabled: bool = True,
+    birthday_multiplier: int = 1,
 ) -> Optional[SelectionResult]:
     """
-    Выбрать победителя с учётом защиты и двойного шанса.
+    Выбрать победителя с учётом защиты, двойного шанса и бонуса именинника.
 
     Args:
         db_session: Сессия БД
@@ -92,13 +109,23 @@ def select_winner_with_effects(
         players: Список всех игроков
         current_date: Текущая дата
         immunity_enabled: Включена ли защита (по умолчанию True)
+        birthday_multiplier: Множитель шанса для именинника (1 = фича отключена)
 
     Returns:
         SelectionResult с информацией о выборе или None если все защищены
     """
     # Подготавливаем контекст для выбора
-    selection_pool, unprotected_players, protected_players, players_with_double_chance = \
-        build_selection_context(db_session, game_id, players, current_date, immunity_enabled)
+    (
+        selection_pool,
+        unprotected_players,
+        protected_players,
+        players_with_double_chance,
+        players_with_birthday,
+    ) = build_selection_context(
+        db_session, game_id, players, current_date, immunity_enabled, birthday_multiplier
+    )
+
+    birthday_players = [p for p in players if p.id in players_with_birthday]
 
     # Если все игроки защищены - возвращаем None
     if immunity_enabled and len(unprotected_players) == 0:
@@ -107,15 +134,17 @@ def select_winner_with_effects(
             winner=None,
             had_immunity=False,
             had_double_chance=False,
-            all_protected=True
+            all_protected=True,
+            birthday_players=birthday_players,
         )
 
     # Выбираем победителя из пула
     winner = random.choice(selection_pool)
     logger.info(f"Winner selected: {winner.full_username()}")
 
-    # Запоминаем, был ли у победителя двойной шанс
+    # Запоминаем эффекты, сработавшие на победителя
     winner_had_double_chance = winner.id in players_with_double_chance
+    winner_had_birthday = winner.id in players_with_birthday
 
     # Проверяем защиту победителя только если она включена
     had_immunity = False
@@ -133,8 +162,9 @@ def select_winner_with_effects(
             winner = random.choice(unprotected_players)
             logger.info(f"Reselected winner after immunity: {winner.full_username()}")
 
-            # Обновляем информацию о двойном шансе для нового победителя
+            # Обновляем информацию об эффектах для нового победителя
             winner_had_double_chance = winner.id in players_with_double_chance
+            winner_had_birthday = winner.id in players_with_birthday
 
     return SelectionResult(
         winner=winner,
@@ -142,5 +172,7 @@ def select_winner_with_effects(
         had_double_chance=winner_had_double_chance,
         all_protected=False,
         protected_player=protected_player,
-        immunity_buyer_id=immunity_buyer_id
+        immunity_buyer_id=immunity_buyer_id,
+        had_birthday_bonus=winner_had_birthday,
+        birthday_players=birthday_players,
     )

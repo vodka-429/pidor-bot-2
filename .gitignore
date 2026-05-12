@@ -177,3 +177,6 @@ terraform.rc
 .codeassistant
 *.code-workspace
 # vibe/
+
+# Локальные данные ДР (содержат tg_id и ДР реальных людей)
+scripts/birthdays.local.json

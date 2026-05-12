@@ -306,8 +306,13 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         immunity_enabled = is_immunity_enabled(current_dt)
 
         # Выбираем победителя с учётом всех эффектов
+        birthday_multiplier = (
+            config.constants.birthday_bonus_multiplier
+            if config.constants.birthday_enabled else 1
+        )
         selection_result = select_winner_with_effects(
-            context.db_session, context.game.id, players, current_date, immunity_enabled
+            context.db_session, context.game.id, players, current_date,
+            immunity_enabled, birthday_multiplier=birthday_multiplier,
         )
 
         # Если все игроки защищены - отправляем специальное сообщение
@@ -429,6 +434,22 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
             logger.debug("Sending year results announcement")
             await update.effective_chat.send_message(YEAR_RESULTS_ANNOUNCEMENT.format(year=cur_year), parse_mode="MarkdownV2")
 
+        # Анонс именинников (если есть и фича включена)
+        if selection_result.birthday_players:
+            from html import escape as html_escape
+            from bot.handlers.game.text_static import (
+                BIRTHDAY_ANNOUNCEMENT_SINGLE, BIRTHDAY_ANNOUNCEMENT_MULTIPLE
+            )
+            names = ", ".join(html_escape(p.full_username()) for p in selection_result.birthday_players)
+            template = (BIRTHDAY_ANNOUNCEMENT_SINGLE
+                        if len(selection_result.birthday_players) == 1
+                        else BIRTHDAY_ANNOUNCEMENT_MULTIPLE)
+            await update.effective_chat.send_message(
+                template.format(names=names, mult=birthday_multiplier),
+                parse_mode="HTML"
+            )
+            await asyncio.sleep(config.constants.game_result_time_delay)
+
         logger.debug("Sending stage 1 message")
         await update.effective_chat.send_message(random.choice(stage1.phrases))
         await asyncio.sleep(config.constants.game_result_time_delay)
@@ -459,6 +480,13 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
             from html import escape as html_escape
             stage4_message += f"\n\n🎲 <b>{html_escape(winner.full_username())}</b> использовал(а) двойной шанс и победил(а)! Эффект израсходован."
             logger.info(f"Double chance was used by winner {winner.id} ({winner.full_username()})")
+
+        # Добавить плашку победы в свой ДР
+        if selection_result.had_birthday_bonus:
+            from html import escape as html_escape
+            from bot.handlers.game.text_static import BIRTHDAY_WIN_SUFFIX
+            stage4_message += BIRTHDAY_WIN_SUFFIX.format(username=html_escape(winner.full_username()))
+            logger.info(f"Birthday bonus triggered for winner {winner.id} ({winner.full_username()})")
 
         # Добавить информацию о предсказаниях (если есть)
         if predictions_results:
@@ -624,6 +652,75 @@ async def pidoregmany_cmd(update: Update, context: GECallbackContext):
         except Exception:
             logger.exception("Exception with user {}".format(user_id))
             await update.effective_message.reply_markdown_v2('Хуйня с {}'.format(user_id))
+
+
+def _parse_birthday(text: str) -> tuple[int, int] | None:
+    """Парсит 'DD.MM' → (month, day). Возвращает None если невалидно."""
+    parts = text.replace('-', '.').replace('/', '.').split('.')
+    if len(parts) != 2:
+        return None
+    try:
+        day = int(parts[0])
+        month = int(parts[1])
+    except ValueError:
+        return None
+    # Используем 2024 (високосный) — чтобы 29.02 считалось валидным
+    try:
+        datetime(2024, month, day)
+    except ValueError:
+        return None
+    return month, day
+
+
+@ensure_game
+async def pidorbirthday_cmd(update: Update, context: GECallbackContext):
+    """Установить/очистить/посмотреть день рождения текущего пользователя."""
+    from bot.handlers.game.text_static import (
+        BIRTHDAY_SET, BIRTHDAY_CLEARED, BIRTHDAY_INVALID,
+        BIRTHDAY_INFO_SET, BIRTHDAY_INFO_NONE, BIRTHDAY_DISABLED,
+    )
+
+    config = get_config(update.effective_chat.id)
+    if not config.constants.birthday_enabled:
+        await update.effective_message.reply_text(BIRTHDAY_DISABLED)
+        return
+
+    args = update.message.text.split(maxsplit=1)
+    user = context.tg_user
+
+    if len(args) < 2:
+        # Показать текущее
+        if user.birth_month and user.birth_day:
+            date_str = f"{user.birth_day:02d}.{user.birth_month:02d}"
+            await update.effective_message.reply_text(BIRTHDAY_INFO_SET.format(date=date_str))
+        else:
+            await update.effective_message.reply_text(BIRTHDAY_INFO_NONE)
+        return
+
+    arg = args[1].strip().lower()
+
+    if arg in ('clear', 'сброс', 'очистить', 'удалить', '-'):
+        user.birth_month = None
+        user.birth_day = None
+        context.db_session.add(user)
+        context.db_session.commit()
+        await update.effective_message.reply_text(BIRTHDAY_CLEARED)
+        return
+
+    parsed = _parse_birthday(arg)
+    if parsed is None:
+        await update.effective_message.reply_text(BIRTHDAY_INVALID)
+        return
+
+    month, day = parsed
+    user.birth_month = month
+    user.birth_day = day
+    context.db_session.add(user)
+    context.db_session.commit()
+    date_str = f"{day:02d}.{month:02d}"
+    await update.effective_message.reply_text(
+        BIRTHDAY_SET.format(date=date_str, mult=config.constants.birthday_bonus_multiplier)
+    )
 
 
 @ensure_game

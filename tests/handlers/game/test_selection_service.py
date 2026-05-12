@@ -359,7 +359,7 @@ def test_build_selection_context_normal(mock_db_session, sample_players):
 
     try:
         # Execute
-        selection_pool, unprotected, protected, double_chance_ids = build_selection_context(
+        selection_pool, unprotected, protected, double_chance_ids, _birthday_ids = build_selection_context(
             mock_db_session, game_id, players, current_date
         )
 
@@ -410,7 +410,7 @@ def test_build_selection_context_with_protection(mock_db_session, sample_players
 
     try:
         # Execute
-        selection_pool, unprotected, protected, double_chance_ids = build_selection_context(
+        selection_pool, unprotected, protected, double_chance_ids, _birthday_ids = build_selection_context(
             mock_db_session, game_id, players, current_date
         )
 
@@ -464,7 +464,7 @@ def test_build_selection_context_with_double_chance(mock_db_session, sample_play
 
     try:
         # Execute
-        selection_pool, unprotected, protected, double_chance_ids = build_selection_context(
+        selection_pool, unprotected, protected, double_chance_ids, _birthday_ids = build_selection_context(
             mock_db_session, game_id, players, current_date
         )
 
@@ -517,7 +517,7 @@ def test_build_selection_context_immunity_disabled(mock_db_session, sample_playe
 
     try:
         # Execute with immunity_enabled=False
-        selection_pool, unprotected, protected, double_chance_ids = build_selection_context(
+        selection_pool, unprotected, protected, double_chance_ids, _birthday_ids = build_selection_context(
             mock_db_session, game_id, players, current_date, immunity_enabled=False
         )
 
@@ -578,7 +578,7 @@ def test_build_selection_context_with_multiple_double_chance_same_player(mock_db
 
     try:
         # Execute
-        selection_pool, unprotected, protected, double_chance_ids = build_selection_context(
+        selection_pool, unprotected, protected, double_chance_ids, _birthday_ids = build_selection_context(
             mock_db_session, game_id, players, current_date
         )
 

@@ -616,6 +616,7 @@ def get_rules_message(config) -> str:
 📊 *Команды:*
 • /pidor \\- запустить розыгрыш
 • /pidoreg \\- регистрация
+• /pidorbirthday \\- задать день рождения \\(в этот день x4 шанс\\)
 • /pidorstats \\- статистика
 • /pidorcoins \\- баланс койнов
 • /pidorshop \\- магазин
@@ -623,3 +624,21 @@ def get_rules_message(config) -> str:
 • /pidorrules \\- эти правила
 
 _Удачи в игре\\! Или не удачи\\.\\.\\. 🎲_"""
+
+
+# Бонус именинника
+BIRTHDAY_SET = "🎂 Запомнил твой день рождения: {date}. В этот день шанс стать пидором будет x{mult}!"
+BIRTHDAY_CLEARED = "Очистил твой день рождения."
+BIRTHDAY_USAGE = (
+    "Используй формат: /pidorbirthday DD.MM (например, /pidorbirthday 15.03).\n"
+    "Чтобы стереть — /pidorbirthday clear."
+)
+BIRTHDAY_INVALID = "Не понял дату. " + BIRTHDAY_USAGE
+BIRTHDAY_INFO_SET = "У тебя установлен день рождения: {date}."
+BIRTHDAY_INFO_NONE = "День рождения не установлен. " + BIRTHDAY_USAGE
+BIRTHDAY_DISABLED = "Бонус именинника в этом чате выключен."
+
+# Анонсы в /pidor (HTML)
+BIRTHDAY_ANNOUNCEMENT_SINGLE = "🎂 Сегодня день рождения у <b>{names}</b> — шанс стать пидором x{mult}!"
+BIRTHDAY_ANNOUNCEMENT_MULTIPLE = "🎂 Сегодня дни рождения сразу у нескольких игроков: <b>{names}</b> — у каждого шанс стать пидором x{mult}!"
+BIRTHDAY_WIN_SUFFIX = "\n\n🎉 И в свой день рождения пидором становится <b>{username}</b>!"
