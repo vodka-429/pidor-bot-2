@@ -1,14 +1,15 @@
 """Тесты бонуса именинника."""
 from datetime import date
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from bot.app.models import TGUser
-from bot.handlers.game.commands import _parse_birthday
+from bot.handlers.game.commands import _parse_birthday, pidorbirthday_cmd
 from bot.handlers.game.game_effects_service import (
     build_selection_pool, is_player_birthday
 )
+from bot.handlers.game.selection_service import select_winner_with_effects
 
 
 def _player(uid: int, month=None, day=None) -> TGUser:
@@ -179,3 +180,191 @@ def test_parse_birthday_valid(text, expected):
 ])
 def test_parse_birthday_invalid(text):
     assert _parse_birthday(text) is None
+
+
+# ─── pidorbirthday_cmd (integration) ─────────────────────────────────
+
+@pytest.fixture
+def _bday_update():
+    """Mock update с настроенным effective_message.reply_text."""
+    update = MagicMock()
+    update.effective_chat = MagicMock()
+    update.effective_chat.id = 987654321
+    update.effective_message = MagicMock()
+    update.effective_message.reply_text = AsyncMock()
+    update.message = MagicMock()
+    update.message.text = "/pidorbirthday"
+    return update
+
+
+@pytest.fixture
+def _bday_context():
+    """Mock context с tg_user и моком db_session."""
+    ctx = MagicMock()
+    ctx.db_session = MagicMock()
+    ctx.db_session.add = MagicMock()
+    ctx.db_session.commit = MagicMock()
+    user = TGUser(id=1, tg_id=100, first_name='Test', username='testuser',
+                  birth_month=None, birth_day=None)
+    ctx.tg_user = user
+    return ctx
+
+
+def _mock_config(mocker, enabled=True, multiplier=4):
+    """Подменяет get_config для команды."""
+    cfg = MagicMock()
+    cfg.constants.birthday_enabled = enabled
+    cfg.constants.birthday_bonus_multiplier = multiplier
+    mocker.patch('bot.handlers.game.commands.get_config', return_value=cfg)
+    return cfg
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_birthday_cmd_set_valid(_bday_update, _bday_context, mocker):
+    _mock_config(mocker)
+    _bday_update.message.text = "/pidorbirthday 15.03"
+
+    await pidorbirthday_cmd(_bday_update, _bday_context)
+
+    assert _bday_context.tg_user.birth_month == 3
+    assert _bday_context.tg_user.birth_day == 15
+    _bday_context.db_session.commit.assert_called_once()
+    reply = _bday_update.effective_message.reply_text.await_args[0][0]
+    assert '15.03' in reply
+    assert 'x4' in reply
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_birthday_cmd_clear(_bday_update, _bday_context, mocker):
+    _mock_config(mocker)
+    _bday_context.tg_user.birth_month = 3
+    _bday_context.tg_user.birth_day = 15
+    _bday_update.message.text = "/pidorbirthday clear"
+
+    await pidorbirthday_cmd(_bday_update, _bday_context)
+
+    assert _bday_context.tg_user.birth_month is None
+    assert _bday_context.tg_user.birth_day is None
+    _bday_context.db_session.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_birthday_cmd_invalid_date(_bday_update, _bday_context, mocker):
+    _mock_config(mocker)
+    _bday_update.message.text = "/pidorbirthday 31.02"  # такого дня нет
+
+    await pidorbirthday_cmd(_bday_update, _bday_context)
+
+    # Юзер не обновился, commit не вызван
+    assert _bday_context.tg_user.birth_month is None
+    assert _bday_context.tg_user.birth_day is None
+    _bday_context.db_session.commit.assert_not_called()
+    reply = _bday_update.effective_message.reply_text.await_args[0][0]
+    assert 'не понял' in reply.lower() or 'формат' in reply.lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_birthday_cmd_info_when_unset(_bday_update, _bday_context, mocker):
+    _mock_config(mocker)
+    _bday_update.message.text = "/pidorbirthday"
+
+    await pidorbirthday_cmd(_bday_update, _bday_context)
+
+    _bday_context.db_session.commit.assert_not_called()
+    reply = _bday_update.effective_message.reply_text.await_args[0][0]
+    assert 'не установлен' in reply.lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_birthday_cmd_info_when_set(_bday_update, _bday_context, mocker):
+    _mock_config(mocker)
+    _bday_context.tg_user.birth_month = 7
+    _bday_context.tg_user.birth_day = 4
+    _bday_update.message.text = "/pidorbirthday"
+
+    await pidorbirthday_cmd(_bday_update, _bday_context)
+
+    _bday_context.db_session.commit.assert_not_called()
+    reply = _bday_update.effective_message.reply_text.await_args[0][0]
+    assert '04.07' in reply
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_birthday_cmd_disabled_via_config(_bday_update, _bday_context, mocker):
+    _mock_config(mocker, enabled=False)
+    _bday_update.message.text = "/pidorbirthday 15.03"
+
+    await pidorbirthday_cmd(_bday_update, _bday_context)
+
+    # Фича отключена — никаких изменений
+    assert _bday_context.tg_user.birth_month is None
+    _bday_context.db_session.commit.assert_not_called()
+    reply = _bday_update.effective_message.reply_text.await_args[0][0]
+    assert 'выключен' in reply.lower() or 'отключ' in reply.lower()
+
+
+# ─── Множественные именинники + immunity-reroll ───────────────────────
+
+@pytest.mark.unit
+def test_pool_multiple_birthday_players(mock_db_session):
+    """Несколько именинников в один день — все получают бонус."""
+    _mock_no_double_chance(mock_db_session)
+    bd1 = _player(1, month=5, day=13)
+    bd2 = _player(2, month=5, day=13)
+    other = _player(3)
+
+    pool, _dc, bd = build_selection_pool(
+        mock_db_session, 1, [bd1, bd2, other],
+        date(2026, 5, 13), birthday_multiplier=4,
+    )
+
+    assert pool.count(bd1) == 4
+    assert pool.count(bd2) == 4
+    assert pool.count(other) == 1
+    assert {bd1.id, bd2.id} == bd
+    assert other.id not in bd
+
+
+@pytest.mark.unit
+def test_select_winner_immunity_reroll_drops_birthday_bonus(mock_db_session, mocker):
+    """Когда именинник защищён и происходит reroll на обычного игрока,
+    had_birthday_bonus у итогового победителя должен быть False."""
+    # Patch filter_protected_players: именинник защищён
+    birthday_player = _player(1, month=5, day=13)
+    regular = _player(2)
+
+    mocker.patch(
+        'bot.handlers.game.selection_service.filter_protected_players',
+        return_value=([regular], [birthday_player]),
+    )
+    # build_selection_pool делаем стабильным — defer to real function
+    _mock_no_double_chance(mock_db_session)
+    # random.choice пусть всегда выбирает первого из пула, чтобы попасть на именинника
+    mocker.patch(
+        'bot.handlers.game.selection_service.random.choice',
+        side_effect=lambda lst: lst[0],
+    )
+    # И защита у именинника срабатывает
+    mocker.patch(
+        'bot.handlers.game.selection_service.check_winner_immunity',
+        return_value=999,  # buyer_id
+    )
+
+    result = select_winner_with_effects(
+        mock_db_session, game_id=1, players=[birthday_player, regular],
+        current_date=date(2026, 5, 13), immunity_enabled=True,
+        birthday_multiplier=4,
+    )
+
+    # Итоговый победитель — regular (reroll), у него нет ДР
+    assert result.winner.id == regular.id
+    assert result.had_immunity is True
+    assert result.had_birthday_bonus is False
+    # Но в birthday_players именинник всё равно отмечен (для анонса)
+    assert birthday_player in result.birthday_players

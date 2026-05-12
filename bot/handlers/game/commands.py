@@ -672,9 +672,11 @@ def _parse_birthday(text: str) -> tuple[int, int] | None:
     return month, day
 
 
-@ensure_game
 async def pidorbirthday_cmd(update: Update, context: GECallbackContext):
-    """Установить/очистить/посмотреть день рождения текущего пользователя."""
+    """Установить/очистить/посмотреть день рождения текущего пользователя.
+
+    Установка ДР не требует наличия игры — это персональная настройка юзера.
+    """
     from bot.handlers.game.text_static import (
         BIRTHDAY_SET, BIRTHDAY_CLEARED, BIRTHDAY_INVALID,
         BIRTHDAY_INFO_SET, BIRTHDAY_INFO_NONE, BIRTHDAY_DISABLED,

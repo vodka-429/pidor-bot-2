@@ -1,4 +1,5 @@
 """Service functions for game effects (immunity, double chance)."""
+import calendar
 import logging
 from collections import Counter
 from datetime import date, datetime
@@ -52,8 +53,8 @@ def is_player_birthday(player: TGUser, current_date: date) -> bool:
     29 февраля в невисокосный год считаем за 28.02 — иначе человек никогда
     не получит бонус.
     """
-    month = getattr(player, 'birth_month', None)
-    day = getattr(player, 'birth_day', None)
+    month = player.birth_month
+    day = player.birth_day
     if month is None or day is None:
         return False
 
@@ -61,8 +62,9 @@ def is_player_birthday(player: TGUser, current_date: date) -> bool:
         return True
 
     # 29.02 в невисокосный год → отмечаем 28.02
-    is_leap = (current_date.year % 4 == 0 and current_date.year % 100 != 0) or current_date.year % 400 == 0
-    if month == 2 and day == 29 and not is_leap and current_date.month == 2 and current_date.day == 28:
+    if (month == 2 and day == 29
+            and current_date.month == 2 and current_date.day == 28
+            and not calendar.isleap(current_date.year)):
         return True
 
     return False

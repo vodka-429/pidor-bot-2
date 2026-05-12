@@ -1,7 +1,7 @@
 """Service for selecting winners with game effects (immunity, double chance)."""
 import logging
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import List, Set, Optional
 
@@ -26,11 +26,7 @@ class SelectionResult:
     protected_player: Optional[TGUser] = None  # Игрок, который был защищён (если была защита)
     immunity_buyer_id: Optional[int] = None  # Кто купил защиту сработавшему игроку
     had_birthday_bonus: bool = False  # Был ли у победителя бонус именинника
-    birthday_players: List[TGUser] = None  # Все именинники среди игроков (для анонса)
-
-    def __post_init__(self):
-        if self.birthday_players is None:
-            self.birthday_players = []
+    birthday_players: List[TGUser] = field(default_factory=list)  # Все именинники среди игроков
 
 
 def build_selection_context(

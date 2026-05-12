@@ -95,7 +95,7 @@ async def _resolve_entity(client: TelegramClient, t: Target):
     # 1) Прямой резолв из локального кэша Telethon
     try:
         return await client.get_input_entity(t.tg_id)
-    except (ValueError, Exception):
+    except Exception:
         pass
 
     # 2) Fallback через username (работает для публичных аккаунтов)
