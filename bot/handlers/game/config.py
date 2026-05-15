@@ -44,6 +44,10 @@ class GameConstants:
             toast_enabled: Включены ли тосты (по умолчанию: True)
             totalizator_enabled: Включён ли тотализатор (по умолчанию: False)
             coin_swap_enabled: Включён ли своп монет при self-pidor из bottom-N (по умолчанию: False)
+            birthday_enabled: Включён ли бонус именинника (по умолчанию: True)
+
+        Прочее:
+            birthday_bonus_multiplier: Множитель шанса стать пидором в свой ДР (по умолчанию: 4)
     """
     # Цены
     immunity_price: int = 10
@@ -81,6 +85,10 @@ class GameConstants:
     toast_enabled: bool = True
     totalizator_enabled: bool = False
     coin_swap_enabled: bool = False
+    birthday_enabled: bool = True
+
+    # Множитель попадания в пул для именинника
+    birthday_bonus_multiplier: int = 4
 
 
 @dataclass
@@ -294,6 +302,8 @@ def get_config(chat_id: int) -> ChatConfig:
         'toast_price': global_config.defaults.toast_price,
         'toast_enabled': global_config.defaults.toast_enabled,
         'totalizator_enabled': global_config.defaults.totalizator_enabled,
+        'birthday_enabled': global_config.defaults.birthday_enabled,
+        'birthday_bonus_multiplier': global_config.defaults.birthday_bonus_multiplier,
     }
 
     # Применяем переопределения для конкретного чата

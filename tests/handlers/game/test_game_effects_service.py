@@ -180,7 +180,7 @@ def test_build_selection_pool_with_double_chance(mock_db_session):
     mock_db_session.exec.return_value = mock_result
 
     # Execute
-    pool, double_chance_players = build_selection_pool(mock_db_session, game_id, players, current_date)
+    pool, double_chance_players, _birthday_players = build_selection_pool(mock_db_session, game_id, players, current_date)
 
     # Verify
     assert len(pool) == 3  # player1 twice + player2 once
@@ -229,7 +229,7 @@ def test_build_selection_pool_multiple_double_chance(mock_db_session):
     mock_db_session.exec.return_value = mock_result
 
     # Execute
-    pool, double_chance_players = build_selection_pool(mock_db_session, game_id, players, current_date)
+    pool, double_chance_players, _birthday_players = build_selection_pool(mock_db_session, game_id, players, current_date)
 
     # Verify - with exponential logic: 1 purchase = 2^1 = 2 entries
     assert len(pool) == 5  # player1 (2^1=2) + player2 (1) + player3 (2^1=2)
@@ -414,7 +414,7 @@ def test_build_selection_pool_exponential_double_chance(mock_db_session):
     mock_db_session.exec.return_value = mock_result
 
     # Execute
-    pool, double_chance_players = build_selection_pool(mock_db_session, game_id, players, current_date)
+    pool, double_chance_players, _birthday_players = build_selection_pool(mock_db_session, game_id, players, current_date)
 
     # Verify - with exponential logic: 2 purchases = 2^2 = 4 entries
     assert len(pool) == 5  # player1 (2^2=4) + player2 (1)
@@ -471,7 +471,7 @@ def test_build_selection_pool_triple_double_chance(mock_db_session):
     mock_db_session.exec.return_value = mock_result
 
     # Execute
-    pool, double_chance_players = build_selection_pool(mock_db_session, game_id, players, current_date)
+    pool, double_chance_players, _birthday_players = build_selection_pool(mock_db_session, game_id, players, current_date)
 
     # Verify - with exponential logic: 3 purchases = 2^3 = 8 entries
     assert len(pool) == 10  # player1 (2^3=8) + player2 (1) + player3 (1)

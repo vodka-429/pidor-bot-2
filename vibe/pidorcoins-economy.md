@@ -1346,6 +1346,62 @@ def select_winner_with_effects(
 
 ---
 
+### Обновление 2026-05-13 (v12): ✅ БОНУС ИМЕНИННИКА
+
+**В день рождения игрок попадает в пул выбора пидора x4 раза.**
+
+**Мотивация:**
+- Дать «плюшку» в ДР, не ломая годовой баланс. Койны на ДР всех бы уравняли, а множитель шанса добавляет драмы и сохраняет соревновательность.
+- Никакой ручной интеграции с Telegram Premium / API дней рождения не требуется — данные тянутся одним скриптом через MTProto.
+
+**Параметры:**
+
+| Параметр | Значение |
+|----------|----------|
+| Множитель | x4 в пуле выбора |
+| Где задаётся | `birthday_bonus_multiplier` в `GameConstants` |
+| Feature flag | `birthday_enabled` (по умолчанию: `True`) |
+| Хранение | `TGUser.birth_month` / `birth_day` (nullable) |
+| Источник данных | `/pidorbirthday DD.MM` или массовый бэкфилл через скрипт |
+| 29 февраля | В невисокосный год отмечаем 28.02 |
+
+**Механика:**
+- В `build_selection_pool` ID игрока попадает в пул `entries = (2 ** double_chance_count) * (multiplier if is_birthday else 1)` раз — мультипликативная композиция с покупным двойным шансом.
+- В `pidor_cmd` перед stage1 шлётся анонс с именинниками и множителем.
+- При победе именинника в stage4 добавляется отдельная плашка: «🎉 И в свой день рождения пидором становится {username}».
+- В `SelectionResult` появились `had_birthday_bonus: bool` и `birthday_players: List[TGUser]`.
+
+**Команды:**
+- `/pidorbirthday DD.MM` — установить
+- `/pidorbirthday clear` — стереть
+- `/pidorbirthday` без аргументов — показать текущее значение
+- Парсер принимает `15.03`, `15-03`, `15/03`
+
+**Бэкфилл (приватные данные не в репо):**
+- `scripts/extract_birthdays.py` (Telethon, MTProto): прогревает кэш через `iter_dialogs()`, резолвит игроков по `user_id` либо по `username`, тащит поле `birthday` из `users.getFullUser`. Требует Telethon >= 1.36.
+- Результат кладётся в `scripts/birthdays.local.json` (gitignored).
+- `scripts/apply_birthdays.py` — идемпотентный UPDATE из JSON в БД (с `--dry-run`).
+- Сама миграция `p1q2r3s4t5u6_add_birthday_to_tguser.py` содержит **только DDL** (две колонки) — реальные tg_id живых людей в git не попадают.
+
+**Новые и изменённые компоненты:**
+- `bot/app/models.py`: поля `birth_month`, `birth_day` в `TGUser`
+- `migrations/versions/p1q2r3s4t5u6_add_birthday_to_tguser.py`: новая миграция (только колонки)
+- `scripts/extract_birthdays.py`, `scripts/apply_birthdays.py`: помощники для бэкфилла
+- `bot/handlers/game/config.py`: `birthday_enabled = True`, `birthday_bonus_multiplier = 4`
+- `bot/handlers/game/game_effects_service.py`: `is_player_birthday()`, расширенный `build_selection_pool` (3 значения в кортеже вместо 2)
+- `bot/handlers/game/selection_service.py`: `SelectionResult.had_birthday_bonus`, `SelectionResult.birthday_players`; параметр `birthday_multiplier` в `select_winner_with_effects`
+- `bot/handlers/game/commands.py`: `pidorbirthday_cmd`, `_parse_birthday`, интеграция в `pidor_cmd`
+- `bot/handlers/game/text_static.py`: константы `BIRTHDAY_*`, упоминание `/pidorbirthday` в правилах
+- `bot/dispatcher.py`: регистрация `pidorbirthday_cmd`
+- `bot/setup_commands.py`: подсказка `/pidorbirthday` в Telegram BotFather
+
+**Тестовое покрытие:**
+- `tests/handlers/game/test_birthday.py` — 28 unit-тестов: проверка `is_player_birthday` (включая 29.02 в високосный/невисокосный год), пул с x4, комбинация x4 × double_chance = 8, валидация `_parse_birthday`
+- Обновлены вызовы `build_selection_pool` / `build_selection_context` в `test_selection_service.py`, `test_game_effects_service.py`
+- 568 тестов, все проходят ✅
+
+---
+
 ## 🐛 TODO: Известные баги и улучшения
 
 ### Баг: Достижения не выдаются при перевыборах
