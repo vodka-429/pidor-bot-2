@@ -48,6 +48,12 @@ spec:
                 key: tg_token
           - name: GAME_CONFIG_PATH
             value: "/config/game-config.json"
+          - name: BOT_HTTPS_PROXY
+            valueFrom:
+              secretKeyRef:
+                name: pidor-bot-secrets
+                key: bot_https_proxy
+                optional: true
           volumeMounts:
           - name: game-config
             mountPath: /config

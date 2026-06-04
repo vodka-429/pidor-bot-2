@@ -7,6 +7,7 @@ import sentry_sdk
 from dotenv import load_dotenv
 from sqlmodel import create_engine
 from telegram.ext import Application
+from telegram.request import HTTPXRequest
 
 from bot.dispatcher import init_dispatcher
 
@@ -50,9 +51,16 @@ engine = create_engine(dburi, echo=False)
 
 async def main():
     """Main function to run the bot."""
-    # Create application instance
-    # Note: PicklePersistence is removed in v20+, persistence needs different approach
-    application = Application.builder().token(API_TOKEN).build()
+    builder = Application.builder().token(API_TOKEN)
+    proxy = getenv("BOT_HTTPS_PROXY")
+    if proxy:
+        logger.info("Using outbound proxy for Telegram API")
+        builder = (
+            builder
+            .request(HTTPXRequest(proxy=proxy, connect_timeout=20.0, read_timeout=30.0))
+            .get_updates_request(HTTPXRequest(proxy=proxy, connect_timeout=20.0, read_timeout=40.0))
+        )
+    application = builder.build()
     
     # Setup dispatcher
     init_dispatcher(application, engine)

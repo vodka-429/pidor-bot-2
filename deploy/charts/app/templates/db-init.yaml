@@ -43,5 +43,11 @@ spec:
               secretKeyRef:
                 name: pidor-bot-secrets
                 key: tg_token
+          - name: BOT_HTTPS_PROXY
+            valueFrom:
+              secretKeyRef:
+                name: pidor-bot-secrets
+                key: bot_https_proxy
+                optional: true
       terminationGracePeriodSeconds: 30
       restartPolicy: OnFailure

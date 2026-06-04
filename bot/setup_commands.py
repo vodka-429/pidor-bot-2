@@ -3,6 +3,7 @@ import os
 
 from dotenv import load_dotenv
 from telegram import Bot
+from telegram.request import HTTPXRequest
 
 commands = [
     # ('slap', 'simulate /slap command from IRC'),
@@ -38,7 +39,9 @@ commands = [
 
 async def main():
     load_dotenv()
-    async with Bot(os.environ['TELEGRAM_BOT_API_SECRET']) as bot:
+    proxy = os.environ.get('BOT_HTTPS_PROXY')
+    request = HTTPXRequest(proxy=proxy, connect_timeout=20.0, read_timeout=30.0) if proxy else None
+    async with Bot(os.environ['TELEGRAM_BOT_API_SECRET'], request=request) as bot:
         await bot.delete_my_commands()
         # Setup similar commands for both 'en' and 'ru' users
         await bot.set_my_commands(commands)
