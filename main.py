@@ -13,23 +13,25 @@ from bot.dispatcher import init_dispatcher
 
 # Setup logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)-8s - %(message)s',
     handlers=[
         logging.StreamHandler()  # Явно добавляем handler для stdout
     ]
 )
 logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
-# Устанавливаем уровень логирования для telegram библиотеки
-logging.getLogger('telegram').setLevel(logging.DEBUG)
-logging.getLogger('telegram.ext').setLevel(logging.DEBUG)
-logging.getLogger('telegram.bot').setLevel(logging.DEBUG)
+# HTTPX and python-telegram-bot include the Bot API token and full updates in
+# verbose log messages. Keep third-party loggers quiet in production.
+logging.getLogger('telegram').setLevel(logging.WARNING)
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('httpcore').setLevel(logging.WARNING)
 
-# Наши логи должны быть на уровне DEBUG
-logging.getLogger('bot').setLevel(logging.DEBUG)
-logging.getLogger('__main__').setLevel(logging.DEBUG)
+# Application logs retain useful operational context without flooding kubelet
+# log rotation with request-level transport details.
+logging.getLogger('bot').setLevel(logging.INFO)
+logging.getLogger('__main__').setLevel(logging.INFO)
 
 # Load configs and create bot instance
 load_dotenv()  # load telegram bot token from .env file

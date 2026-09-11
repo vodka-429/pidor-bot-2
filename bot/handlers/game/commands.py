@@ -174,7 +174,7 @@ async def send_result_with_reroll_button(
     cur_day: int
 ):
     """
-    Отправить финальное сообщение с кнопками перевыбора и "Дайте койнов", запустить таймер на их удаление.
+    Отправить финальное сообщение с разрешёнными кнопками и таймером на их удаление.
 
     Args:
         update: Telegram Update объект
@@ -198,43 +198,47 @@ async def send_result_with_reroll_button(
     ).one()
     winner_id = game_result.winner_id
 
-    # Создаём кнопки перевыбора и "Дайте койнов" в одном ряду
-    reroll_keyboard = InlineKeyboardMarkup([
-        [
+    # Создаём только те кнопки, которые разрешены для этого чата.
+    action_buttons = []
+    if config.constants.reroll_enabled:
+        action_buttons.append(
             InlineKeyboardButton(
                 reroll_msgs['button_text'],
                 callback_data=f"reroll_{context.game.id}_{cur_year}_{cur_day}"
-            ),
+            )
+        )
+    if config.constants.give_coins_enabled:
+        action_buttons.append(
             InlineKeyboardButton(
                 GIVE_COINS_BUTTON_TEXT,
                 callback_data=f"givecoins_{context.game.id}_{cur_year}_{cur_day}_{winner_id}"
             )
-        ]
-    ])
+        )
+    action_keyboard = InlineKeyboardMarkup([action_buttons]) if action_buttons else None
 
-    # Отправляем финальное сообщение с кнопкой перевыбора
+    # Отправляем финальное сообщение с доступными действиями
     result_message = await update.effective_chat.send_message(
         stage4_message,
         parse_mode="HTML",
-        reply_markup=reroll_keyboard
+        reply_markup=action_keyboard
     )
 
-    # Сохраняем ID сообщения для удаления кнопки по таймауту
-    game_result = context.db_session.query(GameResult).filter_by(
-        game_id=context.game.id, year=cur_year, day=cur_day
-    ).one()
-    game_result.reroll_message_id = result_message.message_id
-    context.db_session.commit()
+    if action_buttons:
+        # Сохраняем ID сообщения для удаления кнопок по таймауту
+        game_result.reroll_message_id = result_message.message_id
+        context.db_session.commit()
 
-    # Запускаем таймер на удаление кнопки через 5 минут
-    asyncio.create_task(remove_reroll_button_after_timeout(
-        context.bot,
-        update.effective_chat.id,
-        result_message.message_id,
-        delay_minutes=5
-    ))
+        asyncio.create_task(remove_reroll_button_after_timeout(
+            context.bot,
+            update.effective_chat.id,
+            result_message.message_id,
+            delay_minutes=config.constants.reroll_timeout_minutes
+        ))
 
-    logger.info(f"Sent result message with reroll button, message_id: {result_message.message_id}")
+    logger.info(
+        f"Sent result message with {len(action_buttons)} action button(s), "
+        f"message_id: {result_message.message_id}"
+    )
 
 
 def ensure_game(func):
@@ -2219,6 +2223,12 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
 
     logger.info(f"Reroll callback from user {query.from_user.id} in chat {update.effective_chat.id}")
     logger.info(f"Callback data: {query.data}")
+
+    # Старая кнопка может остаться в чате после отключения фичи.
+    if not config.constants.reroll_enabled:
+        await query.answer(reroll_msgs['error_disabled'], show_alert=True)
+        logger.info(f"Reroll is disabled for chat {update.effective_chat.id}")
+        return
 
     # Парсим callback_data: reroll_{game_id}_{year}_{day}
     parts = query.data.split('_')

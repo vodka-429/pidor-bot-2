@@ -389,6 +389,7 @@ def get_reroll_messages(config) -> dict:
 
     return {
         'button_text': f"🔄 Перевыборы ({c.reroll_price} 💰)",
+        'error_disabled': "❌ Перевыборы отключены в этом чате",
         'announcement': f"""🔄 <b>ПЕРЕВЫБОРЫ!</b>
 
 👤 {{initiator_name}} заплатил(а) {c.reroll_price} 💰 за перевыбор!
