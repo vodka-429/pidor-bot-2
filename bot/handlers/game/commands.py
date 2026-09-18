@@ -4,7 +4,7 @@ import functools
 import logging
 import random
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, text
@@ -3103,6 +3103,78 @@ async def handle_shop_toast_select_callback(update: Update, context: GECallbackC
 
 # ─── Totalizator handlers ────────────────────────────────────────────────────
 
+TOTALIZATOR_CREATION_TTL_SECONDS = 5 * 60
+
+
+def _serialize_totalizator_creation_state(prompt_message_id: int, now: Optional[float] = None) -> str:
+    """Serialize a short-lived totalizator creation state."""
+    if now is None:
+        now = current_datetime().timestamp()
+    return json.dumps({
+        'prompt_message_id': prompt_message_id,
+        'expires_at': now + TOTALIZATOR_CREATION_TTL_SECONDS,
+    })
+
+
+def _parse_totalizator_creation_state(value: str, now: Optional[float] = None) -> Optional[int]:
+    """Return the expected prompt message ID, or ``None`` for stale/invalid state."""
+    if now is None:
+        now = current_datetime().timestamp()
+    try:
+        state = json.loads(value)
+        prompt_message_id = state['prompt_message_id']
+        expires_at = float(state['expires_at'])
+    except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(prompt_message_id, int) or isinstance(prompt_message_id, bool):
+        return None
+    if prompt_message_id <= 0 or expires_at <= now:
+        return None
+    return prompt_message_id
+
+
+def _totalizator_creation_cancel_keyboard(owner_user_id: int):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "❌ Отмена",
+            callback_data=f"tot_create_cancel_{owner_user_id}",
+        )
+    ]])
+
+
+def _totalizator_creation_prompt() -> str:
+    from datetime import timedelta
+    from bot.handlers.game.text_static import TOTALIZATOR_CREATE_PROMPT
+
+    example_date = (current_datetime() + timedelta(days=30)).strftime('%d.%m.%Y')
+    return TOTALIZATOR_CREATE_PROMPT.format(example_date=example_date)
+
+
+def _save_totalizator_creation_state(db_session, kv_item: KVItem, prompt_message_id: int):
+    kv_item.value = _serialize_totalizator_creation_state(prompt_message_id)
+    db_session.add(kv_item)
+    db_session.commit()
+
+
+def _delete_totalizator_creation_state(db_session, kv_item: KVItem):
+    db_session.delete(kv_item)
+    db_session.commit()
+
+
+async def _reply_with_totalizator_creation_error(message, error_text: str, owner_user_id: int,
+                                                  kv_item: KVItem, db_session):
+    """Send a retry prompt and bind the creation state to that new message."""
+    sent = await message.reply_text(
+        f"{error_text}\n\n{_totalizator_creation_prompt()}",
+        parse_mode="HTML",
+        reply_markup=_totalizator_creation_cancel_keyboard(owner_user_id),
+    )
+    _save_totalizator_creation_state(db_session, kv_item, sent.message_id)
+
+
 @ensure_game
 async def handle_shop_totalizator_callback(update: Update, context: GECallbackContext):
     """Показать меню тотализатора: создать новый или завершить свой."""
@@ -3152,7 +3224,7 @@ async def handle_tot_create_callback(update: Update, context: GECallbackContext)
     """Начать создание тотализатора — сохранить KVItem и попросить параметры."""
     from bot.handlers.game.totalizator_service import get_open_totalizators, get_user_open_totalizators
     from bot.handlers.game.text_static import (
-        SHOP_ERROR_NOT_YOUR_SHOP, TOTALIZATOR_CREATE_PROMPT,
+        SHOP_ERROR_NOT_YOUR_SHOP,
         TOTALIZATOR_CREATE_LIMIT_PLAYER, TOTALIZATOR_CREATE_LIMIT_CHAT,
     )
 
@@ -3182,7 +3254,11 @@ async def handle_tot_create_callback(update: Update, context: GECallbackContext)
         await query.answer(TOTALIZATOR_CREATE_LIMIT_CHAT, show_alert=True)
         return
 
-    # Сохраняем KVItem как флаг ожидания ввода
+    if query.message is None:
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    # Сохраняем ID prompt, чтобы не перехватывать обычные сообщения в чате
     chat_id = update.effective_chat.id
     tg_user_id = context.tg_user.tg_id
     kv_key = f"tot_create_{tg_user_id}"
@@ -3191,11 +3267,48 @@ async def handle_tot_create_callback(update: Update, context: GECallbackContext)
         chat_id=chat_id, key=kv_key
     ).one_or_none()
     if existing is None:
-        kv_item = KVItem(chat_id=chat_id, key=kv_key, value="1")
-        context.db_session.add(kv_item)
-        context.db_session.commit()
+        existing = KVItem(chat_id=chat_id, key=kv_key, value="")
 
-    await query.edit_message_text(TOTALIZATOR_CREATE_PROMPT, parse_mode="HTML")
+    await query.edit_message_text(
+        _totalizator_creation_prompt(),
+        parse_mode="HTML",
+        reply_markup=_totalizator_creation_cancel_keyboard(owner_user_id),
+    )
+    _save_totalizator_creation_state(context.db_session, existing, query.message.message_id)
+    await query.answer()
+
+
+@ensure_game
+async def handle_tot_create_cancel_callback(update: Update, context: GECallbackContext):
+    """Cancel an active totalizator creation flow."""
+    from bot.handlers.game.text_static import (
+        SHOP_ERROR_NOT_YOUR_SHOP, TOTALIZATOR_CREATE_CANCELLED,
+    )
+
+    query = update.callback_query
+    if query is None:
+        return
+
+    try:
+        owner_user_id = int(query.data.split("_")[-1])
+    except (ValueError, IndexError):
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    if query.from_user.id != owner_user_id:
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    kv_item = context.db_session.query(KVItem).filter_by(
+        chat_id=update.effective_chat.id,
+        key=f"tot_create_{context.tg_user.tg_id}",
+    ).one_or_none()
+    if kv_item is None:
+        await query.answer("Режим ввода уже закрыт.", show_alert=True)
+        return
+
+    _delete_totalizator_creation_state(context.db_session, kv_item)
+    await query.edit_message_text(TOTALIZATOR_CREATE_CANCELLED, parse_mode="HTML")
     await query.answer()
 
 
@@ -3469,10 +3582,27 @@ async def handle_totalizator_creation_text(update: Update, context: GECallbackCo
     if kv_item is None:
         return  # Not in creation mode
 
+    prompt_message_id = _parse_totalizator_creation_state(kv_item.value)
+    if prompt_message_id is None:
+        # Сюда же попадают legacy-флаги value="1". Удаляем их без ответа.
+        _delete_totalizator_creation_state(context.db_session, kv_item)
+        logger.info(
+            f"Removed expired or invalid totalizator creation state for "
+            f"user {context.tg_user.id} in chat {chat_id}"
+        )
+        return
+
+    reply_to_message = update.message.reply_to_message
+    if reply_to_message is None or reply_to_message.message_id != prompt_message_id:
+        return
+
     text = update.message.text.strip()
     parts = text.split(None, 2)
     if len(parts) < 3:
-        await update.message.reply_text(TOTALIZATOR_CREATE_BAD_FORMAT, parse_mode="HTML")
+        await _reply_with_totalizator_creation_error(
+            update.message, TOTALIZATOR_CREATE_BAD_FORMAT, tg_user_id,
+            kv_item, context.db_session,
+        )
         return
 
     stake_str, date_str, title = parts
@@ -3483,17 +3613,21 @@ async def handle_totalizator_creation_text(update: Update, context: GECallbackCo
         if stake < 1:
             raise ValueError
     except ValueError:
-        await update.message.reply_text(TOTALIZATOR_CREATE_BAD_STAKE, parse_mode="HTML")
+        await _reply_with_totalizator_creation_error(
+            update.message, TOTALIZATOR_CREATE_BAD_STAKE, tg_user_id,
+            kv_item, context.db_session,
+        )
         return
 
     from bot.handlers.game.cbr_service import calculate_commission_amount
     commission = calculate_commission_amount(stake)
     effective = stake - commission
     if effective < 1:
-        await update.message.reply_text(
+        await _reply_with_totalizator_creation_error(
+            update.message,
             f"❌ Ставка слишком мала — после комиссии ({commission} 🪙) не остаётся монет для пула. "
             f"Попробуйте ставку ≥ {commission + 1} 🪙.",
-            parse_mode="HTML"
+            tg_user_id, kv_item, context.db_session,
         )
         return
 
@@ -3501,12 +3635,18 @@ async def handle_totalizator_creation_text(update: Update, context: GECallbackCo
     try:
         deadline_dt = _dt.strptime(date_str, "%d.%m.%Y")
     except ValueError:
-        await update.message.reply_text(TOTALIZATOR_CREATE_BAD_DATE, parse_mode="HTML")
+        await _reply_with_totalizator_creation_error(
+            update.message, TOTALIZATOR_CREATE_BAD_DATE, tg_user_id,
+            kv_item, context.db_session,
+        )
         return
 
     current_dt = current_datetime()
     if deadline_dt.date() <= current_dt.date():
-        await update.message.reply_text(TOTALIZATOR_CREATE_DATE_PAST, parse_mode="HTML")
+        await _reply_with_totalizator_creation_error(
+            update.message, TOTALIZATOR_CREATE_DATE_PAST, tg_user_id,
+            kv_item, context.db_session,
+        )
         return
 
     deadline_year = deadline_dt.year
@@ -3524,8 +3664,7 @@ async def handle_totalizator_creation_text(update: Update, context: GECallbackCo
     )
 
     # Удаляем KVItem
-    context.db_session.delete(kv_item)
-    context.db_session.commit()
+    _delete_totalizator_creation_state(context.db_session, kv_item)
 
     # Отправляем объявление с кнопками
     bets = get_totalizator_bets(context.db_session, tot.id)

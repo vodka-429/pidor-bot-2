@@ -2,6 +2,7 @@
 import logging
 import re
 from datetime import datetime, timedelta
+from html.parser import HTMLParser
 from typing import Optional
 import requests
 
@@ -17,6 +18,79 @@ MIN_COMMISSION = 1
 # Кэш для ключевой ставки
 _cached_rate: Optional[float] = None
 _cache_timestamp: Optional[datetime] = None
+
+
+class _KeyRateTableParser(HTMLParser):
+    """Collect table rows without depending on the CBR page's CSS markup."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tables = []
+        self._table_depth = 0
+        self._current_table = None
+        self._current_row = None
+        self._current_cell = None
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if tag == 'table':
+            if self._table_depth == 0:
+                self._current_table = []
+            self._table_depth += 1
+        elif self._table_depth == 1 and tag == 'tr':
+            self._current_row = []
+        elif self._table_depth == 1 and tag in ('td', 'th') and self._current_row is not None:
+            self._current_cell = []
+
+    def handle_data(self, data):
+        if self._current_cell is not None:
+            self._current_cell.append(data)
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if self._table_depth == 1 and tag in ('td', 'th') and self._current_cell is not None:
+            cell_text = ' '.join(''.join(self._current_cell).split())
+            self._current_row.append(cell_text)
+            self._current_cell = None
+        elif self._table_depth == 1 and tag == 'tr' and self._current_row is not None:
+            self._current_table.append(self._current_row)
+            self._current_row = None
+        elif tag == 'table' and self._table_depth:
+            self._table_depth -= 1
+            if self._table_depth == 0:
+                self.tables.append(self._current_table)
+                self._current_table = None
+
+
+def _parse_key_rate_html(html: str) -> Optional[tuple[float, str]]:
+    """Extract ``(rate, date)`` from the CBR Date/Rate table."""
+    parser = _KeyRateTableParser()
+    parser.feed(html)
+
+    for table in parser.tables:
+        for header_index, row in enumerate(table):
+            normalized = [cell.casefold() for cell in row]
+            if 'дата' not in normalized or 'ставка' not in normalized:
+                continue
+
+            date_index = normalized.index('дата')
+            rate_index = normalized.index('ставка')
+            for data_row in table[header_index + 1:]:
+                if max(date_index, rate_index) >= len(data_row):
+                    continue
+
+                rate_date = data_row[date_index]
+                rate_text = data_row[rate_index]
+                if not re.fullmatch(r'\d{2}\.\d{2}\.\d{4}', rate_date):
+                    continue
+                if not re.fullmatch(r'\d{1,2},\d{2}', rate_text):
+                    continue
+
+                rate = float(rate_text.replace(',', '.'))
+                if 0 < rate <= 100:
+                    return rate, rate_date
+
+    return None
 
 
 def _is_cache_valid() -> bool:
@@ -54,16 +128,14 @@ def _fetch_key_rate_from_api() -> Optional[float]:
         response = requests.get(CBR_KEY_RATE_URL, headers=headers, timeout=10.0)
         response.raise_for_status()
 
-        # Как выглядит ячейка со ставкой в HTML: <td>16,00</td>
-        # Находим первое попавшееся число формата XX,XX внутри тега td
-        # (На странице hd_base первое число в таблице — это всегда актуальная ставка)
-        match = re.search(r'<td>(\d{1,2},\d{2})</td>', response.text)
+        parsed_rate = _parse_key_rate_html(response.text)
 
-        if match:
-            # Заменяем русскую запятую на точку и превращаем в число
-            rate_str = match.group(1).replace(',', '.')
-            rate = float(rate_str)
-            logger.info(f"Successfully fetched key rate from CBR key rate page: {rate}%")
+        if parsed_rate:
+            rate, rate_date = parsed_rate
+            logger.info(
+                f"Successfully fetched key rate from CBR key rate page: "
+                f"{rate}% for {rate_date}"
+            )
             return rate
         else:
             logger.warning("Could not find key rate on CBR key rate page")

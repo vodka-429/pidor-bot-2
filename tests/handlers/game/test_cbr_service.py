@@ -10,6 +10,7 @@ from bot.handlers.game.cbr_service import (
     calculate_commission_amount,
     _is_cache_valid,
     _fetch_key_rate_from_api,
+    _parse_key_rate_html,
     FALLBACK_COMMISSION_PERCENT,
     MIN_COMMISSION,
 )
@@ -22,7 +23,12 @@ class TestFetchKeyRateFromAPI:
     def test_fetch_success_comma_format(self):
         """Успешное получение ставки (формат с запятой: 21,00)."""
         mock_response = MagicMock()
-        mock_response.text = '<html><body><table><tr><td>21,00</td></tr></table></body></html>'
+        mock_response.text = '''
+            <table>
+                <tr><th>Дата</th><th>Ставка</th></tr>
+                <tr><td>18.09.2026</td><td>21,00</td></tr>
+            </table>
+        '''
         mock_response.raise_for_status = MagicMock()
 
         with patch('requests.get', return_value=mock_response):
@@ -32,7 +38,12 @@ class TestFetchKeyRateFromAPI:
     def test_fetch_success_single_digit(self):
         """Успешное получение ставки (однозначное число: 9,50)."""
         mock_response = MagicMock()
-        mock_response.text = '<html><body><table><tr><td>9,50</td></tr></table></body></html>'
+        mock_response.text = '''
+            <table class="data">
+                <tr><th> Дата </th><th> Ставка </th></tr>
+                <tr class="latest"><td>18.09.2026</td><td>9,50</td></tr>
+            </table>
+        '''
         mock_response.raise_for_status = MagicMock()
 
         with patch('requests.get', return_value=mock_response):
@@ -40,14 +51,38 @@ class TestFetchKeyRateFromAPI:
             assert rate == 9.5
 
     def test_fetch_success_with_other_content(self):
-        """Успешное получение ставки с другим контентом на странице."""
+        """Посторонние дробные числа до таблицы не принимаются за ставку."""
         mock_response = MagicMock()
-        mock_response.text = '<html><body><h1>История ключевой ставки</h1><table><tr><td>16,00</td><td>01.01.2024</td></tr></table></body></html>'
+        mock_response.text = '''
+            <html><body>
+                <table><tr><td>99,99</td></tr></table>
+                <table>
+                    <tr><th>Дата</th><th>Ставка</th></tr>
+                    <tr><td>18.09.2026</td><td><span>15,50</span></td></tr>
+                    <tr><td>17.09.2026</td><td>14,00</td></tr>
+                </table>
+            </body></html>
+        '''
         mock_response.raise_for_status = MagicMock()
 
         with patch('requests.get', return_value=mock_response):
             rate = _fetch_key_rate_from_api()
-            assert rate == 16.0
+            assert rate == 15.5
+
+    def test_parse_returns_rate_and_date(self):
+        html = '''
+            <table>
+                <tr><th>Дата</th><th>Ставка</th></tr>
+                <tr><td>18.09.2026</td><td>14,00</td></tr>
+            </table>
+        '''
+
+        assert _parse_key_rate_html(html) == (14.0, '18.09.2026')
+
+    def test_parse_rejects_table_without_expected_headers(self):
+        html = '<table><tr><td>18.09.2026</td><td>15,50</td></tr></table>'
+
+        assert _parse_key_rate_html(html) is None
 
     def test_fetch_http_error(self):
         """Ошибка HTTP при запросе."""
