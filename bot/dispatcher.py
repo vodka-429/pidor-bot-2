@@ -27,6 +27,7 @@ from bot.handlers.game.commands import pidor_cmd, pidorules_cmd, pidoreg_cmd, \
     handle_shop_achievements_callback, \
     handle_shop_toast_callback, handle_shop_toast_select_callback, \
     handle_shop_totalizator_callback, handle_tot_create_callback, \
+    handle_tot_create_cancel_callback, \
     handle_tot_resolve_callback, handle_tot_resolve_confirm_callback, \
     handle_tot_bet_callback, handle_totalizator_creation_text
 from bot.handlers.kvstore.commands import get_cmd, set_cmd, del_cmd, list_cmd
@@ -130,6 +131,7 @@ def init_dispatcher(application: Application, db_engine):
     # Totalizator shop handler
     application.add_handler(CallbackQueryHandler(handle_shop_totalizator_callback, pattern=r'^shop_totalizator_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_tot_create_callback, pattern=r'^tot_create_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_tot_create_cancel_callback, pattern=r'^tot_create_cancel_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_tot_resolve_callback, pattern=r'^tot_resolve_\d+_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_tot_resolve_confirm_callback, pattern=r'^tot_resolve_\d+_(yes|no|cancel)_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_tot_bet_callback, pattern=r'^tot_bet_\d+_(yes|no)$'))

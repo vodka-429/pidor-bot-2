@@ -526,8 +526,11 @@ TOTALIZATOR_REFUNDED = (
 TOTALIZATOR_CREATE_PROMPT = (
     "🎰 Отправьте параметры тотализатора одним сообщением:\n"
     "<code>&lt;ставка&gt; &lt;ДД.ММ.ГГГГ&gt; &lt;описание&gt;</code>\n\n"
-    "Пример:\n<code>15 30.06.2026 Спор с Олей в тимсе</code>"
+    "Пример:\n<code>15 {example_date} Спор с Олей в тимсе</code>\n\n"
+    "↩️ <b>Ответьте именно на это сообщение.</b> \n"
+    "Режим ввода закроется через 5 минут."
 )
+TOTALIZATOR_CREATE_CANCELLED = "❌ Создание тотализатора отменено."
 TOTALIZATOR_CREATE_LIMIT_PLAYER = "❌ У тебя уже есть открытый тотализатор. Сначала завершите его."
 TOTALIZATOR_CREATE_LIMIT_CHAT = "❌ В чате уже 3 открытых тотализатора. Дождитесь завершения."
 TOTALIZATOR_CREATE_BAD_FORMAT = (
