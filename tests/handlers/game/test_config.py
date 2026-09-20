@@ -24,6 +24,7 @@ def temp_config_file():
     config_data = {
         "enabled_chats": [-1001392307997, -4608252738, -1002189152002],
         "test_chat_id": -4608252738,
+        "chat_migrations": {"-123": -100123},
         "defaults": {
             "immunity_price": 10,
             "coins_per_win": 4
@@ -125,6 +126,7 @@ def test_global_config_defaults():
     assert config.test_chat_id is None
     assert isinstance(config.defaults, GameConstants)
     assert config.chat_overrides == {}
+    assert config.chat_migrations == {}
 
 
 @pytest.mark.unit
@@ -135,6 +137,7 @@ def test_load_global_config_from_file(temp_config_file, reset_global_config):
 
         assert config.enabled_chats == [-1001392307997, -4608252738, -1002189152002]
         assert config.test_chat_id == -4608252738
+        assert config.chat_migrations == {-123: -100123}
         assert config.defaults.immunity_price == 10
         assert config.defaults.coins_per_win == 4
         assert -4608252738 in config.chat_overrides

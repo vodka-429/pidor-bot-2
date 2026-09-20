@@ -97,7 +97,7 @@ Game configuration via JSON file allows per-chat customization of prices, reward
 
 ### Надёжность long polling
 
-Для Bot API и `getUpdates` используются отдельные HTTP-клиенты с явными таймаутами. Polling-транспорт отслеживает возраст текущего запроса: если один `getUpdates` не завершается более 120 секунд, watchdog завершает процесс с ошибкой, чтобы Kubernetes перезапустил контейнер.
+Для Bot API и `getUpdates` используются отдельные HTTP-клиенты с явными таймаутами. Два независимых watchdog следят за polling-транспортом и последовательной обработкой updates. Если один `getUpdates` или один handler не завершается более 120 секунд, процесс пишет диагностические данные (для handler также стеки потоков) и завершается, чтобы Kubernetes перезапустил контейнер. Отдельный daemon-thread позволяет обнаружить даже синхронную блокировку event loop.
 
 Helm Deployment использует стратегию `Recreate`: старый pod полностью останавливается до запуска нового. Это обязательно для long polling, поскольку Telegram допускает только один активный `getUpdates` на bot token.
 
@@ -127,7 +127,8 @@ Helm Deployment использует стратегию `Recreate`: старый
 **Проблема: Процесс работает, но бот перестал видеть новые команды и логи замолчали**
 * Проверьте доступность Bot API через тот же `BOT_HTTPS_PROXY`, который использует приложение.
 * Проверьте отсутствие второго pod или локального процесса с тем же token: в логах это проявляется как `Conflict: terminated by other getUpdates request`.
-* Ищите `Telegram polling made no progress` — после этой записи watchdog завершает процесс для автоматического рестарта.
+* Ищите `Telegram polling made no progress` или `Telegram update processing stalled`. Вторая запись содержит ID update/chat/user, тип операции и callback/команду; сразу после неё печатаются стеки потоков.
+* Если Telegram преобразовал обычную группу в супергруппу, её ID изменится. Обновите `enabled_chats`, `test_chat_id` и `chat_overrides`, а перенос существующей игры задайте через `chat_migrations` в формате `{ "старый_id": новый_id }`.
 * В Kubernetes должен использоваться `strategy.type: Recreate`; RollingUpdate временно запускает два poller и создаёт конфликт.
 
 **Проблема: Тесты падают с ошибками async**

@@ -134,6 +134,7 @@ class GlobalConfig:
         defaults: Значения констант по умолчанию для всех чатов
         chat_overrides: Словарь переопределений констант для конкретных чатов
             Ключ - chat_id, значение - словарь с переопределяемыми параметрами
+        chat_migrations: Словарь старых ID Telegram-групп и новых ID супергрупп
 
     Example:
         >>> config = GlobalConfig(
@@ -157,6 +158,10 @@ class GlobalConfig:
     # Переопределения для конкретных чатов
     chat_overrides: Dict[int, Dict[str, Any]] = field(default_factory=dict)
 
+    # Telegram меняет ID при преобразовании обычной группы в супергруппу.
+    # Ключ — старый ID, значение — новый ID.
+    chat_migrations: Dict[int, int] = field(default_factory=dict)
+
 
 # Глобальный экземпляр конфигурации (ленивая инициализация)
 _global_config: Optional[GlobalConfig] = None
@@ -172,6 +177,7 @@ def _load_global_config() -> GlobalConfig:
     {
       "enabled_chats": [-1001392307997, -4608252738, -1002189152002, -1003671793100],
       "test_chat_id": -4608252738,
+      "chat_migrations": {"-4608252738": -1003932067905},
       "defaults": {
         "immunity_price": 10,
         "coins_per_win": 5
@@ -226,11 +232,20 @@ def _load_global_config() -> GlobalConfig:
             # Пропускаем невалидные ключи
             continue
 
+    chat_migrations_raw = config_data.get('chat_migrations', {})
+    chat_migrations = {}
+    for old_chat_id, new_chat_id in chat_migrations_raw.items():
+        try:
+            chat_migrations[int(old_chat_id)] = int(new_chat_id)
+        except (ValueError, TypeError):
+            continue
+
     return GlobalConfig(
         enabled_chats=enabled_chats,
         test_chat_id=test_chat_id,
         defaults=defaults,
-        chat_overrides=chat_overrides
+        chat_overrides=chat_overrides,
+        chat_migrations=chat_migrations,
     )
 
 
@@ -385,6 +400,11 @@ def get_test_chat_id() -> Optional[int]:
     """
     config = _get_global_config()
     return config.test_chat_id
+
+
+def get_chat_migrations() -> Dict[int, int]:
+    """Return configured old-to-new Telegram chat ID migrations."""
+    return dict(_get_global_config().chat_migrations)
 
 
 def is_test_chat(chat_id: int) -> bool:

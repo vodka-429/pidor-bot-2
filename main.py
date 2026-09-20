@@ -11,7 +11,13 @@ from telegram.ext import Application
 from telegram.request import HTTPXRequest
 
 from bot.dispatcher import init_dispatcher
-from bot.polling_health import TrackedHTTPXRequest, polling_watchdog
+from bot.chat_migration import migrate_configured_chat_ids
+from bot.handlers.game.config import get_chat_migrations
+from bot.polling_health import (
+    TrackedHTTPXRequest,
+    WatchedSequentialUpdateProcessor,
+    polling_watchdog,
+)
 
 # Setup logging
 logging.basicConfig(
@@ -55,7 +61,13 @@ engine = create_engine(dburi, echo=False)
 
 async def main():
     """Main function to run the bot."""
-    builder = Application.builder().token(API_TOKEN)
+    migrate_configured_chat_ids(engine, get_chat_migrations())
+    update_processor = WatchedSequentialUpdateProcessor()
+    builder = (
+        Application.builder()
+        .token(API_TOKEN)
+        .concurrent_updates(update_processor)
+    )
     proxy = getenv("BOT_HTTPS_PROXY")
     request_kwargs = {
         "connect_timeout": 20.0,
