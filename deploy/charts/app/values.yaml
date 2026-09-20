@@ -7,7 +7,7 @@ replicaCount: 1
 image:
   pullPolicy: IfNotPresent
   repository: cr.yandex/crpr9jlf6k4254l80050/pidor_bot
-  version: 140-1ea056d14c267944639152ffaf825f02df05cf72
+  version: 141-0a7ed4b9d56f374c1c96497164db947cdae9b8f0
 
 # Game configuration (replaces CHAT_WHITELIST and TEST_CHAT_ID)
 gameConfig:
