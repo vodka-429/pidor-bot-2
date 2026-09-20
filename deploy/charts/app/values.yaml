@@ -13,13 +13,15 @@ image:
 gameConfig:
   enabled_chats:
     - -1001392307997
-    - -4608252738
+    - -1003932067905
     - -1002189152002
     - -1003671793100
-  test_chat_id: -4608252738
+  test_chat_id: -1003932067905
+  chat_migrations:
+    "-4608252738": -1003932067905
   defaults: {}
   chat_overrides:
-    "-4608252738":
+    "-1003932067905":
       max_missed_days_for_final_voting: 100
       totalizator_enabled: true
       coin_swap_enabled: true

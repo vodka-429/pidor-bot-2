@@ -5,6 +5,9 @@
     -1003456789012
   ],
   "test_chat_id": -1001234567890,
+  "chat_migrations": {
+    "-123456789": -1001234567890
+  },
   "defaults": {
     "immunity_price": 10,
     "double_chance_price": 8,
