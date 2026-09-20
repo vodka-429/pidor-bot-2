@@ -383,7 +383,7 @@ def test_all_features_disabled_shop_menu(reset_global_config):
             assert total_buttons == 2
 
             # Verify buttons are achievements and bank
-            button_texts = [row[0].text for row in keyboard.inline_keyboard]
+            button_texts = [button.text for row in keyboard.inline_keyboard for button in row]
             assert any("🎖️" in text or "достижения" in text.lower() for text in button_texts)
             assert any("🏦" in text or "банк" in text.lower() for text in button_texts)
     finally:

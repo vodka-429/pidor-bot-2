@@ -23,9 +23,17 @@ gameConfig:
       max_missed_days_for_final_voting: 100
       totalizator_enabled: true
       coin_swap_enabled: true
+      coin_rain_enabled: true
+      custom_phrase_enabled: true
+      telegram_title_enabled: true
+      changelog_enabled: true
     "-1001392307997":
       totalizator_enabled: true
       coin_swap_enabled: true
+      coin_rain_enabled: true
+      custom_phrase_enabled: true
+      telegram_title_enabled: true
+      changelog_enabled: true
     "-1002189152002":
       reroll_enabled: false
     "-1003671793100":

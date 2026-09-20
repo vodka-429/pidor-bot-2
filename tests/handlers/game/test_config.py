@@ -96,6 +96,13 @@ def test_game_constants_defaults():
     assert constants.immunity_enabled is True
     assert constants.double_chance_enabled is True
     assert constants.give_coins_enabled is True
+    assert constants.coin_rain_enabled is False
+    assert constants.custom_phrase_enabled is False
+    assert constants.telegram_title_enabled is False
+    assert constants.changelog_enabled is False
+    assert constants.coin_rain_price == 40
+    assert constants.custom_phrase_price == 40
+    assert constants.telegram_title_price == 80
 
 
 @pytest.mark.unit
@@ -282,7 +289,7 @@ def test_config_caching(temp_config_file, reset_global_config):
 
 @pytest.mark.unit
 def test_all_features_enabled_by_default(reset_global_config):
-    """Test that all feature flags are enabled by default."""
+    """Test legacy defaults and opt-in defaults for pilot features."""
     with patch.dict(os.environ, {}, clear=True):
         config = get_config(123)
 
@@ -292,6 +299,10 @@ def test_all_features_enabled_by_default(reset_global_config):
         assert config.constants.immunity_enabled is True
         assert config.constants.double_chance_enabled is True
         assert config.constants.give_coins_enabled is True
+        assert config.constants.coin_rain_enabled is False
+        assert config.constants.custom_phrase_enabled is False
+        assert config.constants.telegram_title_enabled is False
+        assert config.constants.changelog_enabled is False
 
 
 @pytest.mark.unit

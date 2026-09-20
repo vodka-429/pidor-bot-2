@@ -176,7 +176,7 @@ def process_purchase(db_session, game_id: int, user_id: int, price: int, year: i
     spend_coins(db_session, game_id, user_id, price, year, reason, auto_commit=False)
 
     # Добавляем комиссию в банк чата
-    bank = get_or_create_chat_bank(db_session, game_id)
+    bank = get_or_create_chat_bank(db_session, game_id, auto_commit=False)
     bank.balance += commission
     bank.updated_at = datetime.utcnow()
     db_session.add(bank)
@@ -214,6 +214,7 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
     if constants.immunity_enabled:
         items.append({
             'name': '🛡️ Защита от пидора',
+            'short_name': '🛡 Защита',
             'price': constants.immunity_price,
             'description': f'Защита на 1 день (кулдаун {constants.immunity_cooldown_days} дней)',
             'callback_data': 'shop_immunity'
@@ -223,6 +224,7 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
     if constants.double_chance_enabled:
         items.append({
             'name': '🎲 Двойной шанс',
+            'short_name': '🎲 Шанс',
             'price': constants.double_chance_price,
             'description': 'Удвоенный шанс стать пидором на 1 день',
             'callback_data': 'shop_double'
@@ -232,6 +234,7 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
     if constants.prediction_enabled:
         items.append({
             'name': '🔮 Предсказание',
+            'short_name': '🔮 Прогноз',
             'price': constants.prediction_price,
             'description': f'Предскажи пидора дня (+{constants.prediction_reward} койнов при успехе)',
             'callback_data': 'shop_predict'
@@ -241,6 +244,7 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
     if constants.transfer_enabled:
         items.append({
             'name': '💸 Передать койны',
+            'short_name': '💸 Перевод',
             'price': None,
             'description': 'Передать койны другому игроку',
             'callback_data': 'shop_transfer'
@@ -250,6 +254,7 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
     if constants.toast_enabled:
         items.append({
             'name': '🍻 Тост',
+            'short_name': '🍻 Тост',
             'price': constants.toast_price,
             'description': f'Поднять тост за игрока ({constants.toast_price} койнов)',
             'callback_data': 'shop_toast'
@@ -259,14 +264,46 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
     if constants.totalizator_enabled:
         items.append({
             'name': '🎰 Тотализатор',
+            'short_name': '🎰 Тотализатор',
             'price': None,
             'description': 'Создать ставку или завершить существующую',
             'callback_data': 'shop_totalizator'
         })
 
+    if constants.coin_rain_enabled:
+        items.append({
+            'name': '🌧 Койновый дождь',
+            'short_name': '🌧 Дождь',
+            'price': constants.coin_rain_price,
+            'description': (
+                f'До {constants.coin_rain_max_recipients} игроков получат '
+                f'по {constants.coin_rain_recipient_amount} койнов'
+            ),
+            'callback_data': 'shop_rain'
+        })
+
+    if constants.custom_phrase_enabled:
+        items.append({
+            'name': '✍️ Победная фраза',
+            'short_name': '✍️ Фраза',
+            'price': constants.custom_phrase_price,
+            'description': 'Своя постоянная фраза при победе',
+            'callback_data': 'shop_phrase'
+        })
+
+    if constants.telegram_title_enabled:
+        items.append({
+            'name': '🏷 Telegram-титул',
+            'short_name': '🏷 Титул',
+            'price': constants.telegram_title_price,
+            'description': 'Постоянный титул рядом с именем в Telegram (тестирование)',
+            'callback_data': 'shop_title'
+        })
+
     # Банк чата (всегда доступен)
     items.append({
         'name': '🏦 Банк чата',
+        'short_name': '🏦 Банк',
         'price': None,
         'description': 'Посмотреть баланс банка чата',
         'callback_data': 'shop_bank'
@@ -276,6 +313,7 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
     if constants.achievements_enabled:
         items.append({
             'name': '🎖️ Мои достижения',
+            'short_name': '🏅 Достижения',
             'price': None,
             'description': 'Посмотреть свои достижения',
             'callback_data': 'shop_achievements'

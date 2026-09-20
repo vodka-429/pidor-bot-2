@@ -55,6 +55,9 @@ class GameConstants:
     prediction_price: int = 3
     reroll_price: int = 15
     toast_price: int = 5
+    coin_rain_price: int = 40
+    custom_phrase_price: int = 40
+    telegram_title_price: int = 80
 
     # Награды
     coins_per_win: int = 5
@@ -64,11 +67,14 @@ class GameConstants:
     give_coins_amount: int = 1
     give_coins_winner_amount: int = 2
     immunity_buyer_reward: int = 30
+    coin_rain_recipient_amount: int = 5
 
     # Лимиты
     max_missed_days_for_final_voting: int = 10
     immunity_cooldown_days: int = 7
     transfer_min_amount: int = 2
+    coin_rain_max_recipients: int = 5
+    coin_rain_chat_daily_limit: int = 3
 
     # Таймауты
     game_result_time_delay: int = 2
@@ -86,6 +92,10 @@ class GameConstants:
     totalizator_enabled: bool = False
     coin_swap_enabled: bool = False
     birthday_enabled: bool = True
+    coin_rain_enabled: bool = False
+    custom_phrase_enabled: bool = False
+    telegram_title_enabled: bool = False
+    changelog_enabled: bool = False
 
     # Множитель попадания в пул для именинника
     birthday_bonus_multiplier: int = 4
@@ -164,7 +174,7 @@ def _load_global_config() -> GlobalConfig:
       "test_chat_id": -4608252738,
       "defaults": {
         "immunity_price": 10,
-        "coins_per_win": 4
+        "coins_per_win": 5
       },
       "chat_overrides": {
         "-4608252738": {
@@ -280,6 +290,9 @@ def get_config(chat_id: int) -> ChatConfig:
         'double_chance_price': global_config.defaults.double_chance_price,
         'prediction_price': global_config.defaults.prediction_price,
         'reroll_price': global_config.defaults.reroll_price,
+        'coin_rain_price': global_config.defaults.coin_rain_price,
+        'custom_phrase_price': global_config.defaults.custom_phrase_price,
+        'telegram_title_price': global_config.defaults.telegram_title_price,
         'coins_per_win': global_config.defaults.coins_per_win,
         'coins_per_command': global_config.defaults.coins_per_command,
         'self_pidor_multiplier': global_config.defaults.self_pidor_multiplier,
@@ -287,9 +300,12 @@ def get_config(chat_id: int) -> ChatConfig:
         'give_coins_amount': global_config.defaults.give_coins_amount,
         'give_coins_winner_amount': global_config.defaults.give_coins_winner_amount,
         'immunity_buyer_reward': global_config.defaults.immunity_buyer_reward,
+        'coin_rain_recipient_amount': global_config.defaults.coin_rain_recipient_amount,
         'max_missed_days_for_final_voting': global_config.defaults.max_missed_days_for_final_voting,
         'immunity_cooldown_days': global_config.defaults.immunity_cooldown_days,
         'transfer_min_amount': global_config.defaults.transfer_min_amount,
+        'coin_rain_max_recipients': global_config.defaults.coin_rain_max_recipients,
+        'coin_rain_chat_daily_limit': global_config.defaults.coin_rain_chat_daily_limit,
         'game_result_time_delay': global_config.defaults.game_result_time_delay,
         'reroll_timeout_minutes': global_config.defaults.reroll_timeout_minutes,
         'reroll_enabled': global_config.defaults.reroll_enabled,
@@ -302,8 +318,13 @@ def get_config(chat_id: int) -> ChatConfig:
         'toast_price': global_config.defaults.toast_price,
         'toast_enabled': global_config.defaults.toast_enabled,
         'totalizator_enabled': global_config.defaults.totalizator_enabled,
+        'coin_swap_enabled': global_config.defaults.coin_swap_enabled,
         'birthday_enabled': global_config.defaults.birthday_enabled,
         'birthday_bonus_multiplier': global_config.defaults.birthday_bonus_multiplier,
+        'coin_rain_enabled': global_config.defaults.coin_rain_enabled,
+        'custom_phrase_enabled': global_config.defaults.custom_phrase_enabled,
+        'telegram_title_enabled': global_config.defaults.telegram_title_enabled,
+        'changelog_enabled': global_config.defaults.changelog_enabled,
     }
 
     # Применяем переопределения для конкретного чата

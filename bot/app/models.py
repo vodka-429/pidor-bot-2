@@ -9,6 +9,9 @@ class GamePlayer(SQLModel, table=True):
     game_id: Optional[int] = Field(default=None, foreign_key="game.id", primary_key=True)
     user_id: Optional[int] = Field(default=None, foreign_key="tguser.id", primary_key=True)
     is_active: bool = Field(default=True)
+    custom_victory_phrase: Optional[str] = Field(default=None)
+    custom_victory_name_position: Optional[str] = Field(default=None)
+    telegram_title: Optional[str] = Field(default=None)
 
     # user: 'TGUser' = Relationship(back_populates="games")
     # game: 'Game' = Relationship(back_populates="players")
@@ -243,6 +246,37 @@ class ChatBank(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     game: Game = Relationship()
+
+
+class CoinRainPurchase(SQLModel, table=True):
+    """Атомарная покупка койнового дождя и её распределение."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    buyer_id: int = Field(foreign_key="tguser.id", nullable=False)
+    year: int = Field(nullable=False)
+    day: int = Field(nullable=False)
+    price: int = Field(nullable=False)
+    recipient_amount: int = Field(nullable=False)
+    recipient_ids: str = Field(nullable=False, default="[]")
+    distributed_amount: int = Field(nullable=False)
+    bank_amount: int = Field(nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('game_id', 'buyer_id', 'year', 'day', name='unique_coin_rain_buyer_day'),
+    )
+
+
+class ChangelogReceipt(SQLModel, table=True):
+    """Отметка о показе конкретного changelog в чате."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    release_id: str = Field(nullable=False)
+    shown_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('game_id', 'release_id', name='unique_changelog_receipt'),
+    )
 
 
 class CoinTransfer(SQLModel, table=True):

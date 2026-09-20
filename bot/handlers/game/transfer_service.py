@@ -77,7 +77,7 @@ def can_transfer(db_session, game_id: int, sender_id: int, year: int, day: int) 
     return True, "ok"
 
 
-def get_or_create_chat_bank(db_session, game_id: int) -> ChatBank:
+def get_or_create_chat_bank(db_session, game_id: int, auto_commit: bool = True) -> ChatBank:
     """
     Получить или создать банк чата.
 
@@ -94,8 +94,11 @@ def get_or_create_chat_bank(db_session, game_id: int) -> ChatBank:
     if bank is None:
         bank = ChatBank(game_id=game_id, balance=0)
         db_session.add(bank)
-        db_session.commit()
-        db_session.refresh(bank)
+        if auto_commit:
+            db_session.commit()
+            db_session.refresh(bank)
+        else:
+            db_session.flush()
         logger.info(f"Created new ChatBank for game {game_id}")
 
     return bank

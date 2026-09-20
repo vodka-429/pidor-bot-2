@@ -262,6 +262,9 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
     logger.info(f"pidor_cmd started for chat {update.effective_chat.id}")
     logger.info(f"Game {context.game.id} of the day started")
 
+    from bot.handlers.game.changelog_service import send_current_changelog
+    await send_current_changelog(update, context, mark_as_seen=True)
+
     players: List[TGUser] = get_active_players(context.db_session, context.game.id)
 
     if len(players) < 2:
@@ -464,7 +467,10 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         await update.effective_chat.send_message(random.choice(stage3.phrases))
         await asyncio.sleep(config.constants.game_result_time_delay)
         logger.debug("Sending stage 4 message")
-        stage4_message = random.choice(stage4.phrases).format(
+        from bot.handlers.game.economy_pilot_service import get_custom_victory_message
+        stage4_message = get_custom_victory_message(
+            context.db_session, context.game.id, winner
+        ) or random.choice(stage4.phrases).format(
             username=winner.full_username(mention=True))
 
         # Добавить информацию о койнах в зависимости от ситуации
@@ -1478,6 +1484,18 @@ async def pidorcoinsstats_cmd(update: Update, context: GECallbackContext):
 
 
 @ensure_game
+async def pidornews_cmd(update: Update, context: GECallbackContext):
+    """Показать актуальную запись changelog по запросу."""
+    from bot.handlers.game.changelog_service import send_current_changelog
+
+    sent = await send_current_changelog(update, context, mark_as_seen=False)
+    if not sent:
+        await update.effective_chat.send_message(
+            "ℹ️ Новости PidorBot пока недоступны в этом чате."
+        )
+
+
+@ensure_game
 async def pidorshop_cmd(update: Update, context: GECallbackContext):
     """Открыть магазин пидор-койнов с интерактивным меню"""
     from bot.handlers.game.shop_helpers import create_shop_keyboard, format_shop_menu_message
@@ -2287,6 +2305,10 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
     initiator_name = html_escape(context.tg_user.full_username())
     old_winner_name = html_escape(old_winner.full_username())
     new_winner_name = html_escape(new_winner.full_username())
+    from bot.handlers.game.economy_pilot_service import get_custom_victory_message
+    winner_announcement = get_custom_victory_message(
+        context.db_session, game_id, new_winner
+    ) or f"✅ Новый пидор дня: {new_winner_name}!"
 
     # Формируем дополнительную информацию о защите, двойном шансе и предсказаниях
     protection_info = ""
@@ -2333,6 +2355,7 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
         reroll_msgs['announcement'].format(
             initiator_name=initiator_name,
             old_winner_name=old_winner_name,
+            winner_announcement=winner_announcement,
             new_winner_name=new_winner_name,
             new_winner_coins=config.constants.coins_per_win,
             protection_info=protection_info,

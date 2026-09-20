@@ -188,7 +188,7 @@ BANK_INFO = """🏦 *Банк чата*
 
 💰 Баланс: {balance} 💰
 
-_Комиссии от переводов накапливаются здесь\\._
+_Комиссии и остатки покупок накапливаются здесь\\._
 _В будущем банк будет использоваться для розыгрышей\\!_"""
 
 
@@ -394,7 +394,7 @@ def get_reroll_messages(config) -> dict:
 
 👤 {{initiator_name}} заплатил(а) {c.reroll_price} 💰 за перевыбор!
 ❌ Бывший пидор: {{old_winner_name}}
-✅ Новый пидор дня: {{new_winner_name}}!
+{{winner_announcement}}
 
 <code>🎉 {{initiator_name}}: -{c.reroll_price} пидор-койн(ов)</code>
 <code>🎉 {{old_winner_name}}: сохраняет свои койны</code>
