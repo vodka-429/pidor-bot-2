@@ -1,5 +1,5 @@
+import asyncio
 import logging
-import time
 from datetime import datetime
 from functools import wraps
 
@@ -31,7 +31,7 @@ def retry_on_db_error(max_retries=3, delay=1, backoff=2):
                     if attempt < max_retries - 1:
                         wait_time = delay * (backoff ** attempt)
                         logger.warning(f"DB connection error on attempt {attempt + 1}/{max_retries}: {e}. Retrying in {wait_time}s...")
-                        time.sleep(wait_time)
+                        await asyncio.sleep(wait_time)
                     else:
                         logger.error(f"DB connection failed after {max_retries} attempts: {e}")
                         raise
@@ -50,9 +50,36 @@ async def tg_user_middleware_handler(update: Update, context: ECallbackContext):
     update_type = "unknown"
     if update.message:
         update_type = "message"
+        message = update.message
+        reply_to = message.reply_to_message
+        command = None
+        if message.text and message.text.startswith('/'):
+            command = message.text.split(maxsplit=1)[0]
+        if command or reply_to is not None:
+            logger.info(
+                "MESSAGE_RECEIVED update_id=%s chat_id=%s user_id=%s "
+                "message_id=%s command=%s reply_to_message_id=%s reply_to_bot=%s",
+                update.update_id,
+                update.effective_chat.id if update.effective_chat else None,
+                update.effective_user.id if update.effective_user else None,
+                message.message_id,
+                command,
+                reply_to.message_id if reply_to else None,
+                bool(
+                    reply_to
+                    and reply_to.from_user
+                    and reply_to.from_user.id == context.bot.id
+                ),
+            )
     elif update.callback_query:
         update_type = f"callback_query (data: {update.callback_query.data})"
-        logger.info(f"🔔 CALLBACK_QUERY RECEIVED: {update.callback_query.data} from user {update.callback_query.from_user.id}")
+        logger.info(
+            "CALLBACK_RECEIVED update_id=%s chat_id=%s user_id=%s data=%s",
+            update.update_id,
+            update.effective_chat.id if update.effective_chat else None,
+            update.callback_query.from_user.id,
+            update.callback_query.data,
+        )
     elif update.edited_message:
         update_type = "edited_message"
     

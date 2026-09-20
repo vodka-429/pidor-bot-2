@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import suppress
 import logging
 import os.path
 from os import getenv
@@ -10,6 +11,7 @@ from telegram.ext import Application
 from telegram.request import HTTPXRequest
 
 from bot.dispatcher import init_dispatcher
+from bot.polling_health import TrackedHTTPXRequest, polling_watchdog
 
 # Setup logging
 logging.basicConfig(
@@ -55,13 +57,25 @@ async def main():
     """Main function to run the bot."""
     builder = Application.builder().token(API_TOKEN)
     proxy = getenv("BOT_HTTPS_PROXY")
+    request_kwargs = {
+        "connect_timeout": 20.0,
+        "read_timeout": 30.0,
+    }
+    polling_request_kwargs = {
+        "connect_timeout": 20.0,
+        "read_timeout": 40.0,
+    }
     if proxy:
         logger.info("Using outbound proxy for Telegram API")
-        builder = (
-            builder
-            .request(HTTPXRequest(proxy=proxy, connect_timeout=20.0, read_timeout=30.0))
-            .get_updates_request(HTTPXRequest(proxy=proxy, connect_timeout=20.0, read_timeout=40.0))
-        )
+        request_kwargs["proxy"] = proxy
+        polling_request_kwargs["proxy"] = proxy
+
+    polling_request = TrackedHTTPXRequest(**polling_request_kwargs)
+    builder = (
+        builder
+        .request(HTTPXRequest(**request_kwargs))
+        .get_updates_request(polling_request)
+    )
     application = builder.build()
     
     # Setup dispatcher
@@ -85,6 +99,11 @@ async def main():
     await application.updater.start_polling(
         allowed_updates=["message", "callback_query", "inline_query", "poll", "poll_answer"]
     )
+
+    watchdog_task = asyncio.create_task(
+        polling_watchdog(polling_request),
+        name="telegram-polling-watchdog",
+    )
     
     # Run until stopped
     try:
@@ -93,6 +112,9 @@ async def main():
     except (KeyboardInterrupt, SystemExit):
         logger.info("Received stop signal")
     finally:
+        watchdog_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await watchdog_task
         # Cleanup
         await application.updater.stop()
         await application.stop()

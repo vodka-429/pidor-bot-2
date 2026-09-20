@@ -217,13 +217,10 @@ def test_format_shop_menu_message():
     result = format_shop_menu_message(0, chat_id)
     assert "🏪 *Магазин пидор\\-койнов*" in result
     assert "💰 Ваш баланс: *0* 🪙" in result
-    assert "🛡️ Защита от пидора" in result
-    assert "🎲 Двойной шанс" in result
-    assert "🔮 Предсказание" in result
-    assert "*10* 🪙" in result
-    assert "*8* 🪙" in result
-    assert "*3* 🪙" in result
-    assert "_Выберите товар для покупки:_" in result
+    assert "Комиссия:" in result
+    assert "_Нажмите товар — там описание и подтверждение:_" in result
+    assert "🛡️ Защита от пидора" not in result
+    assert len(result) < 300
 
     # Test with positive balance
     result = format_shop_menu_message(100, chat_id)
@@ -244,14 +241,13 @@ def test_format_shop_menu_message_markdown_escaping():
 
     # Verify proper escaping
     assert "\\-" in result  # Hyphens escaped
-    assert "\\(" in result  # Parentheses escaped
-    assert "\\)" in result
+    assert "\\." in result
 
     # Verify no unescaped special characters (except allowed ones)
     # Allowed: * _ [ ] ( ) ~ ` > # + - = | { } . !
     # But they must be escaped in text (not in formatting)
     assert "*Магазин пидор\\-койнов*" in result  # * for bold, - escaped
-    assert "_Выберите товар для покупки:_" in result  # _ for italic
+    assert "_Нажмите товар — там описание и подтверждение:_" in result
 
 
 @pytest.mark.unit
@@ -285,8 +281,8 @@ def test_format_and_parse_roundtrip():
 
 
 @pytest.mark.unit
-def test_format_shop_menu_message_with_none_price():
-    """Test that shop menu message correctly handles items with None price."""
+def test_format_shop_menu_message_does_not_duplicate_keyboard_items():
+    """Item names and prices live in the keyboard, not in the compact message."""
     chat_id = -1001392307997
     # Test that items without price (like "Передать койны" and "Банк чата")
     # are displayed without "None 🪙"
@@ -300,15 +296,28 @@ def test_format_shop_menu_message_with_none_price():
     assert "None" not in result
     assert "None 🪙" not in result
 
-    # Verify that items with prices still show correctly
-    assert "*10* 🪙" in result  # Immunity price
-    assert "*8* 🪙" in result   # Double chance price
-    assert "*3* 🪙" in result   # Prediction price
+    assert "*10* 🪙" not in result
+    assert "*8* 🪙" not in result
+    assert "*3* 🪙" not in result
+    assert "💸 Передать койны" not in result
 
-    # Verify that items without prices are present but without price display
-    # These items should have their names and descriptions but no price
-    assert "💸 Передать койны" in result
-    assert "🏦 Банк чата" in result
+
+@pytest.mark.unit
+def test_format_shop_menu_message_keeps_active_effect_summary():
+    result = format_shop_menu_message(
+        100,
+        -1001392307997,
+        active_effects={
+            "immunity_active": True,
+            "immunity_date": "21 сентября",
+            "double_chance_bought_today": True,
+            "prediction_exists": True,
+        },
+    )
+
+    assert "🛡 Защита активна на 21 сентября" in result
+    assert "🎲 Двойной шанс уже куплен на завтра" in result
+    assert "🔮 Предсказание уже создано" in result
 
 
 @pytest.mark.unit
