@@ -6,12 +6,15 @@ from telegram import InlineKeyboardMarkup
 from bot.handlers.game.shop_helpers import (
     format_shop_callback_data,
     parse_shop_callback_data,
+    create_shop_help_keyboard,
     create_shop_keyboard,
     create_prediction_keyboard,
+    format_shop_help_message,
     format_shop_menu_message,
     SHOP_CALLBACK_PREFIX
 )
 from bot.app.models import TGUser
+from bot.handlers.game.config import GameConstants
 
 
 @pytest.mark.unit
@@ -83,10 +86,12 @@ def test_create_shop_keyboard():
 
     # Verify structure
     assert isinstance(keyboard, InlineKeyboardMarkup)
-    assert len(keyboard.inline_keyboard) == 4  # 7 items, по две кнопки в строке
+    assert len(keyboard.inline_keyboard) == 5  # 7 товаров + отдельная строка справки
 
-    assert all(len(row) == 2 for row in keyboard.inline_keyboard[:-1])
+    assert [len(row) for row in keyboard.inline_keyboard[:-1]] == [2, 2, 2, 1]
     assert len(keyboard.inline_keyboard[-1]) == 1
+    assert keyboard.inline_keyboard[-1][0].text == "ℹ️ Что тут можно купить"
+    assert keyboard.inline_keyboard[-1][0].callback_data == "shop_help_123"
 
     # Verify button texts contain item names and prices
     buttons = [button for row in keyboard.inline_keyboard for button in row]
@@ -104,6 +109,15 @@ def test_create_shop_keyboard():
     assert any("shop_immunity_" in cd for cd in callback_data_list)
     assert any("shop_double_" in cd for cd in callback_data_list)
     assert any("shop_predict_" in cd for cd in callback_data_list)
+
+
+@pytest.mark.unit
+def test_create_shop_help_keyboard():
+    keyboard = create_shop_help_keyboard(123)
+
+    assert isinstance(keyboard, InlineKeyboardMarkup)
+    assert keyboard.inline_keyboard[0][0].text == "⬅️ Назад в магазин"
+    assert keyboard.inline_keyboard[0][0].callback_data == "shop_back_123"
 
 
 @pytest.mark.unit
@@ -218,7 +232,7 @@ def test_format_shop_menu_message():
     assert "🏪 *Магазин пидор\\-койнов*" in result
     assert "💰 Ваш баланс: *0* 🪙" in result
     assert "Комиссия:" in result
-    assert "_Нажмите товар — там описание и подтверждение:_" in result
+    assert "_Нажмите товар — бот покажет детали и следующий шаг:_" in result
     assert "🛡️ Защита от пидора" not in result
     assert len(result) < 300
 
@@ -247,7 +261,7 @@ def test_format_shop_menu_message_markdown_escaping():
     # Allowed: * _ [ ] ( ) ~ ` > # + - = | { } . !
     # But they must be escaped in text (not in formatting)
     assert "*Магазин пидор\\-койнов*" in result  # * for bold, - escaped
-    assert "_Нажмите товар — там описание и подтверждение:_" in result
+    assert "_Нажмите товар — бот покажет детали и следующий шаг:_" in result
 
 
 @pytest.mark.unit
@@ -318,6 +332,41 @@ def test_format_shop_menu_message_keeps_active_effect_summary():
     assert "🛡 Защита активна на 21 сентября" in result
     assert "🎲 Двойной шанс уже куплен на завтра" in result
     assert "🔮 Предсказание уже создано" in result
+
+
+@pytest.mark.unit
+def test_format_shop_help_message_lists_every_enabled_item():
+    result = format_shop_help_message(-1001392307997)
+
+    assert "ℹ️ <b>Что есть в магазине</b>" in result
+    assert "<b>🛡️ Защита от пидора</b> — <b>10 🪙</b>" in result
+    assert "<b>💸 Передать койны</b>" in result
+    assert "один перевод в день" in result
+    assert "<b>🏦 Банк чата</b>" in result
+    assert "не списывается сверху" in result
+    assert "После выбора товара бот покажет детали" in result
+    assert "None" not in result
+
+
+@pytest.mark.unit
+def test_format_shop_help_message_includes_pilot_items(mocker):
+    config = MagicMock()
+    config.constants = GameConstants(
+        totalizator_enabled=True,
+        coin_rain_enabled=True,
+        custom_phrase_enabled=True,
+        telegram_title_enabled=True,
+    )
+    mocker.patch('bot.handlers.game.shop_service.get_config', return_value=config)
+
+    result = format_shop_help_message(-1001392307997)
+
+    assert "<b>🎰 Тотализатор</b>" in result
+    assert "<b>🌧 Койновый дождь</b> — <b>40 🪙</b>" in result
+    assert "один дождь от игрока и 3 на чат" in result
+    assert "<b>✍️ Победная фраза</b> — <b>40 🪙</b>" in result
+    assert "<b>🏷 Telegram-титул</b> — <b>80 🪙</b>" in result
+    assert "Функция в тестовом режиме" in result
 
 
 @pytest.mark.unit

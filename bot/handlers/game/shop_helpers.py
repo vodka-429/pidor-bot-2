@@ -1,5 +1,6 @@
 """Helper functions for shop functionality."""
 import logging
+from html import escape as html_escape
 from typing import List, Tuple
 from datetime import datetime, timedelta
 
@@ -163,8 +164,22 @@ def create_shop_keyboard(owner_user_id: int, chat_id: int, active_effects: dict 
         buttons.append(button)
 
     keyboard = [buttons[index:index + 2] for index in range(0, len(buttons), 2)]
+    keyboard.append([InlineKeyboardButton(
+        text="ℹ️ Что тут можно купить",
+        callback_data=format_shop_callback_data('help', owner_user_id),
+    )])
 
     return InlineKeyboardMarkup(keyboard)
+
+
+def create_shop_help_keyboard(owner_user_id: int) -> InlineKeyboardMarkup:
+    """Создать кнопку возврата из справочника в магазин."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "⬅️ Назад в магазин",
+            callback_data=format_shop_callback_data('back', owner_user_id),
+        )
+    ]])
 
 
 def create_prediction_keyboard(
@@ -399,5 +414,31 @@ def format_shop_menu_message(balance: int, chat_id: int, user_name: str = None, 
     if statuses:
         status_info = "\n" + "\n".join(statuses) + "\n"
 
-    footer = "\n_Нажмите товар — там описание и подтверждение:_"
+    footer = "\n_Нажмите товар — бот покажет детали и следующий шаг:_"
     return header + commission_info + status_info + footer
+
+
+def format_shop_help_message(chat_id: int) -> str:
+    """Собрать полный справочник по доступным в чате товарам."""
+    from bot.handlers.game.cbr_service import calculate_commission_percent
+    from bot.handlers.game.shop_service import get_shop_items
+
+    lines = ["ℹ️ <b>Что есть в магазине</b>", ""]
+    for item in get_shop_items(chat_id):
+        price = ""
+        if item['price'] is not None:
+            price = f" — <b>{item['price']} 🪙</b>"
+        lines.extend([
+            f"<b>{html_escape(item['name'])}</b>{price}",
+            html_escape(item['description']),
+            "",
+        ])
+
+    commission_rate = html_escape(str(calculate_commission_percent()))
+    lines.extend([
+        f"ℹ️ Комиссия сейчас: <b>{commission_rate}%</b>, минимум 1 🪙.",
+        "Она не списывается сверху: берётся из цены, перевода или ставки и уходит в банк чата.",
+        "",
+        "После выбора товара бот покажет детали и следующий шаг.",
+    ])
+    return "\n".join(lines)

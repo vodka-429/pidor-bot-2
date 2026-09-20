@@ -11,6 +11,7 @@ from bot.handlers.game.commands import (
     handle_shop_transfer_callback,
     handle_shop_transfer_select_callback,
     handle_shop_bank_callback,
+    handle_shop_help_callback,
     handle_shop_back_callback,
     GECallbackContext
 )
@@ -424,6 +425,40 @@ class TestShopBankCallback:
         call_args = mock_update.callback_query.answer.call_args
         assert "Это не твой магазин" in call_args[0][0]
         assert call_args[1]['show_alert'] is True
+
+
+class TestShopHelpCallback:
+    """Тесты для handle_shop_help_callback."""
+
+    @pytest.mark.asyncio
+    async def test_show_shop_help(self, mock_update, mock_context):
+        mock_update.effective_chat.id = -1001392307997
+        mock_update.callback_query.data = "shop_help_123456"
+
+        await handle_shop_help_callback(mock_update, mock_context)
+
+        mock_update.callback_query.answer.assert_called_once_with()
+        mock_update.callback_query.edit_message_text.assert_called_once()
+        call_args = mock_update.callback_query.edit_message_text.call_args
+        assert "Что есть в магазине" in call_args.kwargs['text']
+        assert call_args.kwargs['parse_mode'] == "HTML"
+        assert isinstance(call_args.kwargs['reply_markup'], InlineKeyboardMarkup)
+        assert (
+            call_args.kwargs['reply_markup'].inline_keyboard[0][0].callback_data
+            == "shop_back_123456"
+        )
+
+    @pytest.mark.asyncio
+    async def test_wrong_user_access(self, mock_update, mock_context):
+        mock_update.callback_query.data = "shop_help_999999"
+
+        await handle_shop_help_callback(mock_update, mock_context)
+
+        mock_update.callback_query.answer.assert_called_once()
+        call_args = mock_update.callback_query.answer.call_args
+        assert "Это не твой магазин" in call_args.args[0]
+        assert call_args.kwargs['show_alert'] is True
+        mock_update.callback_query.edit_message_text.assert_not_called()
 
 
 class TestShopBackCallback:

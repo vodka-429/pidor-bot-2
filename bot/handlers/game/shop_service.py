@@ -216,7 +216,11 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'name': '🛡️ Защита от пидора',
             'short_name': '🛡 Защита',
             'price': constants.immunity_price,
-            'description': f'Защита на 1 день (кулдаун {constants.immunity_cooldown_days} дней)',
+            'description': (
+                'Защитить любого игрока от выбора на следующий день. '
+                f'Если защита сработает, покупатель получит +{constants.immunity_buyer_reward} койнов. '
+                f'Кулдаун покупателя — {constants.immunity_cooldown_days} дней.'
+            ),
             'callback_data': 'shop_immunity'
         })
 
@@ -226,7 +230,10 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'name': '🎲 Двойной шанс',
             'short_name': '🎲 Шанс',
             'price': constants.double_chance_price,
-            'description': 'Удвоенный шанс стать пидором на 1 день',
+            'description': (
+                'Удвоить шанс любого игрока в розыгрыше следующего дня. '
+                'Один покупатель может купить один шанс в день.'
+            ),
             'callback_data': 'shop_double'
         })
 
@@ -236,7 +243,11 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'name': '🔮 Предсказание',
             'short_name': '🔮 Прогноз',
             'price': constants.prediction_price,
-            'description': f'Предскажи пидора дня (+{constants.prediction_reward} койнов при успехе)',
+            'description': (
+                'Выбрать кандидатов на следующий день. '
+                f'Награда за точный прогноз — +{constants.prediction_reward} койнов. '
+                'Один прогноз в день.'
+            ),
             'callback_data': 'shop_predict'
         })
 
@@ -246,7 +257,10 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'name': '💸 Передать койны',
             'short_name': '💸 Перевод',
             'price': None,
-            'description': 'Передать койны другому игроку',
+            'description': (
+                'Передать койны другому игроку. '
+                f'Минимум {constants.transfer_min_amount} койна, один перевод в день.'
+            ),
             'callback_data': 'shop_transfer'
         })
 
@@ -256,7 +270,10 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'name': '🍻 Тост',
             'short_name': '🍻 Тост',
             'price': constants.toast_price,
-            'description': f'Поднять тост за игрока ({constants.toast_price} койнов)',
+            'description': (
+                'Передать сумму тоста выбранному игроку за вычетом комиссии. '
+                'Без дневного лимита, можно поднять за себя.'
+            ),
             'callback_data': 'shop_toast'
         })
 
@@ -266,7 +283,10 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'name': '🎰 Тотализатор',
             'short_name': '🎰 Тотализатор',
             'price': None,
-            'description': 'Создать ставку или завершить существующую',
+            'description': (
+                'Создать спор с двумя вариантами и ставкой, принимать ставки '
+                'и завершить свой тотализатор. Размер ставки задаёт автор.'
+            ),
             'callback_data': 'shop_totalizator'
         })
 
@@ -277,7 +297,8 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'price': constants.coin_rain_price,
             'description': (
                 f'До {constants.coin_rain_max_recipients} игроков получат '
-                f'по {constants.coin_rain_recipient_amount} койнов'
+                f'по {constants.coin_rain_recipient_amount} койнов, остаток уйдёт в банк. '
+                f'Лимиты: один дождь от игрока и {constants.coin_rain_chat_daily_limit} на чат в сутки.'
             ),
             'callback_data': 'shop_rain'
         })
@@ -287,7 +308,10 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'name': '✍️ Победная фраза',
             'short_name': '✍️ Фраза',
             'price': constants.custom_phrase_price,
-            'description': 'Своя постоянная фраза при победе',
+            'description': (
+                'Своя постоянная фраза при победе, до 120 символов. '
+                'Установка или замена платная, удаление бесплатное.'
+            ),
             'callback_data': 'shop_phrase'
         })
 
@@ -296,7 +320,11 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'name': '🏷 Telegram-титул',
             'short_name': '🏷 Титул',
             'price': constants.telegram_title_price,
-            'description': 'Постоянный титул рядом с именем в Telegram (тестирование)',
+            'description': (
+                'Постоянный титул рядом с именем в Telegram: до 16 символов, без emoji. '
+                'Установка или замена платная, удаление бесплатное. '
+                'Функция в тестовом режиме; иногда нужно поставить титул вручную.'
+            ),
             'callback_data': 'shop_title'
         })
 
@@ -305,7 +333,7 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
         'name': '🏦 Банк чата',
         'short_name': '🏦 Банк',
         'price': None,
-        'description': 'Посмотреть баланс банка чата',
+        'description': 'Бесплатно посмотреть баланс банка чата.',
         'callback_data': 'shop_bank'
     })
 
@@ -315,7 +343,7 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'name': '🎖️ Мои достижения',
             'short_name': '🏅 Достижения',
             'price': None,
-            'description': 'Посмотреть свои достижения',
+            'description': 'Бесплатно посмотреть свои достижения и награды.',
             'callback_data': 'shop_achievements'
         })
 

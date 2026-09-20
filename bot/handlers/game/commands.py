@@ -2733,6 +2733,49 @@ async def handle_shop_bank_callback(update: Update, context: GECallbackContext):
 
 
 @ensure_game
+async def handle_shop_help_callback(update: Update, context: GECallbackContext):
+    """Показать единый справочник по всем доступным товарам магазина."""
+    from bot.handlers.game.shop_helpers import (
+        create_shop_help_keyboard,
+        format_shop_help_message,
+        parse_shop_callback_data,
+    )
+    from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP
+
+    query = update.callback_query
+    if query is None:
+        logger.error("callback_query is None!")
+        return
+
+    try:
+        item_type, owner_user_id = parse_shop_callback_data(query.data)
+    except ValueError as error:
+        logger.error(f"Failed to parse shop help callback_data: {error}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    if item_type != "help":
+        logger.error(f"Unexpected shop help item_type: {item_type}")
+        await query.answer("❌ Ошибка обработки запроса")
+        return
+
+    if query.from_user.id != owner_user_id:
+        await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
+        return
+
+    await query.answer()
+    await query.edit_message_text(
+        text=format_shop_help_message(update.effective_chat.id),
+        parse_mode="HTML",
+        reply_markup=create_shop_help_keyboard(owner_user_id),
+    )
+    logger.info(
+        f"Showed shop help to user {context.tg_user.id} "
+        f"in chat {update.effective_chat.id}"
+    )
+
+
+@ensure_game
 async def handle_shop_predict_cancel_callback(update: Update, context: GECallbackContext):
     """Обработчик кнопки 'Отмена' при выборе предсказания"""
     from bot.handlers.game.shop_helpers import parse_shop_callback_data, create_shop_keyboard, format_shop_menu_message
