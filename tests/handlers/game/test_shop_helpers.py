@@ -83,23 +83,23 @@ def test_create_shop_keyboard():
 
     # Verify structure
     assert isinstance(keyboard, InlineKeyboardMarkup)
-    assert len(keyboard.inline_keyboard) == 7  # 7 items (immunity, double, predict, transfer, toast, bank, achievements)
+    assert len(keyboard.inline_keyboard) == 4  # 7 items, по две кнопки в строке
 
-    # Verify each item is on separate row
-    for row in keyboard.inline_keyboard:
-        assert len(row) == 1  # One button per row
+    assert all(len(row) == 2 for row in keyboard.inline_keyboard[:-1])
+    assert len(keyboard.inline_keyboard[-1]) == 1
 
     # Verify button texts contain item names and prices
-    button_texts = [row[0].text for row in keyboard.inline_keyboard]
-    assert any("🛡️ Защита от пидора" in text for text in button_texts)
-    assert any("🎲 Двойной шанс" in text for text in button_texts)
-    assert any("🔮 Предсказание" in text for text in button_texts)
+    buttons = [button for row in keyboard.inline_keyboard for button in row]
+    button_texts = [button.text for button in buttons]
+    assert any("🛡 Защита" in text for text in button_texts)
+    assert any("🎲 Шанс" in text for text in button_texts)
+    assert any("🔮 Прогноз" in text for text in button_texts)
     assert any("10 🪙" in text for text in button_texts)
     assert any("8 🪙" in text for text in button_texts)
     assert any("3 🪙" in text for text in button_texts)
 
     # Verify callback_data contains owner_user_id
-    callback_data_list = [row[0].callback_data for row in keyboard.inline_keyboard]
+    callback_data_list = [button.callback_data for button in buttons]
     assert all(str(owner_user_id) in cd for cd in callback_data_list)
     assert any("shop_immunity_" in cd for cd in callback_data_list)
     assert any("shop_double_" in cd for cd in callback_data_list)

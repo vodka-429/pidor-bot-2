@@ -16,7 +16,7 @@ from bot.handlers.game.commands import pidor_cmd, pidorules_cmd, pidoreg_cmd, \
     pidorunreg_cmd, pidorremove_cmd, pidorstats_cmd, pidorall_cmd, pidorme_cmd, \
     pidoryearresults_cmd, pidoregmany_cmd, pidormissed_cmd, pidorfinal_cmd, \
     pidorfinalstatus_cmd, handle_vote_callback, pidorfinalclose_cmd, \
-    pidorcoinsme_cmd, pidorcoinsstats_cmd, pidorshop_cmd, \
+    pidorcoinsme_cmd, pidorcoinsstats_cmd, pidornews_cmd, pidorshop_cmd, \
     handle_shop_immunity_callback, handle_shop_immunity_target_callback, handle_shop_double_callback, \
     handle_shop_predict_callback, handle_shop_predict_select_callback, \
     handle_shop_predict_confirm_callback, handle_shop_predict_cancel_callback, \
@@ -29,7 +29,22 @@ from bot.handlers.game.commands import pidor_cmd, pidorules_cmd, pidoreg_cmd, \
     handle_shop_totalizator_callback, handle_tot_create_callback, \
     handle_tot_create_cancel_callback, \
     handle_tot_resolve_callback, handle_tot_resolve_confirm_callback, \
-    handle_tot_bet_callback, handle_totalizator_creation_text
+    handle_tot_bet_callback
+from bot.handlers.game.economy_pilot_handlers import (
+    handle_shop_draft_cancel_callback,
+    handle_shop_phrase_callback,
+    handle_shop_phrase_clear_callback,
+    handle_shop_phrase_confirm_callback,
+    handle_shop_phrase_position_callback,
+    handle_shop_rain_callback,
+    handle_shop_rain_confirm_callback,
+    handle_shop_text_input,
+    handle_shop_title_callback,
+    handle_shop_title_clear_callback,
+    handle_shop_title_confirm_callback,
+    handle_shop_title_input_callback,
+    handle_shop_title_verify_callback,
+)
 from bot.handlers.kvstore.commands import get_cmd, set_cmd, del_cmd, list_cmd
 from bot.handlers.meme.commands import meme_cmd, memeru_cmd, \
     meme_refresh_callback, memeru_refresh_callback, meme_save_callback, \
@@ -108,6 +123,7 @@ def init_dispatcher(application: Application, db_engine):
     # PidorCoin handlers
     application.add_handler(CommandHandler('pidorcoinsme', pidorcoinsme_cmd, filters=ne))
     application.add_handler(CommandHandler('pidorcoinsstats', pidorcoinsstats_cmd, filters=ne))
+    application.add_handler(CommandHandler('pidornews', pidornews_cmd, filters=ne))
 
     # PidorShop handlers
     application.add_handler(CommandHandler('pidorshop', pidorshop_cmd, filters=ne))
@@ -127,6 +143,18 @@ def init_dispatcher(application: Application, db_engine):
     application.add_handler(CallbackQueryHandler(handle_shop_back_callback, pattern=r'^shop_back_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_toast_callback, pattern=r'^shop_toast_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_toast_select_callback, pattern=r'^shop_toast_select_\d+_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_rain_callback, pattern=r'^shop_rain_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_rain_confirm_callback, pattern=r'^shop_rain_confirm_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_phrase_callback, pattern=r'^shop_phrase_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_phrase_position_callback, pattern=r'^shop_phrase_(start|end)_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_phrase_confirm_callback, pattern=r'^shop_phrase_confirm_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_phrase_clear_callback, pattern=r'^shop_phrase_clear_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_title_callback, pattern=r'^shop_title_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_title_input_callback, pattern=r'^shop_title_input_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_title_confirm_callback, pattern=r'^shop_title_confirm_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_title_verify_callback, pattern=r'^shop_title_verify_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_title_clear_callback, pattern=r'^shop_title_clear_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_draft_cancel_callback, pattern=r'^shop_(phrase|title)_clear_draft_\d+$'))
 
     # Totalizator shop handler
     application.add_handler(CallbackQueryHandler(handle_shop_totalizator_callback, pattern=r'^shop_totalizator_\d+$'))
@@ -135,7 +163,7 @@ def init_dispatcher(application: Application, db_engine):
     application.add_handler(CallbackQueryHandler(handle_tot_resolve_callback, pattern=r'^tot_resolve_\d+_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_tot_resolve_confirm_callback, pattern=r'^tot_resolve_\d+_(yes|no|cancel)_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_tot_bet_callback, pattern=r'^tot_bet_\d+_(yes|no)$'))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ne, handle_totalizator_creation_text))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ne, handle_shop_text_input))
 
     # Reroll handler
     application.add_handler(CallbackQueryHandler(handle_reroll_callback, pattern=r'^reroll_'))

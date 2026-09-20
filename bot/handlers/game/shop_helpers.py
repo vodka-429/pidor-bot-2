@@ -116,13 +116,8 @@ def create_shop_keyboard(owner_user_id: int, chat_id: int, active_effects: dict 
         InlineKeyboardMarkup с кнопками товаров
     """
     from bot.handlers.game.shop_service import get_shop_items
-    from bot.handlers.game.config import get_config
-
-    # Получаем конфигурацию для чата
-    config = get_config(chat_id)
-
     items = get_shop_items(chat_id)
-    keyboard = []
+    buttons = []
 
     logger.info(f"Creating shop keyboard for owner_user_id: {owner_user_id}, chat_id: {chat_id}")
 
@@ -146,14 +141,14 @@ def create_shop_keyboard(owner_user_id: int, chat_id: int, active_effects: dict 
 
         # Формируем текст кнопки с индикатором активности
         if is_active:
-            button_text = f"✅ {item['name']} - {item['price']} 🪙"
+            button_text = f"✅ {item['short_name']} · {item['price']} 🪙"
         elif is_cooldown:
-            button_text = f"⏳ {item['name']} - {item['price']} 🪙"
+            button_text = f"⏳ {item['short_name']} · {item['price']} 🪙"
         elif item['price'] is None:
             # Для действий без цены (передача, банк)
-            button_text = item['name']
+            button_text = item['short_name']
         else:
-            button_text = f"{item['name']} - {item['price']} 🪙"
+            button_text = f"{item['short_name']} · {item['price']} 🪙"
 
         # Создаём callback_data с типом товара и ID владельца
         callback_data = format_shop_callback_data(item['callback_data'].replace('shop_', ''), owner_user_id)
@@ -165,8 +160,9 @@ def create_shop_keyboard(owner_user_id: int, chat_id: int, active_effects: dict 
             callback_data=callback_data
         )
 
-        # Каждая кнопка на отдельной строке
-        keyboard.append([button])
+        buttons.append(button)
+
+    keyboard = [buttons[index:index + 2] for index in range(0, len(buttons), 2)]
 
     return InlineKeyboardMarkup(keyboard)
 

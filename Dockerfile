@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.13-slim
 LABEL maintainer="kanst9@ya.ru"
 
 RUN apt-get update && \

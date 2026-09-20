@@ -6,9 +6,9 @@ This is _FAKE_ sources just **_imitating_** the functionality similar to the one
 
 ## Prerequisites
 
-* (Optionally) Install Python 3.11+ and/or Docker
+* (Optionally) Install Python 3.13 and/or Docker
 * Create `.env` file and put `TELEGRAM_BOT_API_TOKEN=<token>` there
-* The bot uses `python-telegram-bot` v21.7 (async/await based)
+* The bot uses `python-telegram-bot` v22.8 (async/await based)
 
 ## Installation
 
@@ -73,11 +73,11 @@ Game configuration via JSON file allows per-chat customization of prices, reward
 Если Игрок А выиграл 50 раз в году и проголосовал за Игрока Б, это считается как 50 голосов. Если Игрок В выиграл 30 раз и тоже проголосовал за Игрока Б, то Игрок Б получит 80 взвешенных голосов.
 
 
-## Миграция на python-telegram-bot v21.x
+## Runtime
 
-Проект был мигрирован с `python-telegram-bot==13.15` на `python-telegram-bot==21.7` для улучшения стабильности и исправления проблем с обработкой callback queries (кнопки голосования).
+Проект использует Python 3.13 и `python-telegram-bot==22.8`.
 
-### Основные изменения в v21.x
+### Основные изменения в v22.x
 
 **Breaking Changes:**
 * **Async/Await**: Все handlers теперь асинхронные. Используйте `async def` и `await` для всех операций с ботом
@@ -87,7 +87,7 @@ Game configuration via JSON file allows per-chat customization of prices, reward
 * **Context types**: Используется `ContextTypes.DEFAULT_TYPE` вместо `CallbackContext`
 * **Middleware**: Регистрация через `application.add_handler()` с параметром `block=False`
 
-### Улучшения в v21.x
+### Возможности v22.x
 
 * **Надёжная обработка callback queries**: Улучшенная система обработки updates предотвращает проблемы с нереагирующими кнопками
 * **Стабильный long polling**: Более надёжная работа с длительными соединениями
@@ -96,8 +96,8 @@ Game configuration via JSON file allows per-chat customization of prices, reward
 
 ### Требования
 
-* Python 3.11 или выше (рекомендуется 3.11+)
-* `python-telegram-bot==21.7`
+* Python 3.13
+* `python-telegram-bot==22.8`
 * `pytest-asyncio` для запуска тестов
 
 ### Troubleshooting

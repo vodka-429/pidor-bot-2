@@ -10,7 +10,10 @@
     "double_chance_price": 8,
     "prediction_price": 3,
     "reroll_price": 15,
-    "coins_per_win": 4,
+    "coin_rain_price": 40,
+    "custom_phrase_price": 40,
+    "telegram_title_price": 80,
+    "coins_per_win": 5,
     "coins_per_command": 1,
     "self_pidor_multiplier": 2,
     "prediction_reward": 30,
@@ -19,6 +22,9 @@
     "max_missed_days_for_final_voting": 10,
     "immunity_cooldown_days": 7,
     "transfer_min_amount": 2,
+    "coin_rain_recipient_amount": 5,
+    "coin_rain_max_recipients": 5,
+    "coin_rain_chat_daily_limit": 3,
     "game_result_time_delay": 2,
     "reroll_timeout_minutes": 5,
     "reroll_enabled": true,
@@ -30,7 +36,11 @@
     "achievements_enabled": true,
     "toast_enabled": true,
     "toast_price": 5,
-    "totalizator_enabled": false
+    "totalizator_enabled": false,
+    "coin_rain_enabled": false,
+    "custom_phrase_enabled": false,
+    "telegram_title_enabled": false,
+    "changelog_enabled": false
   },
   "chat_overrides": {
     "-1001234567890": {
