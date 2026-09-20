@@ -351,7 +351,7 @@ def create_transfer_amount_keyboard(balance: int, receiver_id: int, owner_user_i
 
 def format_shop_menu_message(balance: int, chat_id: int, user_name: str = None, active_effects: dict = None) -> str:
     """
-    Форматирует сообщение меню магазина с балансом и списком товаров.
+    Форматирует компактное сообщение меню магазина.
 
     Args:
         balance: Текущий баланс пользователя
@@ -363,7 +363,6 @@ def format_shop_menu_message(balance: int, chat_id: int, user_name: str = None, 
         Отформатированное сообщение в формате Markdown V2
     """
     from bot.utils import escape_markdown2, format_number
-    from bot.handlers.game.shop_service import get_shop_items
     from bot.handlers.game.cbr_service import calculate_commission_percent
 
     # Получаем текущую ключевую ставку для отображения
@@ -378,41 +377,27 @@ def format_shop_menu_message(balance: int, chat_id: int, user_name: str = None, 
     else:
         header = f"🏪 *Магазин пидор\\-койнов*\n\n💰 Ваш баланс: *{balance_str}* 🪙\n\n"
 
-    # Добавляем информацию о комиссии
-    commission_info = f"ℹ️ _Комиссия на покупки: {escape_markdown2(str(commission_rate))}% \\(ключевая ставка ЦБ РФ\\)_\n_Комиссия идёт в банк чата \\(минимум 1 🪙\\)_\n\n"
+    commission_info = (
+        f"ℹ️ Комиссия: *{escape_markdown2(str(commission_rate))}%* от цены, "
+        "минимум 1 🪙 — всё в банк чата\\.\n"
+    )
 
-    # Формируем список товаров с информацией об активности
-    items = get_shop_items(chat_id)
-    items_list = []
+    statuses = []
+    if active_effects:
+        if active_effects.get('immunity_active'):
+            date = escape_markdown2(active_effects.get('immunity_date', ''))
+            statuses.append(f"🛡 Защита активна на {date}")
+        elif active_effects.get('immunity_on_cooldown'):
+            until = escape_markdown2(active_effects.get('immunity_cooldown_until', ''))
+            statuses.append(f"⏳ Защита на кулдауне до {until}")
+        if active_effects.get('double_chance_bought_today'):
+            statuses.append("🎲 Двойной шанс уже куплен на завтра")
+        if active_effects.get('prediction_exists'):
+            statuses.append("🔮 Предсказание уже создано")
 
-    for item in items:
-        name_escaped = escape_markdown2(item['name'])
-        desc_escaped = escape_markdown2(item['description'])
+    status_info = ""
+    if statuses:
+        status_info = "\n" + "\n".join(statuses) + "\n"
 
-        # Добавляем информацию об активности
-        status_info = ""
-        if active_effects:
-            if item['callback_data'] == 'shop_immunity' and active_effects.get('immunity_active'):
-                date = active_effects.get('immunity_date', '')
-                status_info = f"\n✅ _Активна на {escape_markdown2(date)}_"
-            elif item['callback_data'] == 'shop_immunity' and active_effects.get('immunity_on_cooldown'):
-                until = active_effects.get('immunity_cooldown_until', '')
-                status_info = f"\n⏳ _Кулдаун до {escape_markdown2(until)}_"
-            elif item['callback_data'] == 'shop_double' and active_effects.get('double_chance_bought_today'):
-                status_info = "\n✅ _Уже куплен на завтра_"
-            elif item['callback_data'] == 'shop_predict' and active_effects.get('prediction_exists'):
-                status_info = "\n✅ _Предсказание создано_"
-
-        # Проверяем, есть ли цена у товара
-        if item['price'] is not None:
-            price_str = format_number(item['price'])
-            items_list.append(f"{name_escaped} \\- *{price_str}* 🪙\n_{desc_escaped}_{status_info}")
-        else:
-            items_list.append(f"{name_escaped}\n_{desc_escaped}_{status_info}")
-
-    items_text = '\n\n'.join(items_list)
-
-    # Формируем полное сообщение
-    footer = "\n\n_Выберите товар для покупки:_"
-
-    return header + commission_info + items_text + footer
+    footer = "\n_Нажмите товар — там описание и подтверждение:_"
+    return header + commission_info + status_info + footer

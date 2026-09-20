@@ -32,6 +32,7 @@ Environment variables:
 * `TELEGRAM_BOT_API_SECRET` - Telegram Bot API token (required)
 * `GAME_CONFIG_PATH` - Path to JSON config file (optional, see `game_config.example.json`)
 * `ALLOWED_FINAL_VOTING_CLOSERS` - Usernames allowed to close final voting (optional)
+* `BOT_HTTPS_PROXY` - Optional outbound proxy for both Bot API calls and `getUpdates`
 
 Game configuration via JSON file allows per-chat customization of prices, rewards, limits and feature flags. See `game_config.example.json` for format and `bot/handlers/game/config.py` docstrings for all available parameters.
 
@@ -94,6 +95,18 @@ Game configuration via JSON file allows per-chat customization of prices, reward
 * **Лучшая обработка ошибок**: Улучшенная система обработки таймаутов и ошибок сети
 * **Async/await**: Предотвращает блокировки и улучшает производительность
 
+### Надёжность long polling
+
+Для Bot API и `getUpdates` используются отдельные HTTP-клиенты с явными таймаутами. Polling-транспорт отслеживает возраст текущего запроса: если один `getUpdates` не завершается более 120 секунд, watchdog завершает процесс с ошибкой, чтобы Kubernetes перезапустил контейнер.
+
+Helm Deployment использует стратегию `Recreate`: старый pod полностью останавливается до запуска нового. Это обязательно для long polling, поскольку Telegram допускает только один активный `getUpdates` на bot token.
+
+Диагностические логи для команд, callback и магазинных черновиков содержат идентификаторы update/chat/user/message и этап операции, но не содержат пользовательский текст.
+
+### Ввод текста в магазине
+
+Победная фраза и Telegram-титул вводятся через selective `ForceReply`. Бот сохраняет `prompt_message_id` и принимает только ответ на актуальный prompt; обычные сообщения в групповом чате не расходуют черновик. Предпросмотр покупки отправляется отдельным сообщением без reply-цитаты.
+
 ### Требования
 
 * Python 3.13
@@ -110,6 +123,12 @@ Game configuration via JSON file allows per-chat customization of prices, reward
 
 **Проблема: Кнопки не реагируют на нажатия**
 * Решение: Убедитесь, что `CallbackQueryHandler` зарегистрирован и callback_data корректно установлен при создании кнопок
+
+**Проблема: Процесс работает, но бот перестал видеть новые команды и логи замолчали**
+* Проверьте доступность Bot API через тот же `BOT_HTTPS_PROXY`, который использует приложение.
+* Проверьте отсутствие второго pod или локального процесса с тем же token: в логах это проявляется как `Conflict: terminated by other getUpdates request`.
+* Ищите `Telegram polling made no progress` — после этой записи watchdog завершает процесс для автоматического рестарта.
+* В Kubernetes должен использоваться `strategy.type: Recreate`; RollingUpdate временно запускает два poller и создаёт конфликт.
 
 **Проблема: Тесты падают с ошибками async**
 * Решение: Добавьте декоратор `@pytest.mark.asyncio` к async тестам и используйте `AsyncMock` вместо `MagicMock`

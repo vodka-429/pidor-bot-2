@@ -3,7 +3,7 @@ import json
 import logging
 from html import escape as html_escape
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatMemberStatus
 from telegram.error import TelegramError
 
@@ -59,6 +59,13 @@ def _get_draft(context, chat_id: int, for_update: bool = False):
 
 
 def _save_draft(context, chat_id: int, payload: dict) -> None:
+    logger.info(
+        "SHOP_DRAFT_SAVE_START chat_id=%s user_id=%s kind=%s prompt_message_id=%s",
+        chat_id,
+        context.tg_user.tg_id,
+        payload.get("kind"),
+        payload.get("prompt_message_id"),
+    )
     draft = _get_draft(context, chat_id)
     value = json.dumps(payload, ensure_ascii=False)
     if draft is None:
@@ -71,14 +78,72 @@ def _save_draft(context, chat_id: int, payload: dict) -> None:
         draft.value = value
     context.db_session.add(draft)
     context.db_session.commit()
+    logger.info(
+        "SHOP_DRAFT_SAVE_DONE chat_id=%s user_id=%s kind=%s",
+        chat_id,
+        context.tg_user.tg_id,
+        payload.get("kind"),
+    )
 
 
 def _delete_draft(context, chat_id: int, auto_commit: bool = True) -> None:
+    logger.info(
+        "SHOP_DRAFT_DELETE_START chat_id=%s user_id=%s auto_commit=%s",
+        chat_id,
+        context.tg_user.tg_id,
+        auto_commit,
+    )
     draft = _get_draft(context, chat_id)
     if draft is not None:
         context.db_session.delete(draft)
         if auto_commit:
             context.db_session.commit()
+    logger.info(
+        "SHOP_DRAFT_DELETE_DONE chat_id=%s user_id=%s found=%s",
+        chat_id,
+        context.tg_user.tg_id,
+        draft is not None,
+    )
+
+
+async def _send_shop_input_prompt(
+    context,
+    chat_id: int,
+    user,
+    text: str,
+    placeholder: str,
+) -> int:
+    """Send a selective ForceReply prompt and return its message id."""
+    logger.info(
+        "SHOP_INPUT_PROMPT_SEND_START chat_id=%s user_id=%s",
+        chat_id,
+        user.id,
+    )
+    prompt = await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"{user.mention_html()}, {text}",
+        parse_mode="HTML",
+        reply_markup=ForceReply(
+            selective=True,
+            input_field_placeholder=placeholder,
+        ),
+    )
+    logger.info(
+        "SHOP_INPUT_PROMPT_SEND_DONE chat_id=%s user_id=%s prompt_message_id=%s",
+        chat_id,
+        user.id,
+        prompt.message_id,
+    )
+    return prompt.message_id
+
+
+def _is_expected_shop_reply(message, payload: dict) -> bool:
+    """Require a reply to the exact ForceReply prompt stored in the draft."""
+    expected_prompt_id = payload.get("prompt_message_id")
+    if expected_prompt_id is None:
+        return False
+    reply = message.reply_to_message
+    return reply is not None and reply.message_id == expected_prompt_id
 
 
 def _back_button(owner_id: int) -> InlineKeyboardButton:
@@ -211,16 +276,38 @@ async def handle_shop_phrase_position_callback(update: Update, context: ECallbac
     if await _reject_foreign_shop(query, owner_id):
         return
     position = "start" if "_start_" in query.data else "end"
+    await query.edit_message_text(
+        "✍️ Ввод победной фразы открыт в отдельном сообщении ниже."
+    )
+    prompt_message_id = await _send_shop_input_prompt(
+        context,
+        update.effective_chat.id,
+        query.from_user,
+        (
+            "пришлите победную фразу одним сообщением. "
+            f"Одна строка, не больше {CUSTOM_PHRASE_MAX_LENGTH} символов. "
+            "Перед списанием койнов бот покажет предпросмотр."
+        ),
+        "Введите победную фразу",
+    )
     _save_draft(context, update.effective_chat.id, {
         "kind": "victory_phrase_input",
         "position": position,
+        "prompt_message_id": prompt_message_id,
     })
-    await query.edit_message_text(
-        "✍️ Пришлите победную фразу одним сообщением.\n\n"
-        f"Одна строка, не больше {CUSTOM_PHRASE_MAX_LENGTH} символов. "
-        "Перед списанием койнов бот покажет предпросмотр."
-    )
     await query.answer()
+
+
+async def _repeat_phrase_prompt(update: Update, context: ECallbackContext, payload: dict, error: str) -> None:
+    prompt_message_id = await _send_shop_input_prompt(
+        context,
+        update.effective_chat.id,
+        update.effective_user,
+        f"{error} Попробуйте ещё раз.",
+        "Введите победную фразу",
+    )
+    payload["prompt_message_id"] = prompt_message_id
+    _save_draft(context, update.effective_chat.id, payload)
 
 
 @ensure_game
@@ -310,13 +397,37 @@ async def handle_shop_title_input_callback(update: Update, context: ECallbackCon
     owner_id = _owner_id(query.data)
     if await _reject_foreign_shop(query, owner_id):
         return
-    _save_draft(context, update.effective_chat.id, {"kind": "telegram_title_input"})
     await query.edit_message_text(
-        "🏷 Пришлите новый титул одним сообщением.\n\n"
-        f"Не больше {TELEGRAM_TITLE_MAX_LENGTH} символов, без emoji и переносов строки. "
-        "Перед списанием койнов бот покажет предпросмотр."
+        "🏷 Ввод Telegram-титула открыт в отдельном сообщении ниже."
     )
+    prompt_message_id = await _send_shop_input_prompt(
+        context,
+        update.effective_chat.id,
+        query.from_user,
+        (
+            "пришлите новый титул одним сообщением. "
+            f"Не больше {TELEGRAM_TITLE_MAX_LENGTH} символов, без emoji и переносов строки. "
+            "Перед списанием койнов бот покажет предпросмотр."
+        ),
+        "Введите новый титул",
+    )
+    _save_draft(context, update.effective_chat.id, {
+        "kind": "telegram_title_input",
+        "prompt_message_id": prompt_message_id,
+    })
     await query.answer()
+
+
+async def _repeat_title_prompt(update: Update, context: ECallbackContext, payload: dict, error: str) -> None:
+    prompt_message_id = await _send_shop_input_prompt(
+        context,
+        update.effective_chat.id,
+        update.effective_user,
+        f"{error} Попробуйте ещё раз.",
+        "Введите новый титул",
+    )
+    payload["prompt_message_id"] = prompt_message_id
+    _save_draft(context, update.effective_chat.id, payload)
 
 
 async def _apply_title(context, chat_id: int, member, title: str) -> tuple[str, str]:
@@ -558,8 +669,24 @@ async def handle_shop_text_input(update: Update, context: ECallbackContext):
     """Single text dispatcher for shop drafts and the existing totalizator draft."""
     if update.message is None or update.message.text is None:
         return
+    reply = update.message.reply_to_message
+    logger.info(
+        "SHOP_TEXT_INPUT_RECEIVED update_id=%s chat_id=%s user_id=%s "
+        "message_id=%s reply_to_message_id=%s text_length=%s",
+        update.update_id,
+        update.effective_chat.id,
+        context.tg_user.tg_id,
+        update.message.message_id,
+        reply.message_id if reply else None,
+        len(update.message.text),
+    )
     draft = _get_draft(context, update.effective_chat.id)
     if draft is None:
+        logger.info(
+            "SHOP_TEXT_INPUT_NO_DRAFT chat_id=%s user_id=%s",
+            update.effective_chat.id,
+            context.tg_user.tg_id,
+        )
         await handle_totalizator_creation_text.__wrapped__(update, context)
         return
     try:
@@ -570,6 +697,25 @@ async def handle_shop_text_input(update: Update, context: ECallbackContext):
         return
 
     kind = payload.get("kind")
+    logger.info(
+        "SHOP_TEXT_INPUT_DRAFT_LOADED chat_id=%s user_id=%s kind=%s "
+        "expected_prompt_message_id=%s",
+        update.effective_chat.id,
+        context.tg_user.tg_id,
+        kind,
+        payload.get("prompt_message_id"),
+    )
+    if not _is_expected_shop_reply(update.message, payload):
+        logger.info(
+            "SHOP_TEXT_INPUT_IGNORED_WRONG_REPLY chat_id=%s user_id=%s kind=%s "
+            "actual_reply_to_message_id=%s",
+            update.effective_chat.id,
+            context.tg_user.tg_id,
+            kind,
+            reply.message_id if reply else None,
+        )
+        return
+
     if kind == "victory_phrase_input":
         try:
             phrase = validate_custom_phrase(update.message.text)
@@ -579,17 +725,24 @@ async def handle_shop_text_input(update: Update, context: ECallbackContext):
                 "multiline": "❌ Фраза должна помещаться в одну строку.",
                 "too_long": f"❌ Максимум {CUSTOM_PHRASE_MAX_LENGTH} символов.",
             }
-            await update.message.reply_text(messages.get(str(error), "❌ Некорректная фраза."))
+            await _repeat_phrase_prompt(
+                update,
+                context,
+                payload,
+                messages.get(str(error), "❌ Некорректная фраза."),
+            )
             return
         payload.update(kind="victory_phrase_confirm", phrase=phrase)
+        payload.pop("prompt_message_id", None)
         _save_draft(context, update.effective_chat.id, payload)
         preview = render_custom_victory_phrase(context.tg_user, phrase, payload["position"])
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ Купить", callback_data=f"shop_phrase_confirm_{context.tg_user.tg_id}"),
             InlineKeyboardButton("❌ Отмена", callback_data=f"shop_phrase_clear_draft_{context.tg_user.tg_id}"),
         ]])
-        await update.message.reply_text(
-            f"✍️ <b>Предпросмотр</b>\n\n{preview}",
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"✍️ <b>Предпросмотр</b>\n\n{preview}",
             parse_mode="HTML",
             reply_markup=keyboard,
         )
@@ -605,7 +758,12 @@ async def handle_shop_text_input(update: Update, context: ECallbackContext):
                 "too_long": f"❌ Максимум {TELEGRAM_TITLE_MAX_LENGTH} символов.",
                 "emoji": "❌ Telegram не разрешает emoji в титуле.",
             }
-            await update.message.reply_text(messages.get(str(error), "❌ Некорректный титул."))
+            await _repeat_title_prompt(
+                update,
+                context,
+                payload,
+                messages.get(str(error), "❌ Некорректный титул."),
+            )
             return
         payload = {"kind": "telegram_title_confirm", "title": title}
         _save_draft(context, update.effective_chat.id, payload)
@@ -613,9 +771,12 @@ async def handle_shop_text_input(update: Update, context: ECallbackContext):
             InlineKeyboardButton("✅ Установить", callback_data=f"shop_title_confirm_{context.tg_user.tg_id}"),
             InlineKeyboardButton("❌ Отмена", callback_data=f"shop_title_clear_draft_{context.tg_user.tg_id}"),
         ]])
-        await update.message.reply_text(
-            "🏷 <b>Предпросмотр титула</b>\n\n"
-            f"{html_escape(context.tg_user.full_username())}  <b>{html_escape(title)}</b>",
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=(
+                "🏷 <b>Предпросмотр титула</b>\n\n"
+                f"{html_escape(context.tg_user.full_username())}  <b>{html_escape(title)}</b>"
+            ),
             parse_mode="HTML",
             reply_markup=keyboard,
         )
