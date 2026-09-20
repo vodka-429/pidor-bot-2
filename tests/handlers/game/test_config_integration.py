@@ -333,8 +333,8 @@ def test_disabled_features_buttons_not_created(feature_flags_config_file, reset_
         # With 3 features disabled (immunity, double_chance, give_coins), we should have fewer buttons
         # All features: immunity, double_chance, prediction, transfer, toast, bank, achievements = 7 items
         # Disabled: immunity, double_chance, give_coins (give_coins не в магазине) = 2 disabled
-        # Expected: 5 buttons (prediction, transfer, toast, bank, achievements)
-        assert total_buttons == 5
+        # Expected: 5 позиций + кнопка справочника
+        assert total_buttons == 6
 
 
 @pytest.mark.integration
@@ -378,14 +378,15 @@ def test_all_features_disabled_shop_menu(reset_global_config):
             # Create shop keyboard
             keyboard = create_shop_keyboard(owner_user_id=123, chat_id=123)
 
-            # Should have achievements and bank buttons (both are always available)
+            # Should have achievements, bank and the shop help button
             total_buttons = sum(len(row) for row in keyboard.inline_keyboard)
-            assert total_buttons == 2
+            assert total_buttons == 3
 
-            # Verify buttons are achievements and bank
+            # Verify buttons are achievements, bank and help
             button_texts = [button.text for row in keyboard.inline_keyboard for button in row]
             assert any("🎖️" in text or "достижения" in text.lower() for text in button_texts)
             assert any("🏦" in text or "банк" in text.lower() for text in button_texts)
+            assert any("ℹ️" in text for text in button_texts)
     finally:
         if os.path.exists(temp_path):
             os.unlink(temp_path)
