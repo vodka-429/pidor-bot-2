@@ -4,6 +4,13 @@
 
 replicaCount: 1
 
+databaseSecret:
+  name: pidor-bot-secrets
+  key: pg_url
+migrations:
+  enabled: true
+resources: {}
+
 image:
   pullPolicy: IfNotPresent
   repository: cr.yandex/crpr9jlf6k4254l80050/pidor_bot

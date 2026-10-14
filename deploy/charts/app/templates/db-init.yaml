@@ -1,3 +1,4 @@
+{{- if .Values.migrations.enabled }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -24,6 +25,10 @@ spec:
         {{- include "app.labels" . | nindent 8 }}
         app.kubernetes.io/component: init
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
@@ -36,8 +41,8 @@ spec:
           - name: DATABASE_URL
             valueFrom:
               secretKeyRef:
-                name: pidor-bot-secrets
-                key: pg_url
+                name: {{ .Values.databaseSecret.name }}
+                key: {{ .Values.databaseSecret.key }}
           - name: TELEGRAM_BOT_API_SECRET
             valueFrom:
               secretKeyRef:
@@ -51,3 +56,4 @@ spec:
                 optional: true
       terminationGracePeriodSeconds: 30
       restartPolicy: OnFailure
+{{- end }}

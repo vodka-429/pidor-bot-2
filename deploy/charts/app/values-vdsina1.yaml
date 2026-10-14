@@ -1,0 +1,20 @@
+# Enable replicas and migrations only after the old poller is fenced and the
+# final export is restored and verified. CI updates only the image version.
+replicaCount: 0
+migrations:
+  enabled: false
+databaseSecret:
+  name: pidor-pg-app
+  key: uri
+image:
+  repository: ghcr.io/vodka-429/pidor-bot-2
+  version: sha-fe3792998be0dc1092aa911bc1733bdf7e8f5b99
+imagePullSecrets:
+  - name: ghcr-pull
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 384Mi

@@ -1,55 +1,44 @@
-# This is a basic workflow we will use in this demo
-
-name: demo-gitops
-permissions:
-  id-token: write # required to use OIDC authentication
-  contents: write # required
-  actions: read
-  security-events: write
-  statuses: write
-
+name: Build and deploy to vdsina1
 on:
   push:
-    branches: [ main ]
+    branches: [main, infra/vdsina1]
+    paths-ignore: ["deploy/charts/app/values-vdsina1.yaml"]
   workflow_dispatch:
-
-env:
-  ECR_REPOSITORY: gitops-argocd
-  VERSION: ${{ github.run_number }}-${{ github.sha }}
-
+permissions:
+  contents: write
+  packages: write
+concurrency:
+  group: bot-image-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   build:
-    name: Build and Pushing the Image
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout
-      uses: actions/checkout@v2
-
-    # Runs a single command using the runners shell
-    - name: Yandex Cloud CR "Login" Action for GitHub Actions
-      uses: yc-actions/yc-cr-login@v0.1-alpha
-      with:
-        yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
-
-    - name: Add SHORT_SHA env property with commit short sha
-      run: echo "SHORT_SHA=`echo ${GITHUB_SHA} | cut -c1-8`" >> $GITHUB_ENV
-
-    - name: Build, tag, and push image to Yandex Cloud Container Registry
-      env:
-        CR_REGISTRY: crpr9jlf6k4254l80050
-        CR_REPOSITORY: pidor_bot
-        IMAGE_TAG: ${{ env.VERSION }}
-      run: |
-        docker build -t cr.yandex/$CR_REGISTRY/$CR_REPOSITORY:$IMAGE_TAG . --file Dockerfile
-        docker push cr.yandex/$CR_REGISTRY/$CR_REPOSITORY:$IMAGE_TAG
-
-    - name: Update Version
-      run: |
-        sed -i "s|version: .*|version: ${{ env.VERSION }}|g" ./deploy/charts/app/values.yaml
-
-    - name: Commit and push changes
-      uses: devops-infra/action-commit-push@v0.3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        commit_message: Version deploy/charts/app/values.yaml updated to ${{ env.VERSION }}
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/vodka-429/pidor-bot-2:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Publish the image version to GitOps
+        env:
+          IMAGE_VERSION: sha-${{ github.sha }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          sed -i "s/^  version: .*/  version: $IMAGE_VERSION/" deploy/charts/app/values-vdsina1.yaml
+          git add deploy/charts/app/values-vdsina1.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: deploy image $IMAGE_VERSION [skip ci]"
+            git push origin "HEAD:$GITHUB_REF_NAME"
+          fi
