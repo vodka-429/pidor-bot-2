@@ -1,8 +1,8 @@
-# Enable replicas and migrations only after the old poller is fenced and the
-# final export is restored and verified. CI updates only the image version.
-replicaCount: 0
+# Production on vdsina1 after fenced export, table verification and cloud audit.
+# CI updates only the image version.
+replicaCount: 1
 migrations:
-  enabled: false
+  enabled: true
 databaseSecret:
   name: pidor-pg-app
   key: uri
