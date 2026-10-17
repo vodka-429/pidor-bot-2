@@ -1,11 +1,8 @@
 """Manual, persistent changelog announcements for substantial releases."""
-from datetime import datetime
-
 from sqlmodel import select
 
 from bot.app.models import ChangelogReceipt, Game
 from bot.handlers.game.config import GameConstants, get_config
-from bot.handlers.game.draw_schedule_service import MOSCOW_TZ, random_start_active
 
 
 CURRENT_RELEASE_ID = "2026-09-economy-pilot"
@@ -58,15 +55,12 @@ def build_current_changelog_html(constants: GameConstants) -> str:
     return "\n\n".join(sections)
 
 
-async def send_current_changelog(
-    update, context, mark_as_seen: bool, now: datetime | None = None,
-) -> bool:
+async def send_current_changelog(update, context, mark_as_seen: bool) -> bool:
     config = get_config(update.effective_chat.id)
     if not config.constants.changelog_enabled:
         return False
 
-    now = now if now is not None else datetime.now(tz=MOSCOW_TZ)
-    scheduled = random_start_active(config.constants, now)
+    scheduled = config.constants.random_start_enabled
     release_id = RANDOM_START_RELEASE_ID if scheduled else CURRENT_RELEASE_ID
 
     if mark_as_seen:

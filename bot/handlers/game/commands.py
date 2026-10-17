@@ -31,7 +31,7 @@ from bot.handlers.game.membership_service import (
 from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders
 from bot.handlers.game.config import is_test_chat, get_config
 from bot.handlers.game.draw_schedule_service import (
-    as_utc, choose_next_draw_at, format_draw_locked, format_next_draw, random_start_active,
+    as_utc, choose_next_draw_at, format_draw_locked, format_next_draw,
 )
 from bot.handlers.game.coin_service import add_coins, get_balance, get_leaderboard, get_leaderboard_by_year, compute_redistribution_swap
 from bot.handlers.game.shop_service import is_leap_year, get_days_in_year, spend_coins
@@ -267,7 +267,7 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
 
     current_dt = current_datetime()
     from bot.handlers.game.changelog_service import send_current_changelog
-    await send_current_changelog(update, context, mark_as_seen=True, now=current_dt)
+    await send_current_changelog(update, context, mark_as_seen=True)
 
     players: List[TGUser] = get_active_players(context.db_session, context.game.id)
 
@@ -281,7 +281,7 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
     cur_year, cur_day = current_dt.year, current_dt.timetuple().tm_yday
     current_date = current_dt.date()
     last_day = current_dt.month == 12 and current_dt.day >= 31
-    scheduled = random_start_active(config.constants, current_dt)
+    scheduled = config.constants.random_start_enabled
 
     game_result: GameResult = context.db_session.query(GameResult).filter_by(game_id=context.game.id, year=cur_year, day=cur_day).one_or_none()
     if game_result:
