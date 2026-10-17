@@ -45,6 +45,7 @@ class GameConstants:
             totalizator_enabled: Включён ли тотализатор (по умолчанию: False)
             coin_swap_enabled: Включён ли своп монет при self-pidor из bottom-N (по умолчанию: False)
             birthday_enabled: Включён ли бонус именинника (по умолчанию: True)
+            random_start_enabled: Случайный час открытия следующего розыгрыша (по умолчанию: False)
 
         Прочее:
             birthday_bonus_multiplier: Множитель шанса стать пидором в свой ДР (по умолчанию: 4)
@@ -96,6 +97,7 @@ class GameConstants:
     custom_phrase_enabled: bool = False
     telegram_title_enabled: bool = False
     changelog_enabled: bool = False
+    random_start_enabled: bool = False
 
     # Множитель попадания в пул для именинника
     birthday_bonus_multiplier: int = 4
@@ -340,6 +342,7 @@ def get_config(chat_id: int) -> ChatConfig:
         'custom_phrase_enabled': global_config.defaults.custom_phrase_enabled,
         'telegram_title_enabled': global_config.defaults.telegram_title_enabled,
         'changelog_enabled': global_config.defaults.changelog_enabled,
+        'random_start_enabled': global_config.defaults.random_start_enabled,
     }
 
     # Применяем переопределения для конкретного чата

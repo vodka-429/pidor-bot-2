@@ -174,7 +174,7 @@ async def test_pidor_cmd_with_missed_days(mock_update, mock_context, mock_game, 
     mock_result_query.one_or_none.return_value = None
 
     # Setup query to return different results
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock random.choice
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
@@ -239,7 +239,7 @@ async def test_pidor_cmd_no_missed_days(mock_update, mock_context, mock_game, sa
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock random.choice
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[

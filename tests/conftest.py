@@ -121,7 +121,7 @@ def mock_achievement_user_relationship(mock_context):
 def mock_membership_checks(request, mocker, mock_context):
     """Автоматически мокирует get_active_players и get_deactivated_player_ids для всех тестов,
     кроме test_membership_service. get_active_players возвращает mock_context.game.players."""
-    if 'test_membership_service' in request.node.nodeid:
+    if any(name in request.node.nodeid for name in ['test_membership_service', 'test_draw_schedule']):
         return
     mocker.patch(
         'bot.handlers.game.commands.get_active_players',
@@ -134,7 +134,7 @@ def mock_membership_checks(request, mocker, mock_context):
 def mock_shop_effects(request, mocker):
     """Автоматически мокирует get_or_create_player_effects для всех тестов, кроме test_shop_service.py и test_shop_integration.py и test_game_effects_service.py"""
     # Пропускаем автоматический мок для тестов, которые тестируют эту функцию или требуют кастомных моков
-    skip_tests = ['test_shop_service', 'test_shop_integration', 'test_game_effects_service']
+    skip_tests = ['test_shop_service', 'test_shop_integration', 'test_game_effects_service', 'test_draw_schedule']
     if any(test_name in request.node.nodeid for test_name in skip_tests):
         return None
 

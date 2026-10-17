@@ -30,6 +30,9 @@ from bot.handlers.game.membership_service import (
 )
 from bot.handlers.game.voting_helpers import get_player_weights, get_year_leaders
 from bot.handlers.game.config import is_test_chat, get_config
+from bot.handlers.game.draw_schedule_service import (
+    as_utc, choose_next_draw_at, format_draw_locked, format_next_draw, random_start_active,
+)
 from bot.handlers.game.coin_service import add_coins, get_balance, get_leaderboard, get_leaderboard_by_year, compute_redistribution_swap
 from bot.handlers.game.shop_service import is_leap_year, get_days_in_year, spend_coins
 from bot.utils import escape_markdown2, escape_word, format_number, ECallbackContext, get_allowed_final_voting_closers
@@ -262,8 +265,9 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
     logger.info(f"pidor_cmd started for chat {update.effective_chat.id}")
     logger.info(f"Game {context.game.id} of the day started")
 
+    current_dt = current_datetime()
     from bot.handlers.game.changelog_service import send_current_changelog
-    await send_current_changelog(update, context, mark_as_seen=True)
+    await send_current_changelog(update, context, mark_as_seen=True, now=current_dt)
 
     players: List[TGUser] = get_active_players(context.db_session, context.game.id)
 
@@ -274,25 +278,35 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
     # Получаем конфигурацию для чата
     config = get_config(update.effective_chat.id)
 
-    current_dt = current_datetime()
     cur_year, cur_day = current_dt.year, current_dt.timetuple().tm_yday
     current_date = current_dt.date()
     last_day = current_dt.month == 12 and current_dt.day >= 31
-
-    # Проверка пропущенных дней
-    missed_days = get_missed_days_count(context.db_session, context.game.id, cur_year, cur_day)
-    if missed_days > 0:
-        logger.info(f"Missed {missed_days} days since last game")
-        dramatic_msg = get_dramatic_message(missed_days)
-        await update.effective_chat.send_message(dramatic_msg, parse_mode="MarkdownV2")
-        await asyncio.sleep(config.constants.game_result_time_delay)
+    scheduled = random_start_active(config.constants, current_dt)
 
     game_result: GameResult = context.db_session.query(GameResult).filter_by(game_id=context.game.id, year=cur_year, day=cur_day).one_or_none()
     if game_result:
-        await update.message.reply_markdown_v2(
-            CURRENT_DAY_GAME_RESULT.format(
-                username=escape_markdown2(game_result.winner.full_username())))
+        result_text = CURRENT_DAY_GAME_RESULT.format(
+            username=escape_markdown2(game_result.winner.full_username()))
+        if scheduled and context.game.next_draw_at is not None:
+            result_text += "\n\n" + escape_markdown2(format_next_draw(context.game.next_draw_at))
+        await update.message.reply_markdown_v2(result_text)
     else:
+        if (
+            scheduled
+            and context.game.next_draw_at is not None
+            and as_utc(current_dt) < as_utc(context.game.next_draw_at)
+        ):
+            await update.effective_chat.send_message(format_draw_locked(context.game.next_draw_at, current_dt))
+            return
+
+        # Не сообщаем о пропущенных днях до открытия или после сыгранного розыгрыша.
+        missed_days = get_missed_days_count(context.db_session, context.game.id, cur_year, cur_day)
+        if missed_days > 0:
+            logger.info(f"Missed {missed_days} days since last game")
+            dramatic_msg = get_dramatic_message(missed_days)
+            await update.effective_chat.send_message(dramatic_msg, parse_mode="MarkdownV2")
+            await asyncio.sleep(config.constants.game_result_time_delay)
+
         logger.debug("Creating new game result")
 
         # Импорты для работы с эффектами и предсказаниями
@@ -433,9 +447,15 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
             awarded_achievements.extend(monthly_achievements)
             logger.info(f"Awarded {len(monthly_achievements)} monthly achievements for {prev_year}-{prev_month:02d}")
 
-        # Коммит всех изменений одним запросом (включая достижения)
+        if scheduled:
+            context.game.next_draw_at = choose_next_draw_at(current_dt)
+            context.db_session.add(context.game)
+
+        # Коммит всех изменений одним запросом (включая достижения и расписание)
         context.db_session.commit()
         logger.debug("Committed game result, coin transactions, and achievements")
+        if scheduled:
+            logger.info("Next draw scheduled: game_id=%s next_draw_at=%s", context.game.id, context.game.next_draw_at)
 
         if last_day:
             logger.debug("Sending year results announcement")
@@ -533,6 +553,8 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
                 logger.info(f"Added {len(awarded_achievements)} achievements to stage4 message")
 
         # Отправляем финальное сообщение с кнопкой перевыбора
+        if scheduled:
+            stage4_message += "\n\n" + format_next_draw(context.game.next_draw_at)
         await send_result_with_reroll_button(update, context, stage4_message, cur_year, cur_day)
 
         # Сообщение о свопе монет (если сработал)
