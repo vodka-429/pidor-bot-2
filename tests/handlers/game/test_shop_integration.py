@@ -30,7 +30,7 @@ async def test_immunity_blocks_selection(mock_update, mock_context, mock_game, s
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock current_datetime to return a non-last-day date
     mock_dt = MagicMock()
@@ -137,7 +137,7 @@ async def test_immunity_reselection(mock_update, mock_context, mock_game, sample
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock current_datetime
     mock_dt = MagicMock()
@@ -219,7 +219,7 @@ async def test_immunity_message_shown(mock_update, mock_context, mock_game, samp
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -297,7 +297,7 @@ async def test_double_chance_increases_probability(mock_update, mock_context, mo
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -394,7 +394,7 @@ async def test_double_chance_resets_after_win(mock_update, mock_context, mock_ga
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -472,7 +472,7 @@ async def test_prediction_correct_awards_coins(mock_update, mock_context, mock_g
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -557,7 +557,7 @@ async def test_prediction_incorrect_no_reward(mock_update, mock_context, mock_ga
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -637,7 +637,7 @@ async def test_prediction_notification_sent(mock_update, mock_context, mock_game
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -711,7 +711,7 @@ async def test_combined_effects(mock_update, mock_context, mock_game, sample_pla
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -809,7 +809,7 @@ async def test_all_players_protected(mock_update, mock_context, mock_game, sampl
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -894,7 +894,7 @@ async def test_effects_isolated_between_games(mock_update, mock_context, sample_
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -952,7 +952,7 @@ async def test_effects_isolated_between_games(mock_update, mock_context, sample_
     mock_result_query2.filter_by.return_value = mock_result_query2
     mock_result_query2.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query2, mock_missed_query2, mock_result_query2]
+    mock_context.db_session.query.side_effect = [mock_game_query2, mock_result_query2, mock_missed_query2]
 
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
         sample_players[0],  # NOT protected in game2, should win
@@ -1001,7 +1001,7 @@ async def test_double_chance_for_other_player(mock_update, mock_context, mock_ga
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -1080,7 +1080,7 @@ async def test_predictions_summary_single_message(mock_update, mock_context, moc
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -1160,7 +1160,7 @@ async def test_predictions_summary_multiple_correct(mock_update, mock_context, m
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     mock_dt = MagicMock()
     mock_dt.year = 2024
@@ -1245,7 +1245,7 @@ async def test_predictions_summary_mixed_results(mock_update, mock_context, mock
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     mock_dt = MagicMock()
     mock_dt.year = 2024

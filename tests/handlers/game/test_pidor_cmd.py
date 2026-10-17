@@ -50,19 +50,19 @@ async def test_pidor_cmd_existing_result_today(mock_update, mock_context, mock_g
     mock_game_query.filter_by.return_value = mock_game_query
     mock_game_query.one_or_none.return_value = mock_game
 
-    # Second call is for checking missed days (last result)
+    # Missed-days query is used only when there is no current result (last result)
     mock_missed_query = MagicMock()
     mock_missed_query.filter_by.return_value = mock_missed_query
     mock_missed_query.order_by.return_value = mock_missed_query
     mock_missed_query.first.return_value = mock_result
 
-    # Third call is for GameResult in pidor_cmd
+    # Second call is for GameResult in pidor_cmd
     mock_result_query = MagicMock()
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = mock_result
 
-    # Setup query to return different results for Game, missed days, and GameResult
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    # Setup query to return different results for Game, GameResult, and missed days
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Execute
     await pidor_cmd(mock_update, mock_context)
@@ -87,19 +87,19 @@ async def test_pidor_cmd_new_game_result(mock_update, mock_context, mock_game, s
     mock_game_query.filter_by.return_value = mock_game_query
     mock_game_query.one_or_none.return_value = mock_game
 
-    # Second call is for checking missed days (no previous games)
+    # Missed-days query is used only when there is no current result (no previous games)
     mock_missed_query = MagicMock()
     mock_missed_query.filter_by.return_value = mock_missed_query
     mock_missed_query.order_by.return_value = mock_missed_query
     mock_missed_query.first.return_value = None
 
-    # Third call is for GameResult in pidor_cmd - should return None (no existing result)
+    # Second call is for GameResult in pidor_cmd - should return None (no existing result)
     mock_result_query = MagicMock()
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    # Setup query to return different results for Game, missed days, and GameResult
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    # Setup query to return different results for Game, GameResult, and missed days
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock random.choice to return first player and phrases
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
@@ -161,7 +161,7 @@ async def test_pidor_cmd_last_day_of_year(mock_update, mock_context, mock_game, 
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock random.choice
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
@@ -230,7 +230,7 @@ async def test_pidor_cmd_random_winner_selection(mock_update, mock_context, mock
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock random.choice and capture the call
     mock_random_choice = mocker.patch('bot.handlers.game.commands.random.choice')
@@ -288,7 +288,7 @@ async def test_pidor_cmd_time_delays(mock_update, mock_context, mock_game, sampl
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock random.choice
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
@@ -542,7 +542,7 @@ async def test_pidor_cmd_last_day_triggers_tiebreaker(mock_update, mock_context,
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock random.choice for winner selection and phrases
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
@@ -610,7 +610,7 @@ async def test_pidor_cmd_last_day_single_leader_no_tiebreaker(mock_update, mock_
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock random.choice
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
@@ -676,7 +676,7 @@ async def test_pidor_cmd_not_last_day_no_tiebreaker(mock_update, mock_context, m
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock random.choice
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
@@ -743,7 +743,7 @@ async def test_pidor_cmd_awards_coins_to_winner_and_executor(mock_update, mock_c
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock random.choice
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
@@ -835,7 +835,7 @@ async def test_pidor_cmd_no_coin_for_existing_result(mock_update, mock_context, 
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = mock_result
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock add_coins to ensure it's not called
     mock_add_coins = mocker.patch('bot.handlers.game.commands.add_coins')
@@ -876,7 +876,7 @@ async def test_pidor_cmd_self_pidor_case(mock_update, mock_context, mock_game, s
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock random.choice to return first player (same as executor)
     mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[

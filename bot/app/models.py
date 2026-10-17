@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
 
-from sqlalchemy import UniqueConstraint, Column, BigInteger
+from sqlalchemy import UniqueConstraint, Column, BigInteger, DateTime
 from sqlmodel import SQLModel, Field, Relationship
 
 
@@ -53,6 +53,9 @@ class TGUser(SQLModel, table=True):
 class Game(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     chat_id: int = Field(sa_column=Column('chat_id', BigInteger(), nullable=False, index=True))
+    next_draw_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
 
     players: List[TGUser] = Relationship(back_populates="games", link_model=GamePlayer)
     results: List['GameResult'] = Relationship(back_populates="game")

@@ -86,7 +86,7 @@ async def test_full_game_flow(mock_update, mock_context, mock_game, sample_playe
     mock_result_query.one_or_none.return_value = None
 
     # Setup query to return different results for Game, missed days check, and GameResult
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock random.choice for stage phrases
     mock_choice.side_effect = [
@@ -514,8 +514,8 @@ async def test_give_coins_button_appears_after_pidor_selection(mock_update, mock
 
     mock_context.db_session.query.side_effect = [
         mock_game_query,
-        mock_missed_query,
         mock_result_query,
+        mock_missed_query,
         mock_result_query
     ]
 

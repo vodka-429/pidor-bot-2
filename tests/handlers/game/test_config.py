@@ -18,6 +18,23 @@ from bot.handlers.game.config import (
 )
 
 
+def test_random_start_is_opt_in_per_chat(tmp_path, monkeypatch, reset_global_config):
+    path = tmp_path / 'game-config.json'
+    path.write_text(json.dumps({
+        'enabled_chats': [-1003932067905, -1001392307997, -1002189152002, -1003671793100],
+        'chat_overrides': {
+            '-1003932067905': {'random_start_enabled': True},
+            '-1001392307997': {'random_start_enabled': True},
+        },
+    }))
+    monkeypatch.setenv('GAME_CONFIG_PATH', str(path))
+    assert get_config(-1003932067905).constants.random_start_enabled
+    assert get_config(-1001392307997).constants.random_start_enabled
+    assert not get_config(-1002189152002).constants.random_start_enabled
+    assert not get_config(-1003671793100).constants.random_start_enabled
+    assert not get_config(-100999).constants.random_start_enabled
+
+
 @pytest.fixture
 def temp_config_file():
     """Create a temporary config file for testing."""

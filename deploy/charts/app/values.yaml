@@ -33,10 +33,12 @@ gameConfig:
     changelog_enabled: true
   chat_overrides:
     "-1003932067905":
+      random_start_enabled: true
       max_missed_days_for_final_voting: 100
       totalizator_enabled: true
       telegram_title_enabled: true
     "-1001392307997":
+      random_start_enabled: true
       totalizator_enabled: true
       telegram_title_enabled: true
     "-1002189152002":

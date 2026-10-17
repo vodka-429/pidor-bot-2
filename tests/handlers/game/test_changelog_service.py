@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -7,10 +8,65 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from bot.app.models import ChangelogReceipt, Game
 from bot.handlers.game.changelog_service import (
     CURRENT_RELEASE_ID,
+    RANDOM_START_RELEASE_ID,
     build_current_changelog_html,
     send_current_changelog,
 )
 from bot.handlers.game.config import ChatConfig, GameConstants
+from bot.handlers.game.draw_schedule_service import RANDOM_START_ACTIVATES_AT
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('enabled', [False, True])
+async def test_random_start_release_is_scoped_and_delayed(enabled):
+    engine = create_engine('sqlite://')
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        game = Game(chat_id=-1001)
+        session.add(game)
+        session.commit()
+        session.add(ChangelogReceipt(game_id=game.id, release_id=CURRENT_RELEASE_ID))
+        session.commit()
+        update = SimpleNamespace(effective_chat=SimpleNamespace(id=game.chat_id, send_message=AsyncMock()))
+        context = SimpleNamespace(db_session=session, game=game)
+        config = ChatConfig(chat_id=game.chat_id, constants=GameConstants(
+            changelog_enabled=True, random_start_enabled=enabled,
+        ))
+        with patch('bot.handlers.game.changelog_service.get_config', return_value=config):
+            assert not await send_current_changelog(update, context, True, RANDOM_START_ACTIVATES_AT - timedelta(seconds=1))
+            assert await send_current_changelog(update, context, True, RANDOM_START_ACTIVATES_AT) is enabled
+            assert not await send_current_changelog(update, context, True, RANDOM_START_ACTIVATES_AT)
+            assert await send_current_changelog(update, context, False, RANDOM_START_ACTIVATES_AT)
+        releases = {receipt.release_id for receipt in session.exec(select(ChangelogReceipt)).all()}
+        assert (RANDOM_START_RELEASE_ID in releases) is enabled
+        text = update.effective_chat.send_message.await_args.args[0]
+        assert ('Случайное время' in text) is enabled
+        if enabled:
+            assert '00:00 до 18:00 МСК' in text
+            assert 'Первый розыгрыш' in text
+
+
+@pytest.mark.asyncio
+async def test_failed_announcement_can_be_retried():
+    engine = create_engine('sqlite://')
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        game = Game(chat_id=-1001)
+        session.add(game)
+        session.commit()
+        chat = SimpleNamespace(id=game.chat_id, send_message=AsyncMock(side_effect=RuntimeError('send failed')))
+        update = SimpleNamespace(effective_chat=chat)
+        context = SimpleNamespace(db_session=session, game=game)
+        config = ChatConfig(chat_id=game.chat_id, constants=GameConstants(
+            changelog_enabled=True, random_start_enabled=True,
+        ))
+        with patch('bot.handlers.game.changelog_service.get_config', return_value=config):
+            with pytest.raises(RuntimeError, match='send failed'):
+                await send_current_changelog(update, context, True, RANDOM_START_ACTIVATES_AT)
+            assert not session.exec(select(ChangelogReceipt)).all()
+            chat.send_message.side_effect = None
+            assert await send_current_changelog(update, context, True, RANDOM_START_ACTIVATES_AT)
+        assert session.exec(select(ChangelogReceipt)).one().release_id == RANDOM_START_RELEASE_ID
 
 
 @pytest.mark.asyncio

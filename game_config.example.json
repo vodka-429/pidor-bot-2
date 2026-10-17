@@ -43,7 +43,8 @@
     "coin_rain_enabled": false,
     "custom_phrase_enabled": false,
     "telegram_title_enabled": false,
-    "changelog_enabled": false
+    "changelog_enabled": false,
+    "random_start_enabled": false
   },
   "chat_overrides": {
     "-1001234567890": {

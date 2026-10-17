@@ -412,7 +412,7 @@ async def test_monthly_achievements_awarded_on_first_game(
     mock_result_query.one_or_none.return_value = None
 
     mock_context.db_session.query.side_effect = [
-        mock_game_query, mock_missed_query, mock_result_query
+        mock_game_query, mock_result_query, mock_missed_query
     ]
 
     # Mock datetime - first day of July (month 7)

@@ -31,7 +31,7 @@ async def test_first_blood_awarded_on_first_win(mock_update, mock_context, mock_
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock datetime
     mock_dt = MagicMock()
@@ -147,7 +147,7 @@ async def test_streak_achievements_awarded_correctly(mock_update, mock_context, 
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock datetime
     mock_dt = MagicMock()
@@ -307,7 +307,7 @@ async def test_achievements_isolated_by_game(mock_update, mock_context, sample_p
     mock_result_query1.filter_by.return_value = mock_result_query1
     mock_result_query1.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query1, mock_missed_query1, mock_result_query1]
+    mock_context.db_session.query.side_effect = [mock_game_query1, mock_result_query1, mock_missed_query1]
 
     # Mock exec для game1
     def mock_exec_game1(stmt):
@@ -375,7 +375,7 @@ async def test_achievements_isolated_by_game(mock_update, mock_context, sample_p
     mock_result_query2.filter_by.return_value = mock_result_query2
     mock_result_query2.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query2, mock_missed_query2, mock_result_query2]
+    mock_context.db_session.query.side_effect = [mock_game_query2, mock_result_query2, mock_missed_query2]
 
     # Mock exec для game2 - также первая победа
     def mock_exec_game2(stmt):
@@ -438,7 +438,7 @@ async def test_achievement_coins_added_to_balance(mock_update, mock_context, moc
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock datetime
     mock_dt = MagicMock()
@@ -544,7 +544,7 @@ async def test_achievements_disabled_no_awards(mock_update, mock_context, mock_g
     mock_result_query.filter_by.return_value = mock_result_query
     mock_result_query.one_or_none.return_value = None
 
-    mock_context.db_session.query.side_effect = [mock_game_query, mock_missed_query, mock_result_query]
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
 
     # Mock datetime
     mock_dt = MagicMock()
