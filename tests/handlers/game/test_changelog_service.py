@@ -1,5 +1,4 @@
 from types import SimpleNamespace
-from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,12 +12,11 @@ from bot.handlers.game.changelog_service import (
     send_current_changelog,
 )
 from bot.handlers.game.config import ChatConfig, GameConstants
-from bot.handlers.game.draw_schedule_service import RANDOM_START_ACTIVATES_AT
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('enabled', [False, True])
-async def test_random_start_release_is_scoped_and_delayed(enabled):
+async def test_random_start_release_is_scoped_and_immediate(enabled):
     engine = create_engine('sqlite://')
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
@@ -33,10 +31,9 @@ async def test_random_start_release_is_scoped_and_delayed(enabled):
             changelog_enabled=True, random_start_enabled=enabled,
         ))
         with patch('bot.handlers.game.changelog_service.get_config', return_value=config):
-            assert not await send_current_changelog(update, context, True, RANDOM_START_ACTIVATES_AT - timedelta(seconds=1))
-            assert await send_current_changelog(update, context, True, RANDOM_START_ACTIVATES_AT) is enabled
-            assert not await send_current_changelog(update, context, True, RANDOM_START_ACTIVATES_AT)
-            assert await send_current_changelog(update, context, False, RANDOM_START_ACTIVATES_AT)
+            assert await send_current_changelog(update, context, True) is enabled
+            assert not await send_current_changelog(update, context, True)
+            assert await send_current_changelog(update, context, False)
         releases = {receipt.release_id for receipt in session.exec(select(ChangelogReceipt)).all()}
         assert (RANDOM_START_RELEASE_ID in releases) is enabled
         text = update.effective_chat.send_message.await_args.args[0]
@@ -62,10 +59,10 @@ async def test_failed_announcement_can_be_retried():
         ))
         with patch('bot.handlers.game.changelog_service.get_config', return_value=config):
             with pytest.raises(RuntimeError, match='send failed'):
-                await send_current_changelog(update, context, True, RANDOM_START_ACTIVATES_AT)
+                await send_current_changelog(update, context, True)
             assert not session.exec(select(ChangelogReceipt)).all()
             chat.send_message.side_effect = None
-            assert await send_current_changelog(update, context, True, RANDOM_START_ACTIVATES_AT)
+            assert await send_current_changelog(update, context, True)
         assert session.exec(select(ChangelogReceipt)).one().release_id == RANDOM_START_RELEASE_ID
 
 

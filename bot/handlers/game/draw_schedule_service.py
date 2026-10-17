@@ -5,15 +5,7 @@ import random
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from bot.handlers.game.config import GameConstants
-
-
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
-RANDOM_START_ACTIVATES_AT = datetime(2026, 10, 18, tzinfo=MOSCOW_TZ)
-
-
-def random_start_active(constants: GameConstants, now: datetime) -> bool:
-    return constants.random_start_enabled and now >= RANDOM_START_ACTIVATES_AT
 
 
 def as_utc(value: datetime) -> datetime:

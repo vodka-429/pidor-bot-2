@@ -13,8 +13,7 @@ from bot.handlers.game import selection_service
 from bot.handlers.game.commands import pidor_cmd
 from bot.handlers.game.config import ChatConfig, GameConstants
 from bot.handlers.game.draw_schedule_service import (
-    MOSCOW_TZ, RANDOM_START_ACTIVATES_AT, as_utc, choose_next_draw_at,
-    format_draw_locked, random_start_active,
+    MOSCOW_TZ, as_utc, choose_next_draw_at, format_draw_locked,
 )
 
 
@@ -35,12 +34,9 @@ def test_next_day_uses_moscow_calendar_and_inclusive_hours(mocker, hour, today, 
     rng.assert_called_once_with(0, 18)
 
 
-def test_activation_and_countdown():
-    constants = GameConstants(random_start_enabled=True)
-    assert not random_start_active(constants, RANDOM_START_ACTIVATES_AT - timedelta(seconds=1))
-    assert random_start_active(constants, RANDOM_START_ACTIVATES_AT)
-    assert not random_start_active(GameConstants(), RANDOM_START_ACTIVATES_AT)
-    text = format_draw_locked(RANDOM_START_ACTIVATES_AT, RANDOM_START_ACTIVATES_AT - timedelta(seconds=1))
+def test_countdown_rounds_up_to_minute():
+    opening = datetime(2026, 10, 18, tzinfo=MOSCOW_TZ)
+    text = format_draw_locked(opening, opening - timedelta(seconds=1))
     assert '18.10.2026 с 00:00 МСК' in text
     assert '0 ч 1 мин' in text
 
@@ -66,7 +62,7 @@ def scheduled_game(mocker):
         mocker.patch('bot.handlers.game.commands.get_config', return_value=config)
         mocker.patch('bot.handlers.game.config.get_config', return_value=config)
         mocker.patch('bot.handlers.game.changelog_service.get_config', return_value=config)
-        clock = mocker.patch('bot.handlers.game.commands.current_datetime', return_value=RANDOM_START_ACTIVATES_AT)
+        clock = mocker.patch('bot.handlers.game.commands.current_datetime', return_value=datetime(2026, 10, 18, tzinfo=MOSCOW_TZ))
         rng = mocker.patch('bot.handlers.game.draw_schedule_service.random.randint', return_value=14)
         selection = mocker.spy(selection_service, 'select_winner_with_effects')
         chat = SimpleNamespace(id=game.chat_id, send_message=AsyncMock())
@@ -136,12 +132,9 @@ async def test_missed_day_does_not_delay_current_draw(scheduled_game):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('disabled', [True, False])
-async def test_disabled_or_pre_activation_keeps_legacy_behavior(scheduled_game, disabled):
+async def test_disabled_keeps_legacy_behavior(scheduled_game):
     env = scheduled_game
-    env.config.constants.random_start_enabled = not disabled
-    if not disabled:
-        env.clock.return_value = RANDOM_START_ACTIVATES_AT - timedelta(seconds=1)
+    env.config.constants.random_start_enabled = False
     # Even a retained future schedule must not affect a disabled feature.
     future = datetime(2026, 10, 20, tzinfo=timezone.utc)
     env.game.next_draw_at = future
@@ -150,6 +143,36 @@ async def test_disabled_or_pre_activation_keeps_legacy_behavior(scheduled_game, 
     env.rng.assert_not_called()
     assert len(env.session.exec(select(GameResult)).all()) == 1
     assert as_utc(env.game.next_draw_at) == future
+
+
+@pytest.mark.asyncio
+async def test_enabled_works_before_original_activation_date(scheduled_game):
+    env = scheduled_game
+    env.clock.return_value = datetime(2026, 10, 17, 18, 30, tzinfo=MOSCOW_TZ)
+    await pidor_cmd(env.update, env.context)
+    result = env.session.exec(select(GameResult)).one()
+    assert (result.year, result.day) == (2026, 290)
+    assert as_utc(env.game.next_draw_at) == datetime(2026, 10, 18, 14, tzinfo=MOSCOW_TZ).astimezone(timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_existing_result_without_schedule_only_announces_release(scheduled_game):
+    env = scheduled_game
+    env.clock.return_value = datetime(2026, 10, 17, 18, 30, tzinfo=MOSCOW_TZ)
+    env.config.constants.changelog_enabled = True
+    result = GameResult(game_id=env.game.id, winner_id=env.players[0].id, year=2026, day=290)
+    env.session.add(result)
+    env.session.commit()
+    await pidor_cmd(env.update, env.context)
+    await pidor_cmd(env.update, env.context)
+    env.selection.assert_not_called()
+    env.rng.assert_not_called()
+    assert env.game.next_draw_at is None
+    assert env.session.exec(select(GameResult)).one().id == result.id
+    assert not env.session.exec(select(PidorCoinTransaction)).all()
+    env.update.effective_chat.send_message.assert_awaited_once()
+    assert 'Случайное время' in env.update.effective_chat.send_message.await_args.args[0]
+    assert env.update.message.reply_markdown_v2.await_count == 2
 
 
 @pytest.mark.asyncio
