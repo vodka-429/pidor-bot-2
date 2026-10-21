@@ -7,7 +7,8 @@ from typing import List, Tuple
 
 from sqlmodel import select
 
-from bot.app.models import GameResult, TGUser
+from bot.app.models import GameResult, TGUser, UserAchievement
+from bot.handlers.game.achievement_service import check_and_award_achievements
 from bot.handlers.game.coin_service import add_coins
 from bot.handlers.game.shop_service import spend_coins, can_afford
 from bot.handlers.game.config import get_config_by_game_id
@@ -55,7 +56,7 @@ def execute_reroll(
     players: List[TGUser],
     current_date: date,
     immunity_enabled: bool = True
-) -> Tuple[TGUser, TGUser, SelectionResult]:
+) -> Tuple[TGUser, TGUser, SelectionResult, List[UserAchievement]]:
     """
     Выполнить перевыбор.
 
@@ -74,8 +75,10 @@ def execute_reroll(
         immunity_enabled: Включена ли защита (по умолчанию True)
 
     Returns:
-        Кортеж (старый_победитель, новый_победитель, selection_result)
-        где selection_result содержит метаданные о выборе (защита, двойной шанс)
+        Кортеж (старый_победитель, новый_победитель, selection_result, awarded_achievements)
+        где selection_result содержит метаданные о выборе (защита, двойной шанс),
+        а awarded_achievements — достижения, выданные новому победителю
+        (у старого победителя достижения не отбираются)
 
     Raises:
         ValueError: Если GameResult не найден или игроки пусты, или если reroll отключен
@@ -170,6 +173,12 @@ def execute_reroll(
     )
     logger.info(f"Processed {len(predictions_results)} predictions for reroll")
 
+    # Выдаём новому победителю достижения (первая кровь, серии), если они включены.
+    # Месячные достижения здесь не проверяются.
+    awarded_achievements = check_and_award_achievements(
+        db_session, game_id, new_winner.id, year, day
+    )
+
     db_session.commit()
 
     logger.info(
@@ -177,7 +186,7 @@ def execute_reroll(
         f"initiator {initiator_id} in game {game_id} for {year}-{day}"
     )
 
-    return old_winner, new_winner, selection_result
+    return old_winner, new_winner, selection_result, awarded_achievements
 
 
 async def remove_reroll_button_after_timeout(

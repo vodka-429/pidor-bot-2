@@ -531,25 +531,10 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
 
         # Добавить информацию о полученных достижениях (если есть)
         if awarded_achievements:
-            from bot.handlers.game.text_static import ACHIEVEMENTS_EARNED_HEADER, ACHIEVEMENT_EARNED_TEMPLATE
-            from bot.handlers.game.achievement_constants import get_achievement
-            from html import escape as html_escape
-
-            achievements_lines = []
-            for achievement in awarded_achievements:
-                achievement_data = get_achievement(achievement.achievement_code)
-                if achievement_data:
-                    achievement_line = ACHIEVEMENT_EARNED_TEMPLATE.format(
-                        username=html_escape(achievement.user.full_username()),
-                        name=html_escape(achievement_data['name']),
-                        reward=achievement_data['reward']
-                    )
-                    achievements_lines.append(achievement_line)
-
-            if achievements_lines:
-                stage4_message += ACHIEVEMENTS_EARNED_HEADER
-                for line in achievements_lines:
-                    stage4_message += f"\n{line}"
+            from bot.handlers.game.achievement_service import format_achievements_block
+            achievements_block = format_achievements_block(awarded_achievements)
+            if achievements_block:
+                stage4_message += achievements_block
                 logger.info(f"Added {len(awarded_achievements)} achievements to stage4 message")
 
         # Отправляем финальное сообщение с кнопкой перевыбора
@@ -2311,7 +2296,7 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
     current_date = current_dt.date()
     immunity_enabled = is_immunity_enabled(current_dt)
 
-    old_winner, new_winner, selection_result = execute_reroll(
+    old_winner, new_winner, selection_result, awarded_achievements = execute_reroll(
         context.db_session, game_id, year, day,
         context.tg_user.id, players, current_date, immunity_enabled
     )
@@ -2373,6 +2358,9 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
         if correct_predictions:
             predictions_info = "\n\n🔮 <b>Предсказания сбылись!</b>\n" + "\n".join(correct_predictions)
 
+    from bot.handlers.game.achievement_service import format_achievements_block
+    achievements_info = format_achievements_block(awarded_achievements)
+
     await update.effective_chat.send_message(
         reroll_msgs['announcement'].format(
             initiator_name=initiator_name,
@@ -2382,7 +2370,8 @@ async def handle_reroll_callback(update: Update, context: GECallbackContext):
             new_winner_coins=config.constants.coins_per_win,
             protection_info=protection_info,
             double_chance_info=double_chance_info,
-            predictions_info=predictions_info
+            predictions_info=predictions_info,
+            achievements_info=achievements_info
         ),
         parse_mode="HTML"
     )

@@ -398,7 +398,7 @@ def get_reroll_messages(config) -> dict:
 
 <code>🎉 {{initiator_name}}: -{c.reroll_price} пидор-койн(ов)</code>
 <code>🎉 {{old_winner_name}}: сохраняет свои койны</code>
-<code>🎉 {{new_winner_name}}: +{{new_winner_coins}} пидор-койн(ов)</code>{{protection_info}}{{double_chance_info}}{{predictions_info}}""",
+<code>🎉 {{new_winner_name}}: +{{new_winner_coins}} пидор-койн(ов)</code>{{protection_info}}{{double_chance_info}}{{predictions_info}}{{achievements_info}}""",
         'error_already_used': "❌ Перевыбор уже использован сегодня",
         'error_insufficient_funds': f"❌ Недостаточно койнов! Баланс: {{balance}} 💰",
         'success_notification': "🔄 Перевыбор запущен!"

@@ -270,3 +270,125 @@ async def test_chats_have_independent_schedules(scheduled_game):
     await pidor_cmd(env.update, env.context)
     assert as_utc(other.next_draw_at) == datetime(2026, 10, 19, tzinfo=MOSCOW_TZ).astimezone(timezone.utc)
     assert as_utc(env.session.get(Game, first_game_id).next_draw_at) == first_opening
+
+
+def _reroll_env(env, winner_idx, today_winner_idx, previous_winner_idx=None):
+    """Prepare a drawn day with `today_winner_idx` as winner; optionally a win on the previous day."""
+    from bot.handlers.game.coin_service import add_coins
+
+    env.config.constants.reroll_enabled = True
+    env.config.constants.achievements_enabled = True
+    now = env.clock.return_value
+    year, day = now.year, now.timetuple().tm_yday
+    if previous_winner_idx is not None:
+        env.session.add(GameResult(game_id=env.game.id, year=year, day=day - 1,
+                                   winner_id=env.players[previous_winner_idx].id))
+    env.session.add(GameResult(game_id=env.game.id, year=year, day=day,
+                               winner_id=env.players[today_winner_idx].id, reroll_available=True))
+    env.session.commit()
+    add_coins(env.session, env.game.id, env.players[0].id, 100, year, 'test')
+    return year, day
+
+
+def _force_winner(mocker, player):
+    from bot.handlers.game.selection_service import SelectionResult
+
+    return mocker.patch(
+        'bot.handlers.game.selection_service.select_winner_with_effects',
+        return_value=SelectionResult(
+            winner=player, had_immunity=False, had_double_chance=False, all_protected=False),
+    )
+
+
+def _reroll(env, year, day):
+    from bot.handlers.game.reroll_service import execute_reroll
+
+    return execute_reroll(env.session, env.game.id, year, day, env.players[0].id,
+                          env.players, env.clock.return_value.date())
+
+
+def _achievements(env, user):
+    from bot.app.models import UserAchievement
+
+    return {a.achievement_code for a in env.session.exec(
+        select(UserAchievement).where(UserAchievement.user_id == user.id)).all()}
+
+
+def _ach_transactions(env, user):
+    return env.session.exec(select(PidorCoinTransaction).where(
+        PidorCoinTransaction.user_id == user.id,
+        PidorCoinTransaction.reason.like('achievement_%'))).all()
+
+
+def test_reroll_awards_first_blood_to_new_winner(scheduled_game, mocker):
+    env = scheduled_game
+    year, day = _reroll_env(env, 1, today_winner_idx=0)
+    _force_winner(mocker, env.players[1])
+
+    old, new, _, awarded = _reroll(env, year, day)
+
+    assert new.id == env.players[1].id
+    assert [a.achievement_code for a in awarded] == ['first_blood']
+    assert _achievements(env, env.players[1]) == {'first_blood'}
+    assert [t.reason for t in _ach_transactions(env, env.players[1])] == ['achievement_first_blood']
+
+
+def test_reroll_awards_streak_to_yesterdays_winner(scheduled_game, mocker):
+    env = scheduled_game
+    year, day = _reroll_env(env, 1, today_winner_idx=0, previous_winner_idx=1)
+    _force_winner(mocker, env.players[1])
+
+    _, _, _, awarded = _reroll(env, year, day)
+
+    # two wins in the year, so no first blood; streak of two days
+    assert [a.achievement_code for a in awarded] == ['streak_2']
+    assert _achievements(env, env.players[1]) == {'streak_2'}
+
+
+def test_reroll_same_player_does_not_duplicate_achievements(scheduled_game, mocker):
+    from bot.app.models import UserAchievement
+    from bot.handlers.game.achievement_service import check_and_award_achievements
+
+    env = scheduled_game
+    year, day = _reroll_env(env, 0, today_winner_idx=0)
+    check_and_award_achievements(env.session, env.game.id, env.players[0].id, year, day)
+    env.session.commit()
+    tx_before = len(_ach_transactions(env, env.players[0]))
+    assert tx_before == 1
+    _force_winner(mocker, env.players[0])
+
+    _, _, _, awarded = _reroll(env, year, day)
+
+    assert awarded == []
+    assert len(env.session.exec(select(UserAchievement)).all()) == 1
+    assert len(_ach_transactions(env, env.players[0])) == tx_before
+
+
+def test_reroll_keeps_old_winner_achievements(scheduled_game, mocker):
+    from bot.handlers.game.achievement_service import check_and_award_achievements
+
+    env = scheduled_game
+    year, day = _reroll_env(env, 1, today_winner_idx=0)
+    check_and_award_achievements(env.session, env.game.id, env.players[0].id, year, day)
+    env.session.commit()
+    old_before = _achievements(env, env.players[0])
+    old_tx = len(_ach_transactions(env, env.players[0]))
+    assert old_before == {'first_blood'}
+    _force_winner(mocker, env.players[1])
+
+    _reroll(env, year, day)
+
+    assert _achievements(env, env.players[0]) == old_before
+    assert len(_ach_transactions(env, env.players[0])) == old_tx
+
+
+def test_reroll_respects_achievements_disabled(scheduled_game, mocker):
+    env = scheduled_game
+    year, day = _reroll_env(env, 1, today_winner_idx=0)
+    env.config.constants.achievements_enabled = False
+    _force_winner(mocker, env.players[1])
+
+    _, _, _, awarded = _reroll(env, year, day)
+
+    assert awarded == []
+    assert _achievements(env, env.players[1]) == set()
