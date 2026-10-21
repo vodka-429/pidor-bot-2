@@ -24,14 +24,10 @@ argument-hint: <описание задачи>
 4. **Итерация.** FAIL → передай замечания reviewer-а `coder`, затем снова `reviewer`. Максимум 3 итерации; если не сходится — остановись и доложи человеку, что именно не сходится.
 
 5. **PR.** После PASS:
-   - `git fetch origin main && git rebase origin/main` (CI коммитит в main bump образа), снова `pytest`;
+   - rebase на свежий `origin/main` (см. `CLAUDE.md`), снова `pytest`;
    - `git push -u origin <ветка>`;
    - `gh pr create --base main` — заголовок в стиле conventional commits на английском; в описании: что сделано, ответы человека на развилки (или принятые по умолчанию решения), результат `pytest`, вердикт reviewer-а, что проверить руками в тестовом чате.
    - Если `gh pr create` падает (например, в облачной сессии Claude GraphQL закрыт — HTTP 403), создай PR через REST: `gh api repos/vodka-429/pidor-bot-2/pulls -f title='…' -f head=<ветка> -f base=main -F body=@/tmp/pr_body.md`.
    - Если `gh` недоступен совсем — запушь ветку и дай человеку ссылку на создание PR.
 
 6. **Итог.** **Не мёржи и не деплой.** Доложи человеку коротко: что сделано, результат тестов, ссылка на PR. Merge (→ CI → ArgoCD) — решение человека: это гейт для прода и балансов игроков.
-
-## Границы
-
-Никаких мутаций `kubectl`/`helm`, `terraform apply`, `ansible-playbook`, ручных `alembic upgrade/downgrade`, push в `main` и force-push.

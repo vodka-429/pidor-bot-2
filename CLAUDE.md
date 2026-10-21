@@ -1,68 +1,27 @@
-# CLAUDE.md — контекст проекта Pidor Bot
+# CLAUDE.md — Pidor Bot
 
-Telegram-бот «пидор дня»: ежедневный розыгрыш в чатах, экономика пидор-койнов (магазин, переводы, тотализатор, достижения), финальное голосование в конце года. PostgreSQL, деплой GitOps в K8s на vdsina1.
+Telegram-бот «пидор дня» с экономикой пидор-койнов. Python, python-telegram-bot (async), SQLModel + PostgreSQL, alembic. Деплой — GitOps: merge в `main` → CI собирает образ → ArgoCD на vdsina1.
 
-Этот файл — общий контекст для всех агентов (включая субагентов, которые стартуют «холодными»). Держи его актуальным.
+## Неочевидное
 
-## Стек
+- **Python:** прод — 3.13, CI-тесты — 3.10. Синтаксис и stdlib — не новее 3.10.
+- **Боевой конфиг чатов** — `gameConfig` в `deploy/charts/app/values.yaml`. Его правка после merge сразу меняет прод. Версию образа в `values*.yaml` ведёт CI — не трогай.
+- **Меню команд Telegram** — `bot/setup_commands.py` (выполняется при деплое). `docs/commands.txt` устарел.
+- **Тесты без Postgres:** моки из `tests/conftest.py` или in-memory SQLite (пример — `tests/handlers/game/test_draw_schedule.py`). Время — через `current_datetime()` и моки, не хардкоженные даты.
+- **CI коммитит в `main`** bump образа после каждого merge → перед push: `git fetch origin main && git rebase origin/main`.
 
-- **Bot:** python-telegram-bot 22.8 (async), SQLModel/SQLAlchemy 2, psycopg
-- **DB:** PostgreSQL; модели — `bot/app/models.py`; миграции — alembic (`migrations/versions/`)
-- **Python:** прод — 3.13 (`Dockerfile`, `runtime.txt`), CI-тесты — 3.10. Код должен работать на обоих: не используй синтаксис/stdlib новее 3.10.
-- **Infra:** GitHub Actions → GHCR (`ghcr.io/vodka-429/pidor-bot-2`) → ArgoCD (app `pidor-2`, namespace `pidor`, Helm-чарт `deploy/charts/app/`)
+## Чеклист изменения
 
-## Карта кода
+- Модели (`bot/app/models.py`) → миграция в `migrations/versions/`, `down_revision` = текущий head, head остаётся один. Применяется сама при деплое.
+- Новая команда → `bot/dispatcher.py` + `bot/setup_commands.py`.
+- Новый параметр или флаг → поле с docstring в `GameConstants` (`bot/handlers/game/config.py`) + `game_config.example.json`. Новая фича по умолчанию выключена и включается через `chat_overrides`, сначала в тестовом чате `-1003932067905`.
+- Заметная для игроков фича → «Новые функции» в `README.md`.
+- Экономика койнов → `vibe/pidorcoins-economy.md`: статус фичи + запись в «Историю изменений» (следующая vN).
+- Анонс в `/pidornews` (`changelog_service.py`) — только по решению человека.
+- Тесты на новую логику обязательны.
 
-- `main.py` — запуск, polling, watchdog; `bot/dispatcher.py` — регистрация всех хендлеров
-- `bot/handlers/game/commands.py` — основные игровые команды (`/pidor`, `/pidoreg`, `/pidorstats`, финальное голосование…); декоратор `ensure_game`
-- `bot/handlers/game/*_service.py` — бизнес-логика по фичам (shop, transfer, totalizator, reroll, prediction, toast, achievements, draw_schedule, economy_pilot, changelog…)
-- `bot/handlers/game/config.py` — `GameConstants` (цены, награды, лимиты, **feature flags**) + загрузка per-chat конфига
-- `bot/handlers/game/phrases/`, `text_static.py` — тексты бота
-- `bot/setup_commands.py` — список команд для меню Telegram (выполняется при деплое). `docs/commands.txt` устарел — не ориентируйся на него.
-- `tests/` — pytest; общие фикстуры — `tests/conftest.py`
+## Правила
 
-## Конфигурация чатов
-
-- Боевой конфиг — `gameConfig` в `deploy/charts/app/values.yaml` (→ ConfigMap → `GAME_CONFIG_PATH`). **Его правка = изменение прода после merge.**
-- Новый параметр добавляется в три места: поле + docstring в `GameConstants`, `game_config.example.json`, при необходимости — `values.yaml`.
-- Новая пользовательская фича по умолчанию **выключена** (`*_enabled: False`) и включается через `chat_overrides` — сначала в тестовом чате `-1003932067905`.
-- Образ в `values.yaml`/`values-vdsina1.yaml` не трогай — версию ведёт CI.
-
-## Тесты (критерий «не сломал»)
-
-```bash
-pytest                                   # всё; coverage включён в pytest.ini, нужен pytest-cov
-pytest tests/handlers/game/test_shop_service.py -q   # точечно
-```
-
-Postgres не нужен: тесты на моках (`tests/conftest.py`) и на in-memory SQLite (`create_engine('sqlite://')` + `SQLModel.metadata.create_all`). Логику с БД тестируй вторым способом (пример — `tests/handlers/game/test_draw_schedule.py`).
-
-**Тесты на новую логику обязательны.** Время — через `current_datetime()`/моки, а не хардкоженные даты, которые «протухают».
-
-## Чеклист изменения (смотри, что применимо)
-
-- [ ] Новая таблица/колонка → модель в `bot/app/models.py` + миграция в `migrations/versions/` с `down_revision` = текущий head (у alembic должен остаться **один head**). Миграции применяются автоматически при деплое (helm hook `db-init`).
-- [ ] Новая команда → хендлер в `bot/dispatcher.py` + строка в `bot/setup_commands.py`.
-- [ ] Новый параметр/флаг → см. «Конфигурация чатов».
-- [ ] Заметная фича для игроков → раздел «Новые функции» в `README.md`.
-- [ ] Изменение экономики койнов → `vibe/pidorcoins-economy.md` (статус фичи + запись в «Историю изменений» со следующей версией vN).
-- [ ] Анонс в чатах (`/pidornews`, `bot/handlers/game/changelog_service.py`) — **только по решению человека**, для крупных релизов.
-- [ ] Новая зависимость → `requirements.txt` (с пином версии).
-
-## Правила работы
-
-- Ответы и планы — на русском. Коммиты и PR — на английском, conventional commits: `feat: …`, `fix: …`, `chore: …`, `docs: …`.
-- Работа — в фиче-ветке `feat/<слаг>` / `fix/<слаг>` от свежего `origin/main`. В `main` не коммить (pre-commit `no-commit-to-branch`).
-- CI после каждого merge коммитит в `main` bump `values-vdsina1.yaml` → перед push всегда `git fetch origin main && git rebase origin/main`.
-
-## Деплой и границы (важно для агентов)
-
-- Деплой **только через GitOps**: merge PR в `main` → CI собирает образ → ArgoCD (selfHeal, prune). Гейт — **человек мёржит PR**.
-- Агентам запрещено: мутации `kubectl`/`helm`, `terraform apply` (`deploy/yc_tf/`), `ansible-playbook` (`ansible/` — legacy), `alembic upgrade/downgrade` вручную, push в `main`, force-push.
-- Не трогай секреты (`deploy/argocd/secrets.yaml`, `.env`).
-
-## Мультиагентная разработка
-
-Роли в `.claude/agents/`: `architect` (read-only план), `coder` (код + тесты + коммит), `reviewer` (независимая проверка, без правок). Оркестрация — команда `/feature <задача>`: ветка → план → вопросы человеку → код → ревью → PR. Merge — за человеком.
-
-`.claude/settings.json`: `defaultMode: acceptEdits`, безопасные команды в allow, опасные — в deny (deny приоритетнее режима и allow).
+- Ответы — на русском; коммиты и PR — на английском, conventional commits.
+- Работа — в ветке `feat/<слаг>` или `fix/<слаг>` от `origin/main`; в `main` не коммитить.
+- Merge PR — только человек: это и есть деплой. Инфраструктуру (k8s, helm, terraform, ansible, ручные миграции) агенты не трогают.
