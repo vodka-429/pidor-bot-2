@@ -8,7 +8,7 @@ databaseSecret:
   key: uri
 image:
   repository: ghcr.io/vodka-429/pidor-bot-2
-  version: sha-48dd974e8ba9b8e243db5092a0ccd073eed7461b
+  version: sha-dd5bd0c561762cd90449ab9378d60bc9355cb94e
 imagePullSecrets:
   - name: ghcr-pull
 resources:
