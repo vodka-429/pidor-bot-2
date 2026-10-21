@@ -192,6 +192,7 @@ async def test_reroll_with_immunity_protection(mock_update, mock_context, mock_g
 
     # Mock config
     mock_get_config = mocker.patch('bot.handlers.game.reroll_service.get_config_by_game_id')
+    mocker.patch('bot.handlers.game.reroll_service.check_and_award_achievements', return_value=[])
     mock_config = MagicMock()
     mock_config.constants.reroll_enabled = True
     mock_config.constants.reroll_price = REROLL_PRICE
@@ -218,7 +219,7 @@ async def test_reroll_with_immunity_protection(mock_update, mock_context, mock_g
     mock_config.constants.immunity_buyer_reward = 30
 
     # Execute reroll
-    old_winner_result, new_winner_result, selection_result = execute_reroll(
+    old_winner_result, new_winner_result, selection_result, awarded_achievements = execute_reroll(
         mock_context.db_session, game_id, year, day, initiator_id, sample_players, current_date
     )
 
@@ -297,6 +298,7 @@ async def test_reroll_with_double_chance(mock_update, mock_context, mock_game, s
 
     # Mock config
     mock_get_config = mocker.patch('bot.handlers.game.reroll_service.get_config_by_game_id')
+    mocker.patch('bot.handlers.game.reroll_service.check_and_award_achievements', return_value=[])
     mock_config = MagicMock()
     mock_config.constants.reroll_enabled = True
     mock_config.constants.reroll_price = REROLL_PRICE
@@ -319,7 +321,7 @@ async def test_reroll_with_double_chance(mock_update, mock_context, mock_game, s
     mock_select.return_value = mock_selection_result
 
     # Execute reroll
-    old_winner_result, new_winner_result, selection_result = execute_reroll(
+    old_winner_result, new_winner_result, selection_result, awarded_achievements = execute_reroll(
         mock_context.db_session, game_id, year, day, initiator_id, sample_players, current_date
     )
 
@@ -404,6 +406,7 @@ async def test_reroll_with_predictions(mock_update, mock_context, mock_game, sam
 
     # Mock config
     mock_get_config = mocker.patch('bot.handlers.game.reroll_service.get_config_by_game_id')
+    mocker.patch('bot.handlers.game.reroll_service.check_and_award_achievements', return_value=[])
     mock_config = MagicMock()
     mock_config.constants.reroll_enabled = True
     mock_config.constants.reroll_price = REROLL_PRICE
@@ -429,7 +432,7 @@ async def test_reroll_with_predictions(mock_update, mock_context, mock_game, sam
     mock_process_predictions.return_value = [(mock_prediction, True)]
 
     # Execute reroll
-    old_winner_result, new_winner_result, selection_result = execute_reroll(
+    old_winner_result, new_winner_result, selection_result, awarded_achievements = execute_reroll(
         mock_context.db_session, game_id, year, day, initiator_id, sample_players, current_date
     )
 

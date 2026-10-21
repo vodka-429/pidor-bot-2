@@ -361,6 +361,34 @@ def check_and_award_achievements(
 
 
 
+def format_achievements_block(achievements: List[UserAchievement]) -> str:
+    """
+    Сформировать HTML-блок «Новые достижения» для сообщения о розыгрыше/перевыборе.
+
+    Args:
+        achievements: Список выданных достижений
+
+    Returns:
+        Готовый блок (с ведущими переводами строк) или пустая строка, если выводить нечего
+    """
+    from html import escape as html_escape
+    from bot.handlers.game.text_static import ACHIEVEMENTS_EARNED_HEADER, ACHIEVEMENT_EARNED_TEMPLATE
+
+    lines = []
+    for achievement in achievements:
+        achievement_data = get_achievement(achievement.achievement_code)
+        if achievement_data:
+            lines.append(ACHIEVEMENT_EARNED_TEMPLATE.format(
+                username=html_escape(achievement.user.full_username()),
+                name=html_escape(achievement_data['name']),
+                reward=achievement_data['reward']
+            ))
+
+    if not lines:
+        return ""
+    return ACHIEVEMENTS_EARNED_HEADER + "".join(f"\n{line}" for line in lines)
+
+
 def get_previous_month(year: int, month: int) -> Tuple[int, int]:
     """
     Получить предыдущий месяц с учётом перехода года.

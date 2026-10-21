@@ -125,6 +125,7 @@ def test_execute_reroll_updates_game_result(mock_db_session, sample_players):
     current_date = date(2024, 4, 10)  # День 100 в 2024 году
 
     with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.check_and_award_achievements', return_value=[]) as mock_check_ach, \
          patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
@@ -144,7 +145,7 @@ def test_execute_reroll_updates_game_result(mock_db_session, sample_players):
         mock_selection_result.protected_player = None
         mock_select.return_value = mock_selection_result
 
-        old_winner_result, new_winner_result, selection_result = execute_reroll(
+        old_winner_result, new_winner_result, selection_result, awarded_achievements = execute_reroll(
             mock_db_session, game_id, year, day, initiator_id, sample_players, current_date
         )
 
@@ -173,6 +174,7 @@ def test_execute_reroll_updates_game_result(mock_db_session, sample_players):
     # Verify returned values
     assert old_winner_result == old_winner
     assert new_winner_result == sample_players[1]
+    assert awarded_achievements == []
 
 
 @pytest.mark.unit
@@ -213,6 +215,7 @@ def test_execute_reroll_allows_same_winner(mock_db_session, sample_players):
     current_date = date(2024, 4, 10)
 
     with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.check_and_award_achievements', return_value=[]) as mock_check_ach, \
          patch('bot.handlers.game.reroll_service.spend_coins'), \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
@@ -232,7 +235,7 @@ def test_execute_reroll_allows_same_winner(mock_db_session, sample_players):
         mock_selection_result.protected_player = None
         mock_select.return_value = mock_selection_result
 
-        old_winner_result, new_winner_result, selection_result = execute_reroll(
+        old_winner_result, new_winner_result, selection_result, awarded_achievements = execute_reroll(
             mock_db_session, game_id, year, day, initiator_id, sample_players, current_date
         )
 
@@ -407,6 +410,7 @@ def test_execute_reroll_preserves_old_winner_coins(mock_db_session, sample_playe
     current_date = date(2024, 4, 10)
 
     with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.check_and_award_achievements', return_value=[]) as mock_check_ach, \
          patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
@@ -426,7 +430,7 @@ def test_execute_reroll_preserves_old_winner_coins(mock_db_session, sample_playe
         mock_selection_result.protected_player = None
         mock_select.return_value = mock_selection_result
 
-        _, _, _ = execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players, current_date)
+        _, _, _, _ = execute_reroll(mock_db_session, game_id, year, day, initiator_id, sample_players, current_date)
 
     # Verify spend_coins was called ONLY for initiator, NOT for old winner
     assert mock_spend.call_count == 1
@@ -487,6 +491,7 @@ def test_execute_reroll_with_immunity_protection(mock_db_session, sample_players
     current_date = date(2024, 4, 10)
 
     with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.check_and_award_achievements', return_value=[]) as mock_check_ach, \
          patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
@@ -510,7 +515,7 @@ def test_execute_reroll_with_immunity_protection(mock_db_session, sample_players
 
         mock_config.constants.immunity_buyer_reward = 30
 
-        old_winner_result, new_winner_result, selection_result = execute_reroll(
+        old_winner_result, new_winner_result, selection_result, awarded_achievements = execute_reroll(
             mock_db_session, game_id, year, day, initiator_id, sample_players, current_date
         )
 
@@ -580,6 +585,7 @@ def test_execute_reroll_with_double_chance(mock_db_session, sample_players):
     current_date = date(2024, 4, 10)
 
     with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.check_and_award_achievements', return_value=[]) as mock_check_ach, \
          patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
@@ -600,7 +606,7 @@ def test_execute_reroll_with_double_chance(mock_db_session, sample_players):
         mock_selection_result.protected_player = None
         mock_select.return_value = mock_selection_result
 
-        old_winner_result, new_winner_result, selection_result = execute_reroll(
+        old_winner_result, new_winner_result, selection_result, awarded_achievements = execute_reroll(
             mock_db_session, game_id, year, day, initiator_id, sample_players, current_date
         )
 
@@ -668,6 +674,7 @@ def test_execute_reroll_when_all_protected(mock_db_session, sample_players):
     current_date = date(2024, 4, 10)
 
     with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.check_and_award_achievements', return_value=[]) as mock_check_ach, \
          patch('bot.handlers.game.reroll_service.spend_coins') as mock_spend, \
          patch('bot.handlers.game.reroll_service.add_coins') as mock_add, \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select, \
@@ -688,7 +695,7 @@ def test_execute_reroll_when_all_protected(mock_db_session, sample_players):
         mock_selection_result.protected_player = None
         mock_select.return_value = mock_selection_result
 
-        old_winner_result, new_winner_result, selection_result = execute_reroll(
+        old_winner_result, new_winner_result, selection_result, awarded_achievements = execute_reroll(
             mock_db_session, game_id, year, day, initiator_id, sample_players, current_date
         )
 
@@ -756,6 +763,7 @@ def test_reroll_returns_correct_selection_result(mock_db_session, sample_players
     current_date = date(2024, 4, 10)
 
     with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.check_and_award_achievements', return_value=[]) as mock_check_ach, \
          patch('bot.handlers.game.reroll_service.spend_coins'), \
          patch('bot.handlers.game.reroll_service.add_coins'), \
          patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
@@ -776,7 +784,7 @@ def test_reroll_returns_correct_selection_result(mock_db_session, sample_players
         mock_selection_result.protected_player = None
         mock_select.return_value = mock_selection_result
 
-        old_winner_result, new_winner_result, selection_result = execute_reroll(
+        old_winner_result, new_winner_result, selection_result, awarded_achievements = execute_reroll(
             mock_db_session, game_id, year, day, initiator_id, sample_players, current_date
         )
 
@@ -801,3 +809,60 @@ def test_reroll_returns_correct_selection_result(mock_db_session, sample_players
     # Verify selection_result.protected_player is None when no immunity
     assert selection_result.protected_player is None, \
         "SelectionResult.protected_player should be None when no immunity triggered"
+
+
+@pytest.mark.unit
+def test_execute_reroll_awards_achievements_to_new_winner_before_commit(mock_db_session, sample_players):
+    """Achievements are checked for the new winner before commit and returned as 4th element."""
+    game_id, year, day, initiator_id = 1, 2024, 100, 2
+
+    mock_game_result = MagicMock()
+    mock_game_result.winner_id = sample_players[0].id
+    old_winner = sample_players[0]
+
+    results = iter([mock_game_result, old_winner])
+
+    def exec_side_effect(stmt):
+        mock_result = MagicMock()
+        mock_result.first.return_value = next(results)
+        return mock_result
+
+    mock_db_session.exec.side_effect = exec_side_effect
+
+    calls = []
+    mock_db_session.commit.side_effect = lambda: calls.append("commit")
+    achievements = [MagicMock(name="first_blood")]
+
+    def award(*args, **kwargs):
+        # winner_id must already be updated when achievements are checked
+        assert mock_game_result.winner_id == sample_players[1].id
+        calls.append("achievements")
+        return achievements
+
+    with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.check_and_award_achievements', side_effect=award) as mock_check_ach, \
+         patch('bot.handlers.game.reroll_service.spend_coins'), \
+         patch('bot.handlers.game.reroll_service.add_coins'), \
+         patch('bot.handlers.game.prediction_service.process_predictions_for_reroll', return_value=[]), \
+         patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select:
+        mock_config = MagicMock()
+        mock_config.constants.reroll_enabled = True
+        mock_config.constants.reroll_price = REROLL_PRICE
+        mock_config.constants.coins_per_win = COINS_PER_WIN
+        mock_get_config.return_value = mock_config
+
+        mock_selection_result = MagicMock()
+        mock_selection_result.winner = sample_players[1]
+        mock_selection_result.all_protected = False
+        mock_selection_result.had_immunity = False
+        mock_selection_result.protected_player = None
+        mock_select.return_value = mock_selection_result
+
+        result = execute_reroll(
+            mock_db_session, game_id, year, day, initiator_id, sample_players, date(2024, 4, 10)
+        )
+
+    mock_check_ach.assert_called_once_with(mock_db_session, game_id, sample_players[1].id, year, day)
+    assert calls == ["achievements", "commit"]
+    assert len(result) == 4
+    assert result[3] is achievements
