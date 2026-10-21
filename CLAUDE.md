@@ -16,7 +16,7 @@ Telegram-бот «пидор дня» с экономикой пидор-кой�
 - Новая команда → `bot/dispatcher.py` + `bot/setup_commands.py`.
 - Новый параметр или флаг → поле с docstring в `GameConstants` (`bot/handlers/game/config.py`) + `game_config.example.json`. Новая фича по умолчанию выключена и включается через `chat_overrides`, сначала в тестовом чате `-1003932067905`.
 - Заметная для игроков фича → «Новые функции» в `README.md`.
-- Экономика койнов → `vibe/pidorcoins-economy.md`: статус фичи + запись в «Историю изменений» (следующая vN).
+- Экономика койнов → `vibe/pidorcoins-economy.md`: механика и статус фичи (IDEA → PILOT → RELEASED). Историю изменений туда не пиши — она в git и PR.
 - Анонс в `/pidornews` (`changelog_service.py`) — только по решению человека.
 - Тесты на новую логику обязательны.
 
