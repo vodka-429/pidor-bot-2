@@ -115,5 +115,5 @@ async def test_police_success_announces_caller(mock_update, mock_context, mock_g
     text = mock_update.callback_query.edit_message_text.call_args[0][0]
     assert text == (
         "🚔 <b>@testuser вызвал ментов!</b>\n"
-        "За гаражами патруль — все разборки на завтра отменены, ставки возвращены."
+        "За гаражами патруль - все разборки на завтра отменены, ставки возвращены."
     )
