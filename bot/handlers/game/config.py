@@ -13,6 +13,9 @@ class GameConstants:
         Цены в магазине (в пидоркоинах):
             immunity_price: Цена защиты от пидора дня (по умолчанию: 10)
             double_chance_price: Цена двойного шанса стать пидором (по умолчанию: 8)
+            double_chance_price_step: Надбавка к цене двойного шанса за каждый уже купленный
+                на того же игрока на тот же день (любыми покупателями). Цена = price + step * N.
+                0 — цена плоская (по умолчанию: 0)
             prediction_price: Цена предсказания пидора дня (по умолчанию: 3)
             reroll_price: Цена перевыбора пидора дня (по умолчанию: 15)
 
@@ -64,6 +67,7 @@ class GameConstants:
     # Цены
     immunity_price: int = 10
     double_chance_price: int = 8
+    double_chance_price_step: int = 0
     prediction_price: int = 3
     reroll_price: int = 15
     toast_price: int = 5
@@ -322,6 +326,7 @@ def get_config(chat_id: int) -> ChatConfig:
     constants_dict = {
         'immunity_price': global_config.defaults.immunity_price,
         'double_chance_price': global_config.defaults.double_chance_price,
+        'double_chance_price_step': global_config.defaults.double_chance_price_step,
         'prediction_price': global_config.defaults.prediction_price,
         'reroll_price': global_config.defaults.reroll_price,
         'coin_rain_price': global_config.defaults.coin_rain_price,

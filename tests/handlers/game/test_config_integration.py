@@ -453,7 +453,9 @@ def test_message_prices_match_config(custom_config_file, reset_global_config):
 
         # Verify double chance price (6) appears in relevant messages
         assert str(config.constants.double_chance_price) in shop_menu
-        assert str(config.constants.double_chance_price) in double_chance_msgs['purchase_success_self']
+        assert str(config.constants.double_chance_price) in double_chance_msgs['purchase_success_self'].format(
+            price=config.constants.double_chance_price, date='', balance=0, commission=0
+        )
         assert str(config.constants.double_chance_price) in rules
 
         # Verify prediction price (3) and reward (25) appear in relevant messages

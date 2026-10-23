@@ -39,11 +39,13 @@ gameConfig:
       telegram_title_enabled: true
       duel_enabled: true
       duel_same_day: true
+      double_chance_price_step: 4
     "-1001392307997":
       random_start_enabled: true
       totalizator_enabled: true
       telegram_title_enabled: true
       duel_enabled: true
+      double_chance_price_step: 4
     "-1002189152002":
       reroll_enabled: false
     "-1003671793100":

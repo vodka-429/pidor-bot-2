@@ -35,6 +35,24 @@ def test_random_start_is_opt_in_per_chat(tmp_path, monkeypatch, reset_global_con
     assert not get_config(-100999).constants.random_start_enabled
 
 
+def test_double_chance_price_step_default_and_override(tmp_path, monkeypatch, reset_global_config):
+    assert GameConstants().double_chance_price_step == 0
+    path = tmp_path / 'game-config.json'
+    path.write_text(json.dumps({
+        'enabled_chats': [-1003932067905, -1001392307997, -1002189152002],
+        'defaults': {'double_chance_price_step': 0},
+        'chat_overrides': {
+            '-1003932067905': {'double_chance_price_step': 4},
+            '-1001392307997': {'double_chance_price_step': 4},
+        },
+    }))
+    monkeypatch.setenv('GAME_CONFIG_PATH', str(path))
+    assert get_config(-1003932067905).constants.double_chance_price_step == 4
+    assert get_config(-1001392307997).constants.double_chance_price_step == 4
+    assert get_config(-1002189152002).constants.double_chance_price_step == 0
+    assert get_config(-100999).constants.double_chance_price_step == 0
+
+
 @pytest.fixture
 def temp_config_file():
     """Create a temporary config file for testing."""

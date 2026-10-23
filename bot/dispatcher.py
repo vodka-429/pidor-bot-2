@@ -138,7 +138,7 @@ def init_dispatcher(application: Application, db_engine):
     application.add_handler(CallbackQueryHandler(handle_shop_immunity_callback, pattern=r'^shop_immunity_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_immunity_target_callback, pattern=r'^shop_immunity_target_\d+_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_double_callback, pattern=r'^shop_double_\d+$'))
-    application.add_handler(CallbackQueryHandler(handle_shop_double_confirm_callback, pattern=r'^shop_double_confirm_\d+_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_double_confirm_callback, pattern=r'^shop_double_confirm_\d+_\d+(_\d+)?$'))
     application.add_handler(CallbackQueryHandler(handle_shop_predict_callback, pattern=r'^shop_predict_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_predict_select_callback, pattern=r'^shop_predict_select_\d+_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_predict_confirm_callback, pattern=r'^shop_predict_confirm_\d+$'))

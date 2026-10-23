@@ -13,6 +13,7 @@ from bot.handlers.game.config import GameConstants, get_config
 CURRENT_RELEASE_ID = "2026-09-economy-pilot"
 RANDOM_START_RELEASE_ID = "2026-10-random-start"
 COIN_DUEL_RELEASE_ID = "2026-10-coin-duel"
+DOUBLE_CHANCE_PRICE_RELEASE_ID = "2026-10-double-chance-price"
 
 # Окно "свежести" релиза и минимальный размер набора новостей.
 CHANGELOG_WINDOW_DAYS = 30
@@ -84,6 +85,23 @@ class Release:
 
 
 # Новая фича = одна запись здесь.
+def build_double_chance_price_changelog_html(constants: GameConstants) -> str:
+    base = constants.double_chance_price
+    step = constants.double_chance_price_step
+    return (
+        "🎲 <b>Растущая цена двойного шанса</b>\n\n"
+        "Цена двойного шанса растёт для каждого следующего покупателя "
+        "на одного и того же игрока в один и тот же день. "
+        f"Первый платит <b>{base} 🪙</b>, второй - <b>{base + step} 🪙</b>, "
+        f"третий - <b>{base + 2 * step} 🪙</b> и так далее (+{step} за каждый).\n\n"
+        "Другой игрок или другой день цену не меняют. Шанс действует "
+        "один день - в завтрашнем розыгрыше.\n\n"
+        "Цена видна прямо на кнопках выбора игрока: <b>Имя ×2 · "
+        f"{base + 2 * step}🪙</b>. Если пока вы выбирали, кто-то успел купить раньше, "
+        "бот покажет новую цену и обновит кнопки - деньги не спишутся."
+    )
+
+
 RELEASES = [
     Release(
         id=CURRENT_RELEASE_ID,
@@ -102,6 +120,14 @@ RELEASES = [
         released_on=date(2026, 10, 23),
         is_enabled=lambda constants: constants.duel_enabled,
         build_html=build_coin_duel_changelog_html,
+    ),
+    Release(
+        id=DOUBLE_CHANCE_PRICE_RELEASE_ID,
+        released_on=date(2026, 10, 24),
+        is_enabled=lambda constants: (
+            constants.double_chance_enabled and constants.double_chance_price_step > 0
+        ),
+        build_html=build_double_chance_price_changelog_html,
     ),
 ]
 
