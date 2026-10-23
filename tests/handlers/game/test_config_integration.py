@@ -131,7 +131,9 @@ def test_full_cycle_with_custom_prices(custom_config_file, reset_global_config):
         assert "8" in immunity_msgs['purchase_success']
 
         double_chance_msgs = get_double_chance_messages(config)
-        assert "6" in double_chance_msgs['purchase_success_self']
+        assert "Списано: 6 койнов" in double_chance_msgs['purchase_success_self'].format(
+            price=config.constants.double_chance_price, date='', balance=0, commission=0
+        )
 
         prediction_msgs = get_prediction_messages(config)
         assert "3" in prediction_msgs['purchase_success']
