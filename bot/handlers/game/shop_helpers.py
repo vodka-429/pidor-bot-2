@@ -1,7 +1,7 @@
 """Helper functions for shop functionality."""
 import logging
 from html import escape as html_escape
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -148,6 +148,8 @@ def create_shop_keyboard(owner_user_id: int, chat_id: int, active_effects: dict 
         elif item['price'] is None:
             # Для действий без цены (передача, банк)
             button_text = item['short_name']
+        elif item.get('price_from'):
+            button_text = f"{item['short_name']} · от {item['price']} 🪙"
         else:
             button_text = f"{item['short_name']} · {item['price']} 🪙"
 
@@ -256,7 +258,13 @@ def create_prediction_keyboard(
     return InlineKeyboardMarkup(keyboard)
 
 
-def create_double_chance_keyboard(players: List[TGUser], owner_user_id: int, callback_prefix: str = None) -> InlineKeyboardMarkup:
+def create_double_chance_keyboard(
+    players: List[TGUser],
+    owner_user_id: int,
+    callback_prefix: str = None,
+    double_chance_prices: Optional[Dict[int, Tuple[int, int]]] = None,
+    show_counts: bool = False,
+) -> InlineKeyboardMarkup:
     """
     Создаёт клавиатуру для выбора игрока для двойного шанса или передачи.
 
@@ -264,6 +272,10 @@ def create_double_chance_keyboard(players: List[TGUser], owner_user_id: int, cal
         players: Список игроков (TGUser объекты)
         owner_user_id: ID владельца магазина (кто вызвал команду)
         callback_prefix: Префикс для callback_data (по умолчанию 'shop_double_confirm')
+        double_chance_prices: {player_id: (сколько уже куплено, цена следующего)}. Если передан,
+            в callback_data добавляется цена ({prefix}_{target}_{owner}_{price}), а при
+            show_counts и count > 0 в подпись — «Имя ×N · P🪙». Если None — как раньше.
+        show_counts: показывать счётчик и цену в подписи (включается при step > 0)
 
     Returns:
         InlineKeyboardMarkup с кнопками игроков
@@ -282,6 +294,11 @@ def create_double_chance_keyboard(players: List[TGUser], owner_user_id: int, cal
 
         # Создаём callback_data в формате {prefix}_{target_user_id}_{owner_user_id}
         callback_data = f"{prefix}_{player.id}_{owner_user_id}"
+        if double_chance_prices is not None:
+            count, next_price = double_chance_prices.get(player.id, (0, 0))
+            callback_data += f"_{next_price}"
+            if show_counts and count > 0:
+                button_text += f" ×{count} · {next_price}🪙"
 
         button = InlineKeyboardButton(
             text=button_text,
@@ -427,7 +444,8 @@ def format_shop_help_message(chat_id: int) -> str:
     for item in get_shop_items(chat_id):
         price = ""
         if item['price'] is not None:
-            price = f" — <b>{item['price']} 🪙</b>"
+            from_text = "от " if item.get('price_from') else ""
+            price = f" — <b>{from_text}{item['price']} 🪙</b>"
         lines.extend([
             f"<b>{html_escape(item['name'])}</b>{price}",
             html_escape(item['description']),

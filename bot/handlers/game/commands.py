@@ -1722,6 +1722,31 @@ async def handle_shop_immunity_target_callback(update: Update, context: GECallba
             logger.error(f"Failed to update message with error: {e}")
 
 
+def build_double_chance_keyboard(db_session, game_id, config, players, owner_user_id, current_dt):
+    """Клавиатура выбора цели двойного шанса с актуальными ценами на завтрашний день."""
+    from bot.handlers.game.shop_helpers import create_double_chance_keyboard
+    from bot.handlers.game.shop_service import (
+        calculate_double_chance_price, calculate_next_day, get_double_chance_counts,
+    )
+
+    constants = config.constants
+    next_year, next_day = calculate_next_day(current_dt.date(), current_dt.year)
+    counts = get_double_chance_counts(db_session, game_id, next_year, next_day)
+    prices = {
+        player.id: (
+            counts.get(player.id, 0),
+            calculate_double_chance_price(constants, counts.get(player.id, 0)),
+        )
+        for player in players
+    }
+    return create_double_chance_keyboard(
+        players,
+        owner_user_id=owner_user_id,
+        double_chance_prices=prices,
+        show_counts=constants.double_chance_price_step > 0,
+    )
+
+
 @ensure_game
 async def handle_shop_double_callback(update: Update, context: GECallbackContext):
     """Обработчик выбора игрока для двойного шанса"""
@@ -1770,8 +1795,11 @@ async def handle_shop_double_callback(update: Update, context: GECallbackContext
         logger.warning(f"Not enough players for double chance in game {context.game.id}")
         return
 
-    # Создаём клавиатуру с игроками
-    keyboard = create_double_chance_keyboard(players, owner_user_id=context.tg_user.tg_id)
+    # Создаём клавиатуру с игроками (с ценами на завтра)
+    keyboard = build_double_chance_keyboard(
+        context.db_session, context.game.id, config, players,
+        owner_user_id=context.tg_user.tg_id, current_dt=current_datetime(),
+    )
 
     # Отправляем сообщение с выбором игрока
     try:
@@ -2126,22 +2154,22 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
 
     # Парсим callback_data с помощью единой функции парсинга
     try:
-        # Формат: shop_double_confirm_{target_user_id}_{owner_user_id}
+        # Форматы: shop_double_confirm_{target}_{owner} (старый, без цены)
+        # и shop_double_confirm_{target}_{owner}_{price}
         if not query.data.startswith('shop_double_confirm_'):
             raise ValueError(f"Invalid callback_data format: {query.data}")
 
-        # Используем единую функцию парсинга для извлечения owner_user_id
-        # Функция parse_shop_callback_data ожидает формат shop_{item_type}_{owner_user_id}
-        # Для этого формата мы можем извлечь owner_user_id из последней части
         parts = query.data.split('_')
-        if len(parts) < 4:
+        if len(parts) == 5:
+            target_user_id = int(parts[3])
+            owner_user_id = int(parts[4])
+            callback_price = None
+        elif len(parts) == 6:
+            target_user_id = int(parts[3])
+            owner_user_id = int(parts[4])
+            callback_price = int(parts[5])
+        else:
             raise ValueError(f"Invalid callback_data format: {query.data}")
-
-        # Последняя часть - это owner_user_id
-        owner_user_id = int(parts[-1])
-
-        # Целевой пользователь - это предпоследняя часть
-        target_user_id = int(parts[-2])
 
         logger.info(f"Parsed callback: target_user_id={target_user_id}, owner_user_id={owner_user_id}")
     except (ValueError, IndexError) as e:
@@ -2169,6 +2197,9 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
     current_date = current_dt.date()
     cur_year = current_dt.year
 
+    # Старая кнопка без цены: ждём базовую цену (при выросшей цене — «цена изменилась»)
+    expected_price = callback_price if callback_price is not None else config.constants.double_chance_price
+
     # Вызываем функцию покупки двойного шанса с target_user_id
     success, message, commission = buy_double_chance(
         context.db_session,
@@ -2176,10 +2207,32 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
         context.tg_user.id,
         target_user_id,
         cur_year,
-        current_date
+        current_date,
+        expected_price=expected_price,
     )
 
+    if not success and message.startswith("price_changed:"):
+        new_price = int(message.split(":", 1)[1])
+        await query.answer(
+            double_chance_msgs['error_price_changed'].format(price=new_price), show_alert=True
+        )
+        players = get_active_players(context.db_session, context.game.id)
+        keyboard = build_double_chance_keyboard(
+            context.db_session, context.game.id, config, players,
+            owner_user_id=owner_user_id, current_dt=current_dt,
+        )
+        try:
+            await query.edit_message_text(
+                text=double_chance_msgs['select_player'],
+                parse_mode="MarkdownV2",
+                reply_markup=keyboard,
+            )
+        except Exception as e:
+            logger.error(f"Failed to refresh double chance keyboard: {e}")
+        return
+
     if success:
+        paid_price = expected_price
         # Получаем новый баланс покупателя
         balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
 
@@ -2192,6 +2245,7 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
         # Проверяем, купил ли игрок для себя или для другого
         if target_user_id == context.tg_user.id:
             response_text = double_chance_msgs['purchase_success_self'].format(
+                price=paid_price,
                 date=date_str,
                 balance=format_number(balance),
                 commission=format_number(commission)
@@ -2203,6 +2257,7 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
             target_username = escape_markdown2(target_user.full_username())
             buyer_username = escape_markdown2(context.tg_user.full_username())
             response_text = double_chance_msgs['purchase_success_other'].format(
+                price=paid_price,
                 buyer_username=buyer_username,
                 target_username=target_username,
                 date=date_str,
@@ -2222,7 +2277,9 @@ async def handle_shop_double_confirm_callback(update: Update, context: GECallbac
         # Обрабатываем ошибки
         if message == "insufficient_funds":
             balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
-            response_text = double_chance_msgs['error_insufficient_funds'].format(balance=format_number(balance))
+            response_text = double_chance_msgs['error_insufficient_funds'].format(
+                price=expected_price, balance=format_number(balance)
+            )
         elif message == "already_bought_today":
             response_text = double_chance_msgs['error_already_bought_today']
         else:

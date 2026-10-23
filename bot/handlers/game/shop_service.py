@@ -230,9 +230,11 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'name': '🎲 Двойной шанс',
             'short_name': '🎲 Шанс',
             'price': constants.double_chance_price,
+            'price_from': constants.double_chance_price_step > 0,
             'description': (
                 'Удвоить шанс любого игрока в розыгрыше следующего дня. '
-                'Один покупатель может купить один шанс в день.'
+                'Один покупатель может купить один шанс в день. '
+                + double_chance_price_note(constants)
             ),
             'callback_data': 'shop_double'
         })
@@ -433,13 +435,56 @@ def buy_immunity(db_session, game_id: int, buyer_id: int, target_id: int, year: 
     return True, "success", commission
 
 
-def buy_double_chance(db_session, game_id: int, user_id: int, target_user_id: int, year: int, current_date: date) -> tuple[bool, str, int]:
+def double_chance_price_note(constants) -> str:
+    """Короткий текст (без разметки) про цену и срок действия двойного шанса."""
+    if constants.double_chance_price_step > 0:
+        price_part = (
+            f"Цена: от {constants.double_chance_price} койнов, "
+            f"+{constants.double_chance_price_step} за каждый следующий на того же игрока."
+        )
+    else:
+        price_part = f"Цена: {constants.double_chance_price} койнов."
+    return f"{price_part} Действует один день - в завтрашнем розыгрыше."
+
+
+def calculate_double_chance_price(constants, existing_count: int) -> int:
+    """Цена двойного шанса при existing_count уже купленных на ту же цель (минимум 1)."""
+    step = max(constants.double_chance_price_step, 0)
+    return max(constants.double_chance_price + step * max(existing_count, 0), 1)
+
+
+def get_double_chance_counts(db_session, game_id: int, year: int, day: int) -> Dict[int, int]:
+    """
+    Сколько двойных шансов уже куплено на каждого игрока на день действия (year, day).
+
+    Считаются все покупатели и любые is_used. Возвращает {target_id: count}.
+    """
+    from bot.app.models import DoubleChancePurchase
+
+    stmt = select(DoubleChancePurchase.target_id).where(
+        DoubleChancePurchase.game_id == game_id,
+        DoubleChancePurchase.year == year,
+        DoubleChancePurchase.day == day,
+    )
+    counts: Dict[int, int] = {}
+    for target_id in db_session.exec(stmt).all():
+        counts[target_id] = counts.get(target_id, 0) + 1
+    return counts
+
+
+def buy_double_chance(db_session, game_id: int, user_id: int, target_user_id: int, year: int, current_date: date,
+                      expected_price: Optional[int] = None) -> tuple[bool, str, int]:
     """
     Купить двойной шанс стать пидором для указанного игрока.
 
     Двойной шанс действует на СЛЕДУЮЩИЙ день после покупки.
     Один покупатель может купить только один двойной шанс в день.
     Несколько игроков могут купить двойной шанс одному игроку.
+    Цена растёт на double_chance_price_step за каждый уже купленный на ту же цель.
+
+    Args:
+        expected_price: цена, которую увидел покупатель на кнопке. Если не совпадает
+            с актуальной — покупка не проводится, возвращается "price_changed:{цена}".
 
     Returns:
         Кортеж (success, message, commission_amount)
@@ -470,9 +515,16 @@ def buy_double_chance(db_session, game_id: int, user_id: int, target_user_id: in
     if existing_purchase:
         return False, "already_bought_today", 0
 
+    # Цена зависит от числа уже купленных шансов на эту цель на день действия
+    existing_count = get_double_chance_counts(db_session, game_id, target_year, target_day).get(target_user_id, 0)
+    price = calculate_double_chance_price(constants, existing_count)
+
+    if expected_price is not None and expected_price != price:
+        return False, f"price_changed:{price}", 0
+
     # Обрабатываем покупку с комиссией
     success, message, commission = process_purchase(
-        db_session, game_id, user_id, constants.double_chance_price, year,
+        db_session, game_id, user_id, price, year,
         f"shop_double_chance_for_{target_user_id}"
     )
 
