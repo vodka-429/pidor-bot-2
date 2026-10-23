@@ -2998,8 +2998,12 @@ async def handle_shop_achievements_callback(update: Update, context: GECallbackC
         earned_codes = {ach.achievement_code: ach for ach in user_achievements}
         total_coins = 0
 
+        duel_enabled = get_config(update.effective_chat.id).constants.duel_enabled
+
         # Проходим по всем возможным достижениям
         for code, achievement_data in ACHIEVEMENTS.items():
+            if code == 'police_caller' and not duel_enabled and code not in earned_codes:
+                continue
             if code in earned_codes:
                 # Достижение получено
                 earned_ach = earned_codes[code]

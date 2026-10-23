@@ -1,5 +1,6 @@
 """Tests for «Раз на раз» and police Telegram handlers."""
 import re
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -85,14 +86,19 @@ async def test_police_cooldown_error_shows_date(mock_update, mock_context, mock_
     mock_update.callback_query.answer = AsyncMock()
     mock_update.callback_query.edit_message_text = AsyncMock()
 
+    class _FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 6, 20, 12, 0)
+
     with patch(
         "bot.handlers.game.duel_handlers.call_police",
         return_value=(False, "cooldown:2026-06-22", [], None),
-    ):
+    ), patch("bot.handlers.game.shop_helpers.datetime", _FixedDatetime):
         await handle_shop_police_confirm_callback(mock_update, mock_context)
 
     text = mock_update.callback_query.answer.call_args[0][0]
-    assert text.startswith("❌ Ты недавно звонил в полицию. Следующий звонок: 22 июня")
+    assert text == "❌ Ты недавно звонил в полицию. Следующий звонок: 22 июня"
     mock_update.callback_query.edit_message_text.assert_not_called()
 
 

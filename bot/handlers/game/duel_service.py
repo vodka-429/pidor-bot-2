@@ -172,7 +172,7 @@ def get_pending_duels(db_session, game_id: int, year: int, day: int) -> List[Coi
             CoinDuel.year == year,
             CoinDuel.day == day,
             CoinDuel.status == DUEL_STATUS_PENDING,
-        ).order_by(CoinDuel.id)
+        ).order_by(CoinDuel.id).with_for_update()
     ).all())
 
 
@@ -293,7 +293,10 @@ def resolve_duels_for_day(db_session, game_id: int, year: int, day: int, pay_yea
     Разыграть все ожидающие дуэли дня. Без коммита — коммитит розыгрыш.
 
     Победитель получает банк дуэли за вычетом комиссии, комиссия уходит в банк чата.
+    Блокирует строку Game, как create_duel и call_police, чтобы менты или новая
+    дуэль не пересеклись с розыгрышем (двойная выплата).
     """
+    db_session.exec(select(Game).where(Game.id == game_id).with_for_update()).first()
     duels = get_pending_duels(db_session, game_id, year, day)
     if not duels:
         return []

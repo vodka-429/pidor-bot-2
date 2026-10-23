@@ -342,7 +342,7 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
         })
         items.append({
             'name': POLICE_SHOP_NAME,
-            'short_name': '🚔 Менты',
+            'short_name': POLICE_SHOP_NAME,
             'price': constants.police_price,
             'description': POLICE_SHOP_DESCRIPTION,
             'callback_data': 'shop_police'

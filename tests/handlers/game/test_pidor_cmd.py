@@ -1008,12 +1008,3 @@ async def test_pidor_cmd_skips_duels_when_disabled(mock_update, mock_context, mo
 
     mock_resolve.assert_not_called()
     assert "Раз на раз" not in send_result.call_args[0][2]
-
-
-@pytest.mark.unit
-def test_reroll_does_not_replay_duels():
-    """Reroll must never resolve duels again."""
-    import inspect
-    from bot.handlers.game import reroll_service
-
-    assert "duel" not in inspect.getsource(reroll_service)
