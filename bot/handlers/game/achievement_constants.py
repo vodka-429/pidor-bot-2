@@ -50,6 +50,13 @@ ACHIEVEMENTS = {
         "reward": 15,
         "is_periodic": True,
         "period_type": "monthly"
+    },
+    "police_caller": {
+        "name": "🚔 Мусорнулся",
+        "description": "впервые вызвал ментов",
+        "reward": 0,
+        "is_periodic": False,
+        "period_type": None
     }
 }
 

@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional, List
 
-from sqlalchemy import UniqueConstraint, Column, BigInteger, DateTime
+from sqlalchemy import UniqueConstraint, Column, BigInteger, DateTime, Index
 from sqlmodel import SQLModel, Field, Relationship
 
 
@@ -385,4 +385,52 @@ class UserAchievement(SQLModel, table=True):
 
     __table_args__ = (
         UniqueConstraint('game_id', 'user_id', 'achievement_code', 'year', 'period', name='unique_user_achievement'),
+    )
+
+
+class CoinDuel(SQLModel, table=True):
+    """Дуэль «раз на раз»: ставки списаны при создании, разборка на розыгрыше дня year+day."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    challenger_id: int = Field(foreign_key="tguser.id", nullable=False)
+    target_id: int = Field(foreign_key="tguser.id", nullable=False)
+    created_year: int = Field(nullable=False)  # Год создания (год списания ставок)
+    created_day: int = Field(nullable=False)   # День создания (лимит вызовов)
+    year: int = Field(nullable=False)  # Год разборки
+    day: int = Field(nullable=False)   # День разборки
+    challenger_stake: int = Field(nullable=False)
+    target_stake: int = Field(nullable=False)
+    status: str = Field(default="pending", nullable=False)  # pending | resolved | cancelled
+    challenger_roll: Optional[int] = Field(default=None)
+    target_roll: Optional[int] = Field(default=None)
+    tie_count: int = Field(default=0, nullable=False)
+    winner_id: Optional[int] = Field(default=None, foreign_key="tguser.id")
+    commission: int = Field(default=0, nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    resolved_at: Optional[datetime] = Field(default=None)
+
+    __table_args__ = (
+        UniqueConstraint('game_id', 'target_id', 'year', 'day', name='unique_coin_duel_target_day'),
+        UniqueConstraint(
+            'game_id', 'challenger_id', 'created_year', 'created_day',
+            name='unique_coin_duel_challenger_day',
+        ),
+        Index('ix_coinduel_game_day', 'game_id', 'year', 'day'),
+    )
+
+
+class PoliceCall(SQLModel, table=True):
+    """Вызов ментов: отменяет все дуэли дня year+day в чате."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    caller_id: int = Field(foreign_key="tguser.id", nullable=False)
+    year: int = Field(nullable=False)  # Год отменённого дня разборок
+    day: int = Field(nullable=False)   # Отменённый день разборок
+    call_date: date = Field(nullable=False)  # Дата звонка (для кулдауна)
+    price: int = Field(nullable=False)
+    refunded_duels: int = Field(default=0, nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('game_id', 'year', 'day', name='unique_police_call_day'),
     )

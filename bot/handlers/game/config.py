@@ -46,6 +46,17 @@ class GameConstants:
             coin_swap_enabled: Включён ли своп монет при self-pidor из bottom-N (по умолчанию: False)
             birthday_enabled: Включён ли бонус именинника (по умолчанию: True)
             random_start_enabled: Случайный час открытия следующего розыгрыша (по умолчанию: False)
+            duel_enabled: Включены ли «Раз на раз» и «Вызвать ментов» в магазине (по умолчанию: False)
+
+        Раз на раз (дуэль) и менты:
+            duel_max_stake: Максимальная ставка вызывающего в дуэли (по умолчанию: 20).
+                Минимальная ставка — transfer_min_amount.
+            duel_max_leverage: Максимальный множитель ставки цели k = баланс цели / баланс
+                вызывающего (по умолчанию: 3)
+            duel_same_day: Тестовый режим — дуэль привязывается к сегодняшнему розыгрышу,
+                если он ещё не прошёл; иначе к завтрашнему (по умолчанию: False)
+            police_price: Цена вызова ментов (по умолчанию: 30)
+            police_cooldown_days: Личный кулдаун вызова ментов в днях (по умолчанию: 7)
 
         Прочее:
             birthday_bonus_multiplier: Множитель шанса стать пидором в свой ДР (по умолчанию: 4)
@@ -59,6 +70,7 @@ class GameConstants:
     coin_rain_price: int = 40
     custom_phrase_price: int = 40
     telegram_title_price: int = 80
+    police_price: int = 30
 
     # Награды
     coins_per_win: int = 5
@@ -76,6 +88,9 @@ class GameConstants:
     transfer_min_amount: int = 2
     coin_rain_max_recipients: int = 5
     coin_rain_chat_daily_limit: int = 3
+    duel_max_stake: int = 20
+    duel_max_leverage: int = 3
+    police_cooldown_days: int = 7
 
     # Таймауты
     game_result_time_delay: int = 2
@@ -98,6 +113,8 @@ class GameConstants:
     telegram_title_enabled: bool = False
     changelog_enabled: bool = False
     random_start_enabled: bool = False
+    duel_enabled: bool = False
+    duel_same_day: bool = False
 
     # Множитель попадания в пул для именинника
     birthday_bonus_multiplier: int = 4
@@ -343,6 +360,12 @@ def get_config(chat_id: int) -> ChatConfig:
         'telegram_title_enabled': global_config.defaults.telegram_title_enabled,
         'changelog_enabled': global_config.defaults.changelog_enabled,
         'random_start_enabled': global_config.defaults.random_start_enabled,
+        'duel_enabled': global_config.defaults.duel_enabled,
+        'duel_same_day': global_config.defaults.duel_same_day,
+        'duel_max_stake': global_config.defaults.duel_max_stake,
+        'duel_max_leverage': global_config.defaults.duel_max_leverage,
+        'police_price': global_config.defaults.police_price,
+        'police_cooldown_days': global_config.defaults.police_cooldown_days,
     }
 
     # Применяем переопределения для конкретного чата

@@ -16,6 +16,7 @@
     "coin_rain_price": 40,
     "custom_phrase_price": 40,
     "telegram_title_price": 80,
+    "police_price": 30,
     "coins_per_win": 5,
     "coins_per_command": 1,
     "self_pidor_multiplier": 2,
@@ -28,6 +29,9 @@
     "coin_rain_recipient_amount": 5,
     "coin_rain_max_recipients": 5,
     "coin_rain_chat_daily_limit": 3,
+    "duel_max_stake": 20,
+    "duel_max_leverage": 3,
+    "police_cooldown_days": 7,
     "game_result_time_delay": 2,
     "reroll_timeout_minutes": 5,
     "reroll_enabled": true,
@@ -44,7 +48,9 @@
     "custom_phrase_enabled": false,
     "telegram_title_enabled": false,
     "changelog_enabled": false,
-    "random_start_enabled": false
+    "random_start_enabled": false,
+    "duel_enabled": false,
+    "duel_same_day": false
   },
   "chat_overrides": {
     "-1001234567890": {
