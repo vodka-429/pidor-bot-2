@@ -7,6 +7,7 @@ from bot.handlers.game.config import GameConstants, get_config
 
 CURRENT_RELEASE_ID = "2026-09-economy-pilot"
 RANDOM_START_RELEASE_ID = "2026-10-random-start"
+COIN_DUEL_RELEASE_ID = "2026-10-coin-duel"
 
 
 def build_random_start_changelog_html() -> str:
@@ -20,6 +21,20 @@ def build_random_start_changelog_html() -> str:
         "С этого часа запуск доступен до конца дня — всегда не меньше шести часов.\n\n"
         "Перевыбор время не меняет. Если день пропущен, на следующий день запуск "
         "снова доступен сразу.\n\n"
+        "Перечитать новость: /pidornews"
+    )
+
+
+def build_coin_duel_changelog_html(constants: GameConstants) -> str:
+    return (
+        "🆕 <b>Раз на раз</b>\n\n"
+        "🥊 Вызови в /pidorshop того, кто богаче тебя. "
+        f"Ставишь до {constants.duel_max_stake}, он отвечает в 1-{constants.duel_max_leverage} "
+        "раза больше, смотря насколько он жирнее. Обе ставки списываются сразу, "
+        "разборка на завтрашнем розыгрыше, кости кидает бот, победитель забирает всё "
+        "(минус комиссия в банк).\n\n"
+        f"🚔 Не хочешь драки - вызови ментов за {constants.police_price}: все разборки "
+        "на завтра отменятся, ставки вернутся. Но весь чат узнает, кто позвонил.\n\n"
         "Перечитать новость: /pidornews"
     )
 
@@ -60,8 +75,16 @@ async def send_current_changelog(update, context, mark_as_seen: bool) -> bool:
     if not config.constants.changelog_enabled:
         return False
 
-    scheduled = config.constants.random_start_enabled
-    release_id = RANDOM_START_RELEASE_ID if scheduled else CURRENT_RELEASE_ID
+    constants = config.constants
+    if constants.duel_enabled:
+        release_id = COIN_DUEL_RELEASE_ID
+        build_html = build_coin_duel_changelog_html
+    elif constants.random_start_enabled:
+        release_id = RANDOM_START_RELEASE_ID
+        build_html = lambda _constants: build_random_start_changelog_html()
+    else:
+        release_id = CURRENT_RELEASE_ID
+        build_html = build_current_changelog_html
 
     if mark_as_seen:
         context.db_session.exec(
@@ -76,10 +99,7 @@ async def send_current_changelog(update, context, mark_as_seen: bool) -> bool:
         if existing is not None:
             return False
 
-    changelog_html = (
-        build_random_start_changelog_html()
-        if scheduled else build_current_changelog_html(config.constants)
-    )
+    changelog_html = build_html(constants)
     await update.effective_chat.send_message(changelog_html, parse_mode="HTML")
     if mark_as_seen:
         context.db_session.add(ChangelogReceipt(

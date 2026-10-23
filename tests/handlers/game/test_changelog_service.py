@@ -6,6 +6,8 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from bot.app.models import ChangelogReceipt, Game
 from bot.handlers.game.changelog_service import (
+    COIN_DUEL_RELEASE_ID,
+    build_coin_duel_changelog_html,
     CURRENT_RELEASE_ID,
     RANDOM_START_RELEASE_ID,
     build_current_changelog_html,
@@ -41,6 +43,48 @@ async def test_random_start_release_is_scoped_and_immediate(enabled):
         if enabled:
             assert '00:00 до 18:00 МСК' in text
             assert 'Первый розыгрыш' in text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('enabled', [False, True])
+async def test_coin_duel_release_is_scoped_and_shown_once(enabled):
+    engine = create_engine('sqlite://')
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        game = Game(chat_id=-1001)
+        session.add(game)
+        session.commit()
+        session.add(ChangelogReceipt(game_id=game.id, release_id=RANDOM_START_RELEASE_ID))
+        session.commit()
+        update = SimpleNamespace(effective_chat=SimpleNamespace(id=game.chat_id, send_message=AsyncMock()))
+        context = SimpleNamespace(db_session=session, game=game)
+        config = ChatConfig(chat_id=game.chat_id, constants=GameConstants(
+            changelog_enabled=True, random_start_enabled=True, duel_enabled=enabled,
+        ))
+        with patch('bot.handlers.game.changelog_service.get_config', return_value=config):
+            assert await send_current_changelog(update, context, True) is enabled
+            assert not await send_current_changelog(update, context, True)
+            assert await send_current_changelog(update, context, False)
+        releases = {receipt.release_id for receipt in session.exec(select(ChangelogReceipt)).all()}
+        assert (COIN_DUEL_RELEASE_ID in releases) is enabled
+        text = update.effective_chat.send_message.await_args.args[0]
+        assert ('Раз на раз' in text) is enabled
+        if enabled:
+            assert update.effective_chat.send_message.await_count == 2
+            assert 'до 20' in text
+            assert 'в 1-3 раза' in text
+            assert 'ментов за 30' in text
+
+
+@pytest.mark.unit
+def test_coin_duel_changelog_uses_constants():
+    html = build_coin_duel_changelog_html(GameConstants(
+        duel_max_stake=15, duel_max_leverage=4, police_price=25,
+    ))
+
+    assert 'Ставишь до 15' in html
+    assert 'в 1-4 раза' in html
+    assert 'ментов за 25' in html
 
 
 @pytest.mark.asyncio
