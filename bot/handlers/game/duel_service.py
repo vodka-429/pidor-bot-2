@@ -346,17 +346,17 @@ def format_duel_result_html(duel: CoinDuel, challenger: TGUser, target: TGUser) 
     target_name = _user_name(target)
     if duel.winner_id == duel.challenger_id:
         winner_name, loser_name = challenger_name, target_name
+        winner_roll, loser_roll = duel.challenger_roll, duel.target_roll
     else:
         winner_name, loser_name = target_name, challenger_name
+        winner_roll, loser_roll = duel.target_roll, duel.challenger_roll
     text = DUEL_RESULT_LINE.format(
-        challenger=challenger_name,
-        a=duel.challenger_roll,
-        b=duel.target_roll,
-        target=target_name,
         winner=winner_name,
+        winner_roll=winner_roll,
+        loser=loser_name,
+        loser_roll=loser_roll,
         pot=duel.challenger_stake + duel.target_stake,
         fee=duel.commission,
-        loser=loser_name,
     )
     if duel.tie_count:
         text = f"{DUEL_TIE_LINE}\n{text}"
