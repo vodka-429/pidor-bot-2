@@ -117,7 +117,7 @@ async def test_pidor_sends_only_unseen_in_one_message_and_marks_each():
             assert text.endswith(CHANGELOG_FOOTER)
             assert text.count('/pidornews') == 1
             assert chat.send_message.await_args.kwargs == {'parse_mode': 'HTML'}
-            assert receipts(session) == set(RELEASE_DATES)
+            assert receipts(session) == {CURRENT_RELEASE_ID, RANDOM_START_RELEASE_ID, COIN_DUEL_RELEASE_ID}
             # Повторный /pidor ничего не шлёт.
             assert await send_current_changelog(update, context, True) is False
             assert chat.send_message.await_count == 1
@@ -139,7 +139,7 @@ async def test_pidor_sends_new_release_after_previous_were_seen():
             text = sent_texts(chat)[-1]
             assert 'Раз на раз' in text
             assert 'Случайное время' not in text
-            assert receipts(session) == set(RELEASE_DATES)
+            assert receipts(session) == {CURRENT_RELEASE_ID, RANDOM_START_RELEASE_ID, COIN_DUEL_RELEASE_ID}
 
 
 @pytest.mark.asyncio
