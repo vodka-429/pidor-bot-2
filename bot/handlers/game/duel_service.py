@@ -27,7 +27,7 @@ from bot.handlers.game.shop_service import (
     process_purchase,
     spend_coins,
 )
-from bot.handlers.game.text_static import DUEL_RESULT, DUEL_TIE_LINE
+from bot.handlers.game.text_static import DUEL_RESULT_HEADER, DUEL_RESULT_LINE, DUEL_TIE_LINE
 from bot.handlers.game.transfer_service import get_or_create_chat_bank
 
 logger = logging.getLogger(__name__)
@@ -338,14 +338,14 @@ def _user_name(user: Optional[TGUser]) -> str:
 
 
 def format_duel_result_html(duel: CoinDuel, challenger: TGUser, target: TGUser) -> str:
-    """HTML-блок результата одной дуэли для сообщения розыгрыша."""
+    """HTML-строка результата одной дуэли (без общего заголовка)."""
     challenger_name = _user_name(challenger)
     target_name = _user_name(target)
     if duel.winner_id == duel.challenger_id:
         winner_name, loser_name = challenger_name, target_name
     else:
         winner_name, loser_name = target_name, challenger_name
-    text = DUEL_RESULT.format(
+    text = DUEL_RESULT_LINE.format(
         challenger=challenger_name,
         a=duel.challenger_roll,
         b=duel.target_roll,
@@ -362,12 +362,14 @@ def format_duel_result_html(duel: CoinDuel, challenger: TGUser, target: TGUser) 
 
 def format_duels_block(db_session, duels: List[CoinDuel]) -> str:
     """Все результаты дуэлей одним блоком (пустая строка, если дуэлей нет)."""
-    blocks = []
+    if not duels:
+        return ""
+    lines = [DUEL_RESULT_HEADER]
     for duel in duels:
         challenger = db_session.get(TGUser, duel.challenger_id)
         target = db_session.get(TGUser, duel.target_id)
-        blocks.append(format_duel_result_html(duel, challenger, target))
-    return "\n\n".join(blocks)
+        lines.append(format_duel_result_html(duel, challenger, target))
+    return "\n".join(lines)
 
 
 def get_police_cooldown_end(db_session, game_id: int, caller_id: int, cooldown_days: int) -> Optional[date]:

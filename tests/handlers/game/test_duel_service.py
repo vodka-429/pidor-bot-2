@@ -23,6 +23,7 @@ from bot.handlers.game.duel_service import (
     call_police,
     create_duel,
     format_duel_result_html,
+    format_duels_block,
     format_leverage,
     get_duel_target_day,
     get_duel_targets,
@@ -292,7 +293,12 @@ def test_resolve_rerolls_on_tie(duel_session, duel_env):
     text = format_duel_result_html(duel, players[0], players[1])
     assert text.startswith("🎲 Ничья, перебрасывают…\n")
     assert "player0 🎲1 : 🎲5 player1" in text
-    assert "player1 уходит с 18 💰 (−1 в банк). player0 отряхивается." in text
+    assert "player0 🎲1 : 🎲5 player1 - player1 дал пизды player0 и уходит с 18 💰 (−1 в банк)" in text
+    assert "Раз на раз за гаражами" not in text
+
+    block = format_duels_block(session, results)
+    assert block.startswith("🥊 <b>Раз на раз за гаражами:</b>\n🎲 Ничья, перебрасывают…\n")
+    assert block.count("Раз на раз за гаражами") == 1
 
 
 @pytest.mark.unit

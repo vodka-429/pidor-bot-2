@@ -667,9 +667,10 @@ DUEL_ANNOUNCEMENT = (
     "Завтра на розыгрыше - за гаражами. Ставки: {x} против {kx} 💰.\n"
     "{target}, денег уже нет - они в общаке."
 )
-DUEL_RESULT = (
-    "🥊 <b>Раз на раз за гаражами:</b> {challenger} 🎲{a} : 🎲{b} {target}\n"
-    "{winner} уходит с {pot} 💰 (−{fee} в банк). {loser} отряхивается."
+DUEL_RESULT_HEADER = "🥊 <b>Раз на раз за гаражами:</b>"
+DUEL_RESULT_LINE = (
+    "{challenger} 🎲{a} : 🎲{b} {target} - "
+    "{winner} дал пизды {loser} и уходит с {pot} 💰 (−{fee} в банк)"
 )
 DUEL_TIE_LINE = "🎲 Ничья, перебрасывают…"
 
