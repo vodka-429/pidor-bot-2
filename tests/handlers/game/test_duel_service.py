@@ -281,6 +281,30 @@ def test_resolve_pays_winner_pot_minus_fee(duel_session, duel_env):
 
 
 @pytest.mark.unit
+def test_format_duel_result_challenger_wins(duel_session, duel_env):
+    session, game, players = duel_session
+    create_duel(session, game.id, players[0].id, players[1].id, 5, TODAY)
+    with patch("bot.handlers.game.duel_service.secrets.randbelow", side_effect=[5, 0]):
+        results = resolve_duels_for_day(session, game.id, YEAR, TOMORROW_DAY, YEAR)
+    duel = results[0]
+    assert duel.winner_id == players[0].id
+    text = format_duel_result_html(duel, players[0], players[1])
+    assert text == "player0 🎲6 дал пизды player1 🎲1 и уходит с 18 💰 (−1 в банк)"
+
+
+@pytest.mark.unit
+def test_format_duel_result_escapes_html(duel_session, duel_env):
+    session, game, players = duel_session
+    create_duel(session, game.id, players[0].id, players[1].id, 5, TODAY)
+    with patch("bot.handlers.game.duel_service.secrets.randbelow", side_effect=[5, 0]):
+        results = resolve_duels_for_day(session, game.id, YEAR, TOMORROW_DAY, YEAR)
+    players[0].username = "<b>x</b>"
+    text = format_duel_result_html(results[0], players[0], players[1])
+    assert "<b>x</b>" not in text
+    assert "&lt;b&gt;x&lt;/b&gt;" in text
+
+
+@pytest.mark.unit
 def test_resolve_rerolls_on_tie(duel_session, duel_env):
     session, game, players = duel_session
     create_duel(session, game.id, players[0].id, players[1].id, 5, TODAY)
@@ -292,8 +316,7 @@ def test_resolve_rerolls_on_tie(duel_session, duel_env):
     assert duel.winner_id == players[1].id
     text = format_duel_result_html(duel, players[0], players[1])
     assert text.startswith("🎲 Ничья, перебрасывают…\n")
-    assert "player0 🎲1 : 🎲5 player1" in text
-    assert "player0 🎲1 : 🎲5 player1 - player1 дал пизды player0 и уходит с 18 💰 (−1 в банк)" in text
+    assert "player1 🎲5 дал пизды player0 🎲1 и уходит с 18 💰 (−1 в банк)" in text
     assert "Раз на раз за гаражами" not in text
 
     block = format_duels_block(session, results)
