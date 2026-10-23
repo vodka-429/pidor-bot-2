@@ -426,6 +426,16 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         # Начисляем койны за правильные предсказания
         award_correct_predictions(context.db_session, context.game.id, cur_year, predictions_results)
 
+        # Раз на раз: разборки этого дня решаются только в основном розыгрыше (не в перевыборах)
+        duels_block = ""
+        if config.constants.duel_enabled:
+            from bot.handlers.game.duel_service import resolve_duels_for_day, format_duels_block
+            duel_results = resolve_duels_for_day(
+                context.db_session, context.game.id, cur_year, cur_day, cur_year
+            )
+            if duel_results:
+                duels_block = format_duels_block(context.db_session, duel_results)
+
         # Проверяем и выдаём достижения (если включены)
         from bot.handlers.game.achievement_service import check_and_award_achievements
         awarded_achievements = check_and_award_achievements(
@@ -528,6 +538,10 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
                 predictions_html = format_predictions_summary_html(predictions_results, context.db_session)
                 stage4_message += f"\n\n{predictions_html}"
                 logger.info(f"Added predictions summary with {len(predictions_results)} predictions to stage4 message")
+
+        # Добавить результаты разборок «раз на раз» (если были)
+        if duels_block:
+            stage4_message += f"\n\n{duels_block}"
 
         # Добавить информацию о полученных достижениях (если есть)
         if awarded_achievements:
@@ -2984,8 +2998,12 @@ async def handle_shop_achievements_callback(update: Update, context: GECallbackC
         earned_codes = {ach.achievement_code: ach for ach in user_achievements}
         total_coins = 0
 
+        duel_enabled = get_config(update.effective_chat.id).constants.duel_enabled
+
         # Проходим по всем возможным достижениям
         for code, achievement_data in ACHIEVEMENTS.items():
+            if code == 'police_caller' and not duel_enabled and code not in earned_codes:
+                continue
             if code in earned_codes:
                 # Достижение получено
                 earned_ach = earned_codes[code]

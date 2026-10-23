@@ -202,9 +202,12 @@ async def test_handle_shop_achievements_callback_shows_all_achievements(mock_upd
     call_args = mock_update.callback_query.edit_message_text.call_args
     message_text = call_args[1]["text"]
 
-    # Check that all achievement names are present
-    for achievement_data in ACHIEVEMENTS.values():
-        assert achievement_data['name'] in message_text
+    # Check that all achievement names are present (police one is hidden while duels are off)
+    for code, achievement_data in ACHIEVEMENTS.items():
+        if code == "police_caller":
+            assert achievement_data['name'] not in message_text
+        else:
+            assert achievement_data['name'] in message_text
 
     # Check that earned achievement has ✅
     assert "✅" in message_text
@@ -212,7 +215,7 @@ async def test_handle_shop_achievements_callback_shows_all_achievements(mock_upd
     # Check that not earned achievements have ⬜
     # Count should be: total achievements - 1 earned
     not_earned_count = message_text.count("⬜")
-    assert not_earned_count == len(ACHIEVEMENTS) - 1
+    assert not_earned_count == len(ACHIEVEMENTS) - 2
 
 
 @pytest.mark.unit

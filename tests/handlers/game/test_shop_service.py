@@ -1197,3 +1197,21 @@ def test_get_active_effects(mock_db_session):
 
     # Verify they are different objects
     assert added_effect_1 != added_effect_2
+
+
+@pytest.mark.unit
+def test_get_shop_items_with_duel_enabled():
+    """Duel and police buttons appear only with duel_enabled."""
+    from unittest.mock import patch as _patch
+    from bot.handlers.game.config import ChatConfig, GameConstants
+
+    config = ChatConfig(chat_id=-1001, constants=GameConstants(duel_enabled=True))
+    with _patch('bot.handlers.game.shop_service.get_config', return_value=config):
+        items = get_shop_items(-1001)
+
+    by_callback = {item['callback_data']: item for item in items}
+    assert by_callback['shop_duel']['name'] == '🥊 Раз на раз'
+    assert by_callback['shop_duel']['price'] is None
+    assert by_callback['shop_police']['name'] == '🚔 Вызвать ментов'
+    assert by_callback['shop_police']['price'] == 30
+    assert 'shop_duel' not in {item['callback_data'] for item in get_shop_items()}

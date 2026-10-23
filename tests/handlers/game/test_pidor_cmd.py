@@ -928,3 +928,83 @@ async def test_pidor_cmd_self_pidor_case(mock_update, mock_context, mock_game, s
 
     # Verify: Only one commit was made (all changes in one transaction)
     assert mock_context.db_session.commit.call_count == 1
+
+
+def _setup_new_draw(mock_update, mock_context, mock_game, sample_players, mocker):
+    mock_game.players = sample_players
+    mock_context.game = mock_game
+
+    mock_game_query = MagicMock()
+    mock_game_query.filter_by.return_value = mock_game_query
+    mock_game_query.one_or_none.return_value = mock_game
+    mock_missed_query = MagicMock()
+    mock_missed_query.filter_by.return_value = mock_missed_query
+    mock_missed_query.order_by.return_value = mock_missed_query
+    mock_missed_query.first.return_value = None
+    mock_result_query = MagicMock()
+    mock_result_query.filter_by.return_value = mock_result_query
+    mock_result_query.one_or_none.return_value = None
+    mock_context.db_session.query.side_effect = [mock_game_query, mock_result_query, mock_missed_query]
+
+    mocker.patch('bot.handlers.game.commands.random.choice', side_effect=[
+        sample_players[0],
+        "Stage 1 message",
+        "Stage 2 message",
+        "Stage 3 message",
+        "Stage 4 message: {username}",
+    ])
+    mocker.patch('bot.handlers.game.commands.asyncio.sleep')
+    mock_dt = MagicMock()
+    mock_dt.year = 2024
+    mock_dt.month = 6
+    mock_dt.day = 15
+    mock_dt.timetuple.return_value.tm_yday = 167
+    mocker.patch('bot.handlers.game.commands.current_datetime', return_value=mock_dt)
+    return mocker.patch('bot.handlers.game.commands.send_result_with_reroll_button', new_callable=AsyncMock)
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_pidor_cmd_appends_duel_results_when_enabled(mock_update, mock_context, mock_game, sample_players, mocker):
+    """Duels of the draw day are resolved and shown in the stage4 message."""
+    from bot.handlers.game.config import ChatConfig, GameConstants
+
+    send_result = _setup_new_draw(mock_update, mock_context, mock_game, sample_players, mocker)
+    mocker.patch(
+        'bot.handlers.game.commands.get_config',
+        return_value=ChatConfig(chat_id=987654321, constants=GameConstants(duel_enabled=True)),
+    )
+    duel = MagicMock()
+    mock_resolve = mocker.patch(
+        'bot.handlers.game.duel_service.resolve_duels_for_day', return_value=[duel],
+    )
+    mocker.patch(
+        'bot.handlers.game.duel_service.format_duels_block',
+        return_value="🥊 <b>Раз на раз за гаражами:</b> test",
+    )
+
+    await pidor_cmd(mock_update, mock_context)
+
+    mock_resolve.assert_called_once_with(mock_context.db_session, mock_game.id, 2024, 167, 2024)
+    stage4_message = send_result.call_args[0][2]
+    assert "🥊 <b>Раз на раз за гаражами:</b> test" in stage4_message
+    assert mock_context.db_session.commit.call_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_pidor_cmd_skips_duels_when_disabled(mock_update, mock_context, mock_game, sample_players, mocker):
+    """With duel_enabled off the draw does not touch duels."""
+    from bot.handlers.game.config import ChatConfig, GameConstants
+
+    send_result = _setup_new_draw(mock_update, mock_context, mock_game, sample_players, mocker)
+    mocker.patch(
+        'bot.handlers.game.commands.get_config',
+        return_value=ChatConfig(chat_id=987654321, constants=GameConstants(duel_enabled=False)),
+    )
+    mock_resolve = mocker.patch('bot.handlers.game.duel_service.resolve_duels_for_day')
+
+    await pidor_cmd(mock_update, mock_context)
+
+    mock_resolve.assert_not_called()
+    assert "Раз на раз" not in send_result.call_args[0][2]

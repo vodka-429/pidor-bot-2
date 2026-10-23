@@ -866,3 +866,45 @@ def test_execute_reroll_awards_achievements_to_new_winner_before_commit(mock_db_
     assert calls == ["achievements", "commit"]
     assert len(result) == 4
     assert result[3] is achievements
+
+
+@pytest.mark.unit
+def test_execute_reroll_does_not_resolve_duels(mock_db_session, sample_players):
+    """Reroll must not replay duels of the day."""
+    mock_game_result = MagicMock()
+    mock_game_result.winner_id = sample_players[0].id
+
+    def exec_side_effect(stmt):
+        mock_result = MagicMock()
+        exec_side_effect.call_count = getattr(exec_side_effect, 'call_count', 0) + 1
+        if exec_side_effect.call_count == 1:
+            mock_result.first.return_value = mock_game_result
+        elif exec_side_effect.call_count == 2:
+            mock_result.first.return_value = sample_players[0]
+        return mock_result
+
+    mock_db_session.exec.side_effect = exec_side_effect
+
+    with patch('bot.handlers.game.reroll_service.get_config_by_game_id') as mock_get_config, \
+         patch('bot.handlers.game.reroll_service.check_and_award_achievements', return_value=[]), \
+         patch('bot.handlers.game.reroll_service.spend_coins'), \
+         patch('bot.handlers.game.reroll_service.add_coins'), \
+         patch('bot.handlers.game.selection_service.select_winner_with_effects') as mock_select, \
+         patch('bot.handlers.game.duel_service.resolve_duels_for_day') as mock_resolve:
+        mock_config = MagicMock()
+        mock_config.constants.reroll_enabled = True
+        mock_config.constants.reroll_price = REROLL_PRICE
+        mock_config.constants.coins_per_win = COINS_PER_WIN
+        mock_config.constants.duel_enabled = True
+        mock_get_config.return_value = mock_config
+
+        mock_selection_result = MagicMock()
+        mock_selection_result.winner = sample_players[1]
+        mock_selection_result.all_protected = False
+        mock_selection_result.had_immunity = False
+        mock_selection_result.protected_player = None
+        mock_select.return_value = mock_selection_result
+
+        execute_reroll(mock_db_session, 1, 2024, 100, 2, sample_players, date(2024, 4, 10))
+
+    mock_resolve.assert_not_called()

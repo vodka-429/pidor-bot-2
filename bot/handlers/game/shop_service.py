@@ -328,6 +328,26 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'callback_data': 'shop_title'
         })
 
+    if constants.duel_enabled:
+        from bot.handlers.game.text_static import (
+            DUEL_SHOP_DESCRIPTION, DUEL_SHOP_NAME,
+            POLICE_SHOP_DESCRIPTION, POLICE_SHOP_NAME,
+        )
+        items.append({
+            'name': DUEL_SHOP_NAME,
+            'short_name': DUEL_SHOP_NAME,
+            'price': None,
+            'description': DUEL_SHOP_DESCRIPTION,
+            'callback_data': 'shop_duel'
+        })
+        items.append({
+            'name': POLICE_SHOP_NAME,
+            'short_name': POLICE_SHOP_NAME,
+            'price': constants.police_price,
+            'description': POLICE_SHOP_DESCRIPTION,
+            'callback_data': 'shop_police'
+        })
+
     # Банк чата (всегда доступен)
     items.append({
         'name': '🏦 Банк чата',

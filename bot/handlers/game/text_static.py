@@ -164,6 +164,7 @@ COIN_EARNED = """🎉 Поздравляем\\! Вы получили *{amount}*
 
 # Сообщения для достижений
 ACHIEVEMENT_EARNED_TEMPLATE = "🏆 Достижение! {username} — {name}: +{reward} 💰"
+ACHIEVEMENT_EARNED_NO_REWARD_TEMPLATE = "🏆 Достижение! {username} — {name}"
 ACHIEVEMENTS_EARNED_HEADER = "\n\n🎖️ Новые достижения:"
 
 # Сообщения для просмотра достижений
@@ -563,10 +564,15 @@ def get_rules_message(config) -> str:
     # Формируем список достижений из констант
     achievements_list = []
     for code, achievement in ACHIEVEMENTS.items():
+        if code == 'police_caller' and not c.duel_enabled:
+            continue
         name = achievement['name']
         description = achievement['description']
         reward = achievement['reward']
-        achievements_list.append(f"• {name} \\- {description} \\(\\+{reward} 💰\\)")
+        if reward > 0:
+            achievements_list.append(f"• {name} \\- {description} \\(\\+{reward} 💰\\)")
+        else:
+            achievements_list.append(f"• {name} \\- {description}")
 
     achievements_text = "\n".join(achievements_list)
 
@@ -646,3 +652,37 @@ BIRTHDAY_DISABLED = "Бонус именинника в этом чате вык
 BIRTHDAY_ANNOUNCEMENT_SINGLE = "🎂 Сегодня день рождения у <b>{names}</b> — шанс стать пидором x{mult}!"
 BIRTHDAY_ANNOUNCEMENT_MULTIPLE = "🎂 Сегодня дни рождения сразу у нескольких игроков: <b>{names}</b> — у каждого шанс стать пидором x{mult}!"
 BIRTHDAY_WIN_SUFFIX = "\n\n🎉 И в свой день рождения пидором становится <b>{username}</b>!"
+
+
+# Раз на раз (дуэль) и менты (HTML)
+DUEL_SHOP_NAME = "🥊 Раз на раз"
+DUEL_SHOP_DESCRIPTION = (
+    "Вызови богатого раз на раз. Ставишь до 20, он отвечает вдвое-втрое больше - "
+    "смотря насколько он жирнее. Разборка завтра на розыгрыше, кости кидает бот."
+)
+DUEL_SELECT_TARGET = "С кем раз на раз? (только с теми, кто богаче тебя)"
+DUEL_SELECT_STAKE = "Сколько ставишь? {target} ответит ×{k}"
+DUEL_ANNOUNCEMENT = (
+    "🥊 <b>{challenger} вызывает {target} раз на раз!</b>\n"
+    "Завтра на розыгрыше - за гаражами. Ставки: {x} против {kx} 💰.\n"
+    "{target}, денег уже нет - они в общаке."
+)
+DUEL_RESULT_HEADER = "🥊 <b>Раз на раз за гаражами:</b>"
+DUEL_RESULT_LINE = (
+    "{challenger} 🎲{a} : 🎲{b} {target} - "
+    "{winner} дал пизды {loser} и уходит с {pot} 💰 (−{fee} в банк)"
+)
+DUEL_TIE_LINE = "🎲 Ничья, перебрасывают…"
+
+POLICE_SHOP_NAME = "🚔 Вызвать ментов"
+POLICE_SHOP_DESCRIPTION = "Отменяет все разборки на завтра. Ставки вернут. Все узнают, кто позвонил."
+POLICE_ANNOUNCEMENT = (
+    "🚔 <b>{caller} вызвал ментов!</b>\n"
+    "За гаражами патруль - все разборки на завтра отменены, ставки возвращены."
+)
+
+DUEL_ERROR_TARGET_NOT_RICHER = "❌ Этот уже богаче не станет - выбирай того, у кого больше"
+DUEL_ERROR_TARGET_BUSY = "❌ У {target} на завтра уже есть разборка"
+DUEL_ERROR_ALREADY_CHALLENGED = "❌ Ты сегодня уже звал кого-то"
+DUEL_ERROR_POLICE_ON_DUTY = "❌ Менты уже дежурят у гаражей"
+POLICE_ERROR_COOLDOWN = "❌ Ты недавно звонил в полицию. Следующий звонок: {date}"

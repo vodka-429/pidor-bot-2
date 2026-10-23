@@ -467,3 +467,37 @@ def test_check_and_award_achievements_disabled(mock_get_config, mock_db_session)
     # Verify - when disabled, should return empty list without checking achievements
     assert result == []
     assert len(result) == 0
+
+
+@pytest.mark.unit
+@patch('bot.handlers.game.achievement_service.add_coins')
+def test_award_achievement_with_zero_reward_skips_coins(mock_add_coins, mock_db_session):
+    """Zero-reward achievements are recorded without a coin transaction."""
+    mock_result = MagicMock()
+    mock_result.first.return_value = None
+    mock_db_session.exec.return_value = mock_result
+
+    result = award_achievement(mock_db_session, 1, 1, "police_caller", 2026)
+
+    assert result is not None
+    assert result.achievement_code == "police_caller"
+    mock_add_coins.assert_not_called()
+
+
+@pytest.mark.unit
+def test_format_achievements_block_hides_zero_reward():
+    """Zero-reward achievement line has no '+0' suffix."""
+    from bot.app.models import TGUser
+    from bot.handlers.game.achievement_service import format_achievements_block
+
+    user = TGUser(id=1, tg_id=1, username="cop", first_name="Cop")
+    police = UserAchievement(game_id=1, user_id=1, achievement_code="police_caller", year=2026)
+    police.user = user
+    blood = UserAchievement(game_id=1, user_id=1, achievement_code="first_blood", year=2026)
+    blood.user = user
+
+    block = format_achievements_block([police, blood])
+
+    assert "🚔 Мусорнулся" in block
+    assert "+0" not in block
+    assert "+10 💰" in block

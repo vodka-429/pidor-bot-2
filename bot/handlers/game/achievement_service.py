@@ -99,17 +99,18 @@ def award_achievement(
 
     db_session.add(user_achievement)
 
-    # Начисляем койны за достижение (без комиссии)
+    # Начисляем койны за достижение (без комиссии); достижения без награды только фиксируются
     reward = achievement_data['reward']
-    add_coins(
-        db_session,
-        game_id,
-        user_id,
-        reward,
-        year,
-        f"achievement_{achievement_code}",
-        auto_commit=False
-    )
+    if reward > 0:
+        add_coins(
+            db_session,
+            game_id,
+            user_id,
+            reward,
+            year,
+            f"achievement_{achievement_code}",
+            auto_commit=False
+        )
 
     logger.info(
         f"Awarded achievement {achievement_code} to user {user_id} in game {game_id}, "
@@ -372,13 +373,22 @@ def format_achievements_block(achievements: List[UserAchievement]) -> str:
         Готовый блок (с ведущими переводами строк) или пустая строка, если выводить нечего
     """
     from html import escape as html_escape
-    from bot.handlers.game.text_static import ACHIEVEMENTS_EARNED_HEADER, ACHIEVEMENT_EARNED_TEMPLATE
+    from bot.handlers.game.text_static import (
+        ACHIEVEMENTS_EARNED_HEADER,
+        ACHIEVEMENT_EARNED_NO_REWARD_TEMPLATE,
+        ACHIEVEMENT_EARNED_TEMPLATE,
+    )
 
     lines = []
     for achievement in achievements:
         achievement_data = get_achievement(achievement.achievement_code)
         if achievement_data:
-            lines.append(ACHIEVEMENT_EARNED_TEMPLATE.format(
+            template = (
+                ACHIEVEMENT_EARNED_TEMPLATE
+                if achievement_data['reward'] > 0
+                else ACHIEVEMENT_EARNED_NO_REWARD_TEMPLATE
+            )
+            lines.append(template.format(
                 username=html_escape(achievement.user.full_username()),
                 name=html_escape(achievement_data['name']),
                 reward=achievement_data['reward']
