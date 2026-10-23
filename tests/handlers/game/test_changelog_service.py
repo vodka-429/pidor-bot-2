@@ -217,7 +217,7 @@ def test_evergreen_texts():
     for text in (html, build_coin_duel_changelog_html(GameConstants()), build_current_changelog_html(GameConstants())):
         assert '/pidornews' not in text
         assert 'после обновления' not in text.lower()
-        assert '—' not in text.replace('———', '')
+        assert '—' not in text
 
 
 @pytest.mark.unit
