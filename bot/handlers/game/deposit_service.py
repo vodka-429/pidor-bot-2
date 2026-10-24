@@ -50,12 +50,14 @@ def rate_to_bp(rate_percent: float) -> int:
 
 def calc_interest(amount: int, rate_bp: int, term_days: int) -> int:
     """
-    Проценты за срок: amount * ставка * доля срока, округление вниз, без капитализации.
+    Проценты за срок: amount * ставка * доля срока, округление до ближайшего целого
+    (половина — вверх), без капитализации.
 
     Ставка ЦБ — игровая условность: это ставка за 30 дней, а не годовая.
     """
     numerator, denominator = DEPOSIT_TERMS[term_days]
-    return amount * rate_bp * numerator // (denominator * 10000)
+    scale = denominator * 10000
+    return (2 * amount * rate_bp * numerator + scale) // (2 * scale)
 
 
 def calc_min_amount(rate_bp: int, term_days: int) -> Optional[int]:
@@ -63,7 +65,8 @@ def calc_min_amount(rate_bp: int, term_days: int) -> Optional[int]:
     if rate_bp <= 0:
         return None
     numerator, denominator = DEPOSIT_TERMS[term_days]
-    divisor = rate_bp * numerator
+    # Округлённый процент >= 1 при amount * rate * доля >= 0.5 койна.
+    divisor = 2 * rate_bp * numerator
     return max(-(-denominator * 10000 // divisor), 1)
 
 
@@ -105,9 +108,17 @@ def get_amount_options(
     # Проценты растут вместе с суммой: ищем наибольшую сумму, которую покрывает банк.
     while cap > min_amount and calc_interest(cap, rate_bp, term_days) > bank_free:
         cap -= 1
-    options = {min_amount, cap}
-    options.update(amount for amount in DEPOSIT_AMOUNT_OPTIONS if min_amount <= amount <= cap)
-    return sorted(options), ""
+    candidates = {min_amount, cap}
+    candidates.update(amount for amount in DEPOSIT_AMOUNT_OPTIONS if min_amount <= amount <= cap)
+    # Дубли скрываем: сумма с тем же процентом, что у меньшей показанной, не нужна.
+    options: List[int] = []
+    last_interest = -1
+    for amount in sorted(candidates):
+        interest = calc_interest(amount, rate_bp, term_days)
+        if interest > last_interest:
+            options.append(amount)
+            last_interest = interest
+    return options, ""
 
 
 def get_open_deposit(db_session, game_id: int, user_id: int) -> Optional[CoinDeposit]:
