@@ -16,6 +16,7 @@ from bot.app.models import (
     TGUser,
     UserAchievement,
 )
+from bot.handlers.game.coin_service import get_balance
 from bot.handlers.game.config import ChatConfig, GameConstants
 from bot.handlers.game.duel_service import (
     calc_leverage,
@@ -28,7 +29,6 @@ from bot.handlers.game.duel_service import (
     get_duel_target_day,
     get_duel_targets,
     get_stake_options,
-    get_year_balance,
     resolve_duels_for_day,
 )
 
@@ -36,7 +36,7 @@ YEAR = 2026
 TODAY = date(2026, 6, 15)          # day 166
 TODAY_DAY = 166
 TOMORROW_DAY = 167
-# Годовые балансы игроков 0..4
+# Балансы игроков 0..4 (все транзакции в YEAR)
 SEED = [10, 25, 40, 100, 5]
 
 
@@ -163,9 +163,67 @@ def test_target_day_new_year(duel_session):
 @pytest.mark.unit
 def test_duel_targets_only_strictly_richer(duel_session):
     session, game, players = duel_session
-    targets = get_duel_targets(session, game.id, players[1].id, YEAR, players)
+    targets = get_duel_targets(session, game.id, players[1].id, players)
     assert [player.id for player, _ in targets] == [players[3].id, players[2].id]
     assert [balance for _, balance in targets] == [100, 40]
+
+
+def _add_history(session, game, player, amount, year=YEAR - 1):
+    session.add(PidorCoinTransaction(
+        game_id=game.id, user_id=player.id, amount=amount, year=year, reason="seed",
+    ))
+    session.commit()
+
+
+@pytest.mark.unit
+def test_duel_targets_count_last_year_coins(duel_session):
+    session, game, players = duel_session
+    _add_history(session, game, players[0], 30)   # 10 за год, 40 за всё время
+    targets = get_duel_targets(session, game.id, players[1].id, players)
+    balances = {player.id: balance for player, balance in targets}
+    assert balances == {players[3].id: 100, players[2].id: 40, players[0].id: 40}
+    assert targets[0][0].id == players[3].id
+
+
+@pytest.mark.unit
+def test_duel_leverage_uses_all_time_balance(duel_session, duel_env):
+    session, game, players = duel_session
+    _add_history(session, game, players[0], 30)
+    # 25 против 40 → ×1.6, ставка цели ceil(1.6 * 10) = 16
+    success, reason, duel = create_duel(session, game.id, players[1].id, players[0].id, 10, TODAY)
+    assert (success, reason) == (True, "success")
+    assert duel.target_stake == 16
+    assert get_balance(session, game.id, players[0].id) == 40 - 16
+
+
+@pytest.mark.unit
+def test_duel_negative_history_makes_target_poorer(duel_session, duel_env):
+    session, game, players = duel_session
+    _add_history(session, game, players[1], -20)   # 25 за год, но 5 за всё время
+    targets = get_duel_targets(session, game.id, players[4].id, players)
+    assert players[1].id not in [player.id for player, _ in targets]
+    assert create_duel(session, game.id, players[4].id, players[1].id, 2, TODAY)[1] == "target_not_richer"
+
+
+@pytest.mark.unit
+def test_duel_across_year_boundary_uses_all_time_balance(duel_session, duel_env):
+    session, game, players = duel_session
+    challenger, target = players[0], players[1]
+    success, _, duel = create_duel(session, game.id, challenger.id, target.id, 5, date(2026, 12, 31))
+    assert success is True
+    assert (duel.year, duel.day) == (2027, 1)
+
+    with patch("bot.handlers.game.duel_service.secrets.randbelow", side_effect=[5, 0]):
+        results = resolve_duels_for_day(session, game.id, 2027, 1, 2027)
+    session.commit()
+
+    assert results[0].winner_id == challenger.id
+    assert get_balance(session, game.id, challenger.id) == 5 + 17
+    win = session.exec(select(PidorCoinTransaction).where(
+        PidorCoinTransaction.user_id == challenger.id,
+        PidorCoinTransaction.reason == "duel_win",
+    )).one()
+    assert win.year == 2027
 
 
 # --- create_duel ---
@@ -180,8 +238,8 @@ def test_create_duel_success_spends_both_stakes(duel_session, duel_env):
     assert (duel.year, duel.day) == (YEAR, TOMORROW_DAY)
     assert (duel.challenger_stake, duel.target_stake) == (5, 13)
     assert duel.status == "pending"
-    assert get_year_balance(session, game.id, challenger.id, YEAR) == 5
-    assert get_year_balance(session, game.id, target.id, YEAR) == 12
+    assert get_balance(session, game.id, challenger.id) == 5
+    assert get_balance(session, game.id, target.id) == 12
 
 
 @pytest.mark.unit
@@ -275,8 +333,8 @@ def test_resolve_pays_winner_pot_minus_fee(duel_session, duel_env):
     assert resolved.winner_id == challenger.id
     assert resolved.status == "resolved"
     assert resolved.commission == 1
-    assert get_year_balance(session, game.id, challenger.id, YEAR) == 5 + 17
-    assert get_year_balance(session, game.id, target.id, YEAR) == 12
+    assert get_balance(session, game.id, challenger.id) == 5 + 17
+    assert get_balance(session, game.id, target.id) == 12
     assert _bank_balance(session, game.id) == 1
 
 
@@ -349,9 +407,9 @@ def test_police_refunds_all_duels_without_commission(duel_session, duel_env):
     assert (success, reason) == (True, "success")
     assert len(refunded) == 2
     for index, amount in enumerate(SEED[:3]):
-        assert get_year_balance(session, game.id, players[index].id, YEAR) == amount
-    assert get_year_balance(session, game.id, players[4].id, YEAR) == SEED[4]
-    assert get_year_balance(session, game.id, players[3].id, YEAR) == 100 - 30
+        assert get_balance(session, game.id, players[index].id) == amount
+    assert get_balance(session, game.id, players[4].id) == SEED[4]
+    assert get_balance(session, game.id, players[3].id) == 100 - 30
     statuses = {duel.status for duel in session.exec(select(CoinDuel)).all()}
     assert statuses == {"cancelled"}
     # В банк уходит только комиссия магазина с цены вызова (30 // 10 = 3)

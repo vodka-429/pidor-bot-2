@@ -7,6 +7,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 
 from bot.app.models import TGUser
 from bot.handlers.game.commands import current_datetime, ensure_game
+from bot.handlers.game.coin_service import get_balances
 from bot.handlers.game.config import get_config
 from bot.handlers.game.duel_service import (
     calc_leverage,
@@ -20,7 +21,6 @@ from bot.handlers.game.duel_service import (
     get_police_call,
     get_stake_options,
     get_target_duel,
-    get_year_balances,
 )
 from bot.handlers.game.membership_service import get_active_players
 from bot.handlers.game.shop_helpers import format_date_readable
@@ -134,7 +134,7 @@ async def handle_shop_duel_callback(update: Update, context: ECallbackContext):
         return
 
     targets = get_duel_targets(
-        db, context.game.id, context.tg_user.id, today.year,
+        db, context.game.id, context.tg_user.id,
         get_active_players(db, context.game.id),
     )
     if not targets:
@@ -183,7 +183,7 @@ async def handle_shop_duel_target_callback(update: Update, context: ECallbackCon
         await query.answer(_duel_error_text("target_busy", target), show_alert=True)
         return
 
-    balances = get_year_balances(db, context.game.id, today.year, [context.tg_user.id, target_id])
+    balances = get_balances(db, context.game.id, [context.tg_user.id, target_id])
     challenger_balance = balances.get(context.tg_user.id, 0)
     target_balance = balances.get(target_id, 0)
     if target_balance <= challenger_balance:
