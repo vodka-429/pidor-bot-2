@@ -14,6 +14,7 @@ CURRENT_RELEASE_ID = "2026-09-economy-pilot"
 RANDOM_START_RELEASE_ID = "2026-10-random-start"
 COIN_DUEL_RELEASE_ID = "2026-10-coin-duel"
 DOUBLE_CHANCE_PRICE_RELEASE_ID = "2026-10-double-chance-price"
+DEPOSIT_RELEASE_ID = "2026-10-deposits"
 
 # Окно "свежести" релиза и минимальный размер набора новостей.
 CHANGELOG_WINDOW_DAYS = 30
@@ -102,6 +103,23 @@ def build_double_chance_price_changelog_html(constants: GameConstants) -> str:
     )
 
 
+def build_deposit_changelog_html(constants: GameConstants) -> str:
+    return (
+        "💼 <b>Вклады</b>\n\n"
+        "В /pidorshop появилась кнопка <b>Вклад</b>: положи койны на 7, 14 или 30 дней "
+        "и забери их с процентами. Процент берётся из ключевой ставки ЦБ в момент "
+        "открытия и дальше не меняется; в игре это ставка за 30 дней, на 14 дней - "
+        "половина, на 7 дней - четверть. До "
+        f"{constants.deposit_max_amount} 🪙, один вклад на игрока.\n\n"
+        "Проценты платит банк чата. Если в банке не хватает койнов на проценты, "
+        "вклады закрыты. Выплата - одним платежом в конце срока: бот добавит её "
+        "строкой в сообщение /pidor. Досрочное снятие возвращает койны, но проценты сгорают.\n\n"
+        "Вклад считается в твоём богатстве: по нему тебя можно вызвать раз на раз, "
+        "а если на руках не хватит на ставку, вклад арестуют до разборки, а проигрыш "
+        "закроет его досрочно."
+    )
+
+
 RELEASES = [
     Release(
         id=CURRENT_RELEASE_ID,
@@ -128,6 +146,12 @@ RELEASES = [
             constants.double_chance_enabled and constants.double_chance_price_step > 0
         ),
         build_html=build_double_chance_price_changelog_html,
+    ),
+    Release(
+        id=DEPOSIT_RELEASE_ID,
+        released_on=date(2026, 10, 24),
+        is_enabled=lambda constants: constants.deposit_enabled,
+        build_html=build_deposit_changelog_html,
     ),
 ]
 

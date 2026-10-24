@@ -50,6 +50,9 @@ class GameConstants:
             birthday_enabled: Включён ли бонус именинника (по умолчанию: True)
             random_start_enabled: Случайный час открытия следующего розыгрыша (по умолчанию: False)
             duel_enabled: Включены ли «Раз на раз» и «Вызвать ментов» в магазине (по умолчанию: False)
+            deposit_enabled: Включены ли вклады (кнопка «Вклад» в магазине). Выключенный флаг
+                запрещает только открывать новые вклады: выплата, досрочное снятие и аресты
+                по уже открытым продолжают работать (по умолчанию: False)
 
         Раз на раз (дуэль) и менты:
             duel_max_stake: Максимальная ставка вызывающего в дуэли (по умолчанию: 20).
@@ -60,6 +63,10 @@ class GameConstants:
                 если он ещё не прошёл; иначе к завтрашнему (по умолчанию: False)
             police_price: Цена вызова ментов (по умолчанию: 30)
             police_cooldown_days: Личный кулдаун вызова ментов в днях (по умолчанию: 7)
+
+        Вклады:
+            deposit_max_amount: Максимальная сумма одного вклада в койнах (по умолчанию: 200).
+                Минимальная сумма зависит от ключевой ставки: проценты должны быть не меньше 1.
 
         Прочее:
             birthday_bonus_multiplier: Множитель шанса стать пидором в свой ДР (по умолчанию: 4)
@@ -95,6 +102,7 @@ class GameConstants:
     duel_max_stake: int = 20
     duel_max_leverage: int = 3
     police_cooldown_days: int = 7
+    deposit_max_amount: int = 200
 
     # Таймауты
     game_result_time_delay: int = 2
@@ -119,6 +127,7 @@ class GameConstants:
     random_start_enabled: bool = False
     duel_enabled: bool = False
     duel_same_day: bool = False
+    deposit_enabled: bool = False
 
     # Множитель попадания в пул для именинника
     birthday_bonus_multiplier: int = 4
@@ -371,6 +380,8 @@ def get_config(chat_id: int) -> ChatConfig:
         'duel_max_leverage': global_config.defaults.duel_max_leverage,
         'police_price': global_config.defaults.police_price,
         'police_cooldown_days': global_config.defaults.police_cooldown_days,
+        'deposit_enabled': global_config.defaults.deposit_enabled,
+        'deposit_max_amount': global_config.defaults.deposit_max_amount,
     }
 
     # Применяем переопределения для конкретного чата

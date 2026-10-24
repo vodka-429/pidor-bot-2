@@ -697,3 +697,70 @@ DUEL_ERROR_TARGET_BUSY = "❌ У {target} на завтра уже есть ра
 DUEL_ERROR_ALREADY_CHALLENGED = "❌ Ты сегодня уже звал кого-то"
 DUEL_ERROR_POLICE_ON_DUTY = "❌ Менты уже дежурят у гаражей"
 POLICE_ERROR_COOLDOWN = "❌ Ты недавно звонил в полицию. Следующий звонок: {date}"
+
+
+# Вклады (HTML)
+DEPOSIT_SHOP_NAME = "💼 Вклад"
+DEPOSIT_SHOP_DESCRIPTION = (
+    "Положить койны под процент от ключевой ставки ЦБ на 7, 14 или 30 дней. "
+    "Проценты платит банк чата, ставка фиксируется при открытии. "
+    "Досрочное снятие возвращает койны, но без процентов."
+)
+DEPOSIT_INTRO = (
+    "💼 <b>Вклад</b>\n\n"
+    "Ключевая ставка ЦБ сейчас - <b>{rate}%</b>. В игре это ставка за 30 дней: "
+    "на 14 дней - половина, на 7 дней - четверть. Ставка фиксируется при открытии.\n"
+    "Проценты платит банк чата, выплата одна, в конце срока, без капитализации. "
+    "Досрочное снятие - без процентов. Один вклад на игрока, до {max_amount} 🪙.\n\n"
+    "На какой срок?"
+)
+DEPOSIT_TERM_BUTTON = "{term} дн. · +{percent}%"
+DEPOSIT_SELECT_AMOUNT = (
+    "💼 <b>Вклад на {term} дн.</b> под {percent}%\n"
+    "Сколько кладёшь? Минимум {min_amount} 🪙, на руках {wallet} 🪙."
+)
+DEPOSIT_AMOUNT_BUTTON = "{amount} 🪙 → +{interest}"
+DEPOSIT_VIEW = (
+    "💼 <b>Твой вклад</b>\n\n"
+    "Сумма: <b>{amount}</b> 🪙\n"
+    "Срок: {term} дн., открыт {opened}\n"
+    "Выплата {matures}: <b>+{interest}</b> 🪙 процентов"
+)
+DEPOSIT_VIEW_ARRESTED = (
+    "\n\n🔒 Вклад арестован: на нём висит долг по разборке «Раз на раз». "
+    "Снять или получить выплату можно после разборки."
+)
+DEPOSIT_WITHDRAW_BUTTON = "↩️ Снять досрочно"
+DEPOSIT_WITHDRAW_CONFIRM = (
+    "Снять вклад досрочно? Вернётся <b>{amount}</b> 🪙, проценты ({interest} 🪙) сгорят - "
+    "они вернутся в банк чата."
+)
+DEPOSIT_WITHDRAW_CONFIRM_BUTTON = "✅ Да, снять"
+DEPOSIT_OPENED = (
+    "✅ <b>Вклад открыт</b>: {amount} 🪙 на {term} дн. под {percent}%.\n"
+    "{matures} вернётся {amount} + {interest} 🪙 процентов."
+)
+DEPOSIT_WITHDRAWN = "↩️ Вклад снят досрочно: {amount} 🪙 вернулись в кошелёк, проценты сгорели."
+DEPOSIT_PAID_ON_WITHDRAW = "💼 Срок вклада уже вышел: {amount} + {interest} 🪙 зачислены."
+
+DEPOSIT_ERROR_DISABLED = "❌ Вклады отключены в этом чате"
+DEPOSIT_ERROR_BANK_EMPTY = "❌ Банк пуст, вклады закрыты"
+DEPOSIT_ERROR_ALREADY_OPEN = "❌ У тебя уже есть открытый вклад"
+DEPOSIT_ERROR_NO_DEPOSIT = "❌ Открытого вклада нет"
+DEPOSIT_ERROR_ARRESTED = "❌ Вклад арестован до разборки «Раз на раз»"
+DEPOSIT_ERROR_INSUFFICIENT = "❌ Недостаточно койнов на руках. Минимум {min_amount} 🪙."
+DEPOSIT_ERROR_RATE_TOO_LOW = "❌ Ключевая ставка сейчас слишком низкая: проценты вышли бы меньше 1 🪙"
+DEPOSIT_ERROR_GENERIC = "❌ Не получилось"
+DEPOSIT_ERROR_AMOUNT = "❌ Такая сумма не подходит. Проверь минимум и потолок"
+
+DEPOSIT_PAYOUT_HEADER = "💼 <b>Вклады созрели:</b>"
+DEPOSIT_PAYOUT_LINE = "{user} забирает {amount} 🪙 и {interest} 🪙 процентов"
+DEPOSIT_COLLECTED_LINE = (
+    "💼 У {target} не хватило койнов на руках, вклад закрыт досрочно без процентов: "
+    "{part} 🪙 ушли в банк дуэли."
+)
+
+# Вклады в личных сообщениях и банке (MarkdownV2)
+BANK_INFO_DEPOSITS = "\n\n💼 На вкладах: {amount} 💰, из них в резерве на проценты: {interest} 💰"
+COINS_PERSONAL_DEPOSIT = "\n💼 На вкладе: *{amount}* до {matures}"
+SHOP_STATUS_DEPOSIT = "💼 Вклад {amount} 🪙 до {matures}"

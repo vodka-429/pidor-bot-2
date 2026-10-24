@@ -1,6 +1,6 @@
 """Tests for pidorcoins commands."""
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 from telegram import Update, User, Chat
 from telegram.ext import CallbackContext
 
@@ -72,7 +72,8 @@ async def test_pidorcoinsstats_cmd_shows_leaderboard(mock_update, mock_context, 
     ]
     mock_db_session.exec.return_value.all.return_value = leaderboard_data
 
-    await pidorcoinsstats_cmd(mock_update, mock_context)
+    with patch("bot.handlers.game.coin_service.get_open_deposit_amounts", return_value={}):
+        await pidorcoinsstats_cmd(mock_update, mock_context)
 
     # Verify that send_message was called with the correct message
     mock_update.effective_chat.send_message.assert_called_once()
@@ -88,7 +89,8 @@ async def test_pidorcoinsstats_cmd_empty(mock_update, mock_context, mock_db_sess
     # Mock the get_leaderboard_by_year function to return empty list
     mock_db_session.exec.return_value.all.return_value = []
 
-    await pidorcoinsstats_cmd(mock_update, mock_context)
+    with patch("bot.handlers.game.coin_service.get_open_deposit_amounts", return_value={}):
+        await pidorcoinsstats_cmd(mock_update, mock_context)
 
     # Verify that send_message was called with the empty message
     mock_update.effective_chat.send_message.assert_called_once()
@@ -97,3 +99,22 @@ async def test_pidorcoinsstats_cmd_empty(mock_update, mock_context, mock_db_sess
     assert "MarkdownV2" in call_args[1]["parse_mode"]
 
 
+
+
+@pytest.mark.asyncio
+async def test_pidorcoinsme_cmd_shows_open_deposit(mock_update, mock_context, mock_db_session, sample_players):
+    """An open deposit adds a line with its amount and maturity date (MarkdownV2-escaped)."""
+    from datetime import date
+    from types import SimpleNamespace
+
+    mock_db_session.exec.return_value.first.return_value = (100,)
+    deposit = SimpleNamespace(amount=70, matures_on=date(2026, 6, 15))
+
+    with patch("bot.handlers.game.coin_service.get_open_deposit_amounts", return_value={sample_players[0].id: 70}), \
+            patch("bot.handlers.game.deposit_service.get_open_deposit", return_value=deposit), \
+            patch("bot.handlers.game.shop_helpers.format_date_readable", return_value="15.06"):
+        await pidorcoinsme_cmd(mock_update, mock_context)
+
+    text = mock_update.effective_chat.send_message.call_args[0][0]
+    assert "На вкладе: *70* до 15\\.06" in text
+    assert "100" in text
