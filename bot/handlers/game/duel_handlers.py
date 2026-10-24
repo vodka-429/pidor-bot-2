@@ -18,8 +18,10 @@ from bot.handlers.game.duel_service import (
     get_challenger_duel_today,
     get_duel_target_day,
     get_duel_targets,
+    get_duel_wealths,
     get_police_call,
     get_stake_options,
+    get_target_capacity,
     get_target_duel,
 )
 from bot.handlers.game.membership_service import get_active_players
@@ -47,6 +49,7 @@ logger = logging.getLogger(__name__)
 DUEL_ERROR_DISABLED = "❌ Раз на раз отключён в этом чате"
 DUEL_ERROR_NO_TARGETS = "❌ Богаче тебя тут никого нет"
 DUEL_ERROR_GENERIC = "❌ Не получилось"
+DUEL_ERROR_TARGET_NO_FUNDS = "❌ У этого все койны уже в залоге под другую разборку"
 
 
 def duel_callback(owner_id: int) -> str:
@@ -183,14 +186,16 @@ async def handle_shop_duel_target_callback(update: Update, context: ECallbackCon
         await query.answer(_duel_error_text("target_busy", target), show_alert=True)
         return
 
-    balances = get_balances(db, context.game.id, [context.tg_user.id, target_id])
-    challenger_balance = balances.get(context.tg_user.id, 0)
-    target_balance = balances.get(target_id, 0)
-    if target_balance <= challenger_balance:
+    wealths = get_duel_wealths(db, context.game.id, [context.tg_user.id, target_id])
+    challenger_wealth = wealths.get(context.tg_user.id, 0)
+    target_wealth = wealths.get(target_id, 0)
+    if target_wealth <= challenger_wealth:
         await query.answer(DUEL_ERROR_TARGET_NOT_RICHER, show_alert=True)
         return
 
-    stakes = get_stake_options(challenger_balance, c.transfer_min_amount, c.duel_max_stake)
+    # Ставка вызывающего - только из кошелька; у цели можно взять кошелёк и вклад без ареста
+    challenger_wallet = get_balances(db, context.game.id, [context.tg_user.id]).get(context.tg_user.id, 0)
+    stakes = get_stake_options(challenger_wallet, c.transfer_min_amount, c.duel_max_stake)
     if not stakes:
         await query.answer(
             _duel_error_text("insufficient_funds", min_stake=c.transfer_min_amount),
@@ -198,10 +203,16 @@ async def handle_shop_duel_target_callback(update: Update, context: ECallbackCon
         )
         return
 
-    k10 = calc_leverage(challenger_balance, target_balance, c.duel_max_leverage)
+    target_wallet, _deposit, deposit_available = get_target_capacity(db, context.game.id, target_id, today)
+    target_capacity = target_wallet + deposit_available
+    if target_capacity <= 0:
+        await query.answer(DUEL_ERROR_TARGET_NO_FUNDS, show_alert=True)
+        return
+
+    k10 = calc_leverage(challenger_wealth, target_wealth, c.duel_max_leverage)
     buttons = [
         InlineKeyboardButton(
-            f"{amount} против {calc_target_stake(amount, k10, target_balance)} 🪙",
+            f"{amount} против {calc_target_stake(amount, k10, target_capacity)} 🪙",
             callback_data=duel_stake_callback(target_id, amount, owner_id),
         )
         for amount in stakes

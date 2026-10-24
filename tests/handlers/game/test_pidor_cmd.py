@@ -1008,3 +1008,59 @@ async def test_pidor_cmd_skips_duels_when_disabled(mock_update, mock_context, mo
 
     mock_resolve.assert_not_called()
     assert "Раз на раз" not in send_result.call_args[0][2]
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_pidor_cmd_settles_deposits_after_duels_and_shows_payouts(
+    mock_update, mock_context, mock_game, sample_players, mocker
+):
+    """Matured deposits are paid in the draw transaction (even with the flag off) and listed in the message."""
+    from datetime import date
+    from bot.handlers.game.config import ChatConfig, GameConstants
+
+    send_result = _setup_new_draw(mock_update, mock_context, mock_game, sample_players, mocker)
+    mocker.patch(
+        'bot.handlers.game.commands.get_config',
+        return_value=ChatConfig(chat_id=987654321, constants=GameConstants(duel_enabled=True, deposit_enabled=False)),
+    )
+    calls = []
+    mocker.patch(
+        'bot.handlers.game.duel_service.resolve_duels_for_day',
+        side_effect=lambda *args: calls.append("duels") or [],
+    )
+    deposit = MagicMock()
+    mock_settle = mocker.patch(
+        'bot.handlers.game.deposit_service.settle_matured_deposits',
+        side_effect=lambda *args, **kwargs: calls.append("deposits") or [deposit],
+    )
+    mocker.patch(
+        'bot.handlers.game.deposit_service.format_deposit_payouts_block',
+        return_value="💼 <b>Вклады созрели:</b> test",
+    )
+
+    await pidor_cmd(mock_update, mock_context)
+
+    assert calls == ["duels", "deposits"]
+    mock_settle.assert_called_once_with(mock_context.db_session, mock_game.id, date(2024, 6, 15))
+    assert "💼 <b>Вклады созрели:</b> test" in send_result.call_args[0][2]
+    assert mock_context.db_session.commit.call_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_pidor_cmd_without_matured_deposits_adds_nothing(
+    mock_update, mock_context, mock_game, sample_players, mocker
+):
+    from bot.handlers.game.config import ChatConfig, GameConstants
+
+    send_result = _setup_new_draw(mock_update, mock_context, mock_game, sample_players, mocker)
+    mocker.patch(
+        'bot.handlers.game.commands.get_config',
+        return_value=ChatConfig(chat_id=987654321, constants=GameConstants()),
+    )
+    mocker.patch('bot.handlers.game.deposit_service.settle_matured_deposits', return_value=[])
+
+    await pidor_cmd(mock_update, mock_context)
+
+    assert "Вклады созрели" not in send_result.call_args[0][2]

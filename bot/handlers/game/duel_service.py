@@ -3,11 +3,13 @@ import logging
 import secrets
 from datetime import date, datetime, timedelta
 from html import escape as html_escape
-from typing import Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from sqlmodel import select
 
 from bot.app.models import (
+    DEPOSIT_STATUS_OPEN,
+    CoinDeposit,
     CoinDuel,
     Game,
     GamePlayer,
@@ -17,15 +19,25 @@ from bot.app.models import (
     UserAchievement,
 )
 from bot.handlers.game.cbr_service import calculate_commission_amount
-from bot.handlers.game.coin_service import add_coins, get_balances
+from bot.handlers.game.coin_service import add_coins, get_balances, get_open_deposit_amounts
 from bot.handlers.game.config import get_config_by_game_id
+from bot.handlers.game.deposit_service import (
+    collect_deposit_part,
+    get_arrested_deposit_ids,
+    get_open_deposit,
+)
 from bot.handlers.game.shop_service import (
     calculate_next_day,
     can_afford,
     process_purchase,
     spend_coins,
 )
-from bot.handlers.game.text_static import DUEL_RESULT_HEADER, DUEL_RESULT_LINE, DUEL_TIE_LINE
+from bot.handlers.game.text_static import (
+    DEPOSIT_COLLECTED_LINE,
+    DUEL_RESULT_HEADER,
+    DUEL_RESULT_LINE,
+    DUEL_TIE_LINE,
+)
 from bot.handlers.game.transfer_service import get_or_create_chat_bank
 
 logger = logging.getLogger(__name__)
@@ -85,7 +97,7 @@ def format_leverage(k10: int) -> str:
 
 
 def calc_target_stake(stake: int, k10: int, target_balance: int) -> int:
-    """Ставка цели: ceil(k * stake), но не больше баланса цели за всё время."""
+    """Ставка цели: ceil(k * stake), но не больше того, что у цели можно взять (кошелёк + вклад)."""
     return min(-(-k10 * stake // 10), target_balance)
 
 
@@ -142,29 +154,60 @@ def get_pending_duels(db_session, game_id: int, year: int, day: int) -> List[Coi
     ).all())
 
 
+def get_duel_wealths(db_session, game_id: int, user_ids: Iterable[int]) -> Dict[int, int]:
+    """Богатство игроков для дуэли: баланс за всё время + тело открытого вклада."""
+    wealths = get_balances(db_session, game_id, user_ids)
+    if not wealths:
+        return wealths
+    for user_id, amount in get_open_deposit_amounts(db_session, game_id).items():
+        if user_id in wealths:
+            wealths[user_id] += amount
+    return wealths
+
+
+def get_target_capacity(
+    db_session, game_id: int, target_id: int, today: date
+) -> Tuple[int, Optional[CoinDeposit], int]:
+    """
+    Сколько можно взять у цели: (кошелёк, открытый вклад, сумма вклада, доступная для ареста).
+
+    Вклад, уже арестованный другой дуэлью, второй раз не арестовывается: доступен только кошелёк.
+    """
+    wallet = max(get_balances(db_session, game_id, [target_id]).get(target_id, 0), 0)
+    deposit = get_open_deposit(db_session, game_id, target_id)
+    deposit_available = 0
+    if deposit is not None and deposit.id not in get_arrested_deposit_ids(db_session, game_id, today):
+        deposit_available = deposit.amount
+    return wallet, deposit, deposit_available
+
+
 def get_duel_targets(
     db_session,
     game_id: int,
     challenger_id: int,
     active_players: Iterable[TGUser],
 ) -> List[Tuple[TGUser, int]]:
-    """Активные игроки со строго большим балансом за всё время, чем у вызывающего (по убыванию)."""
+    """
+    Активные игроки со строго большим богатством, чем у вызывающего (по убыванию).
+
+    Богатство — баланс за всё время плюс тело открытого вклада.
+    """
     players = [player for player in active_players if player.id is not None]
-    balances = get_balances(
+    wealths = get_duel_wealths(
         db_session, game_id, [player.id for player in players] + [challenger_id]
     )
-    challenger_balance = balances.get(challenger_id, 0)
+    challenger_wealth = wealths.get(challenger_id, 0)
     targets = [
-        (player, balances.get(player.id, 0))
+        (player, wealths.get(player.id, 0))
         for player in players
-        if player.id != challenger_id and balances.get(player.id, 0) > challenger_balance
+        if player.id != challenger_id and wealths.get(player.id, 0) > challenger_wealth
     ]
     targets.sort(key=lambda item: item[1], reverse=True)
     return targets
 
 
 def get_stake_options(challenger_balance: int, min_stake: int, max_stake: int) -> List[int]:
-    """Доступные кнопки ставок: 2 / 5 / 10 / 20 в пределах лимитов и баланса за всё время."""
+    """Доступные кнопки ставок: 2 / 5 / 10 / 20 в пределах лимитов и кошелька (вклад в ставку вызывающего не идёт)."""
     return [
         amount for amount in DUEL_STAKE_OPTIONS
         if min_stake <= amount <= max_stake and amount <= challenger_balance
@@ -180,7 +223,11 @@ def create_duel(
     current_date: date,
 ) -> Tuple[bool, str, Optional[CoinDuel]]:
     """
-    Создать дуэль: обе ставки списываются сразу, разборка — на розыгрыше дня цели.
+    Создать дуэль: ставки списываются сразу, разборка — на розыгрыше дня цели.
+
+    Если у цели не хватает койнов в кошельке, недостача записывается в target_deposit_part:
+    деньги не двигаются, но вклад цели арестован (его нельзя снять и он не выплачивается)
+    до разборки.
 
     Returns:
         (success, reason, duel). Коды ошибок: feature_disabled, not_registered,
@@ -209,24 +256,33 @@ def create_duel(
         return False, "target_busy", None
 
     created_year = current_date.year
-    balances = get_balances(db_session, game_id, [challenger_id, target_id])
-    challenger_balance = balances.get(challenger_id, 0)
-    target_balance = balances.get(target_id, 0)
-    if challenger_id == target_id or target_balance <= challenger_balance:
+    wealths = get_duel_wealths(db_session, game_id, [challenger_id, target_id])
+    challenger_wealth = wealths.get(challenger_id, 0)
+    target_wealth = wealths.get(target_id, 0)
+    if challenger_id == target_id or target_wealth <= challenger_wealth:
         return False, "target_not_richer", None
 
+    # Ставка вызывающего берётся только из кошелька, вклад в ней не участвует.
+    challenger_wallet = get_balances(db_session, game_id, [challenger_id]).get(challenger_id, 0)
     if stake < c.transfer_min_amount or stake > c.duel_max_stake:
         return False, "invalid_stake", None
-    if stake > challenger_balance or not can_afford(db_session, game_id, challenger_id, stake):
+    if stake > challenger_wallet or not can_afford(db_session, game_id, challenger_id, stake):
         return False, "insufficient_funds", None
 
-    k10 = calc_leverage(challenger_balance, target_balance, c.duel_max_leverage)
-    target_stake = calc_target_stake(stake, k10, target_balance)
-    if target_stake <= 0 or not can_afford(db_session, game_id, target_id, target_stake):
+    # Ставка цели: сначала кошелёк, недостача арестовывает вклад до разборки.
+    target_wallet, target_deposit, deposit_available = get_target_capacity(
+        db_session, game_id, target_id, current_date
+    )
+    k10 = calc_leverage(challenger_wealth, target_wealth, c.duel_max_leverage)
+    target_stake = calc_target_stake(stake, k10, target_wallet + deposit_available)
+    if target_stake <= 0:
         return False, "insufficient_funds", None
+    wallet_part = min(target_stake, target_wallet)
+    deposit_part = target_stake - wallet_part
 
     spend_coins(db_session, game_id, challenger_id, stake, created_year, "duel_stake", auto_commit=False)
-    spend_coins(db_session, game_id, target_id, target_stake, created_year, "duel_stake", auto_commit=False)
+    if wallet_part > 0:
+        spend_coins(db_session, game_id, target_id, wallet_part, created_year, "duel_stake", auto_commit=False)
     duel = CoinDuel(
         game_id=game_id,
         challenger_id=challenger_id,
@@ -237,6 +293,8 @@ def create_duel(
         day=fight_day,
         challenger_stake=stake,
         target_stake=target_stake,
+        target_deposit_id=target_deposit.id if deposit_part > 0 else None,
+        target_deposit_part=deposit_part,
         status=DUEL_STATUS_PENDING,
     )
     db_session.add(duel)
@@ -275,9 +333,17 @@ def resolve_duels_for_day(db_session, game_id: int, year: int, day: int, pay_yea
             ties += 1
             challenger_roll, target_roll = roll_die(), roll_die()
 
-        pot = duel.challenger_stake + duel.target_stake
-        fee = calculate_commission_amount(pot)
         winner_id = duel.challenger_id if challenger_roll > target_roll else duel.target_id
+        # Часть ставки цели с вклада в банк дуэли не вносилась: она уйдёт в него, только если
+        # цель проиграла (коллекторы закрывают вклад). Если цель выиграла, арест просто снимается.
+        deposit_part = duel.target_deposit_part or 0
+        collected = 0
+        if deposit_part > 0 and winner_id == duel.challenger_id and duel.target_deposit_id is not None:
+            deposit = db_session.get(CoinDeposit, duel.target_deposit_id)
+            if deposit is not None and deposit.status == DEPOSIT_STATUS_OPEN:
+                collected = collect_deposit_part(db_session, deposit, deposit_part, pay_year, now)
+        pot = duel.challenger_stake + duel.target_stake - deposit_part + collected
+        fee = calculate_commission_amount(pot)
         payout = pot - fee
         if payout > 0:
             add_coins(db_session, game_id, winner_id, payout, pay_year, "duel_win", auto_commit=False)
@@ -315,16 +381,21 @@ def format_duel_result_html(duel: CoinDuel, challenger: TGUser, target: TGUser) 
     else:
         winner_name, loser_name = target_name, challenger_name
         winner_roll, loser_roll = duel.target_roll, duel.challenger_roll
+    deposit_part = duel.target_deposit_part or 0
+    target_won = duel.winner_id == duel.target_id
     text = DUEL_RESULT_LINE.format(
         winner=winner_name,
         winner_roll=winner_roll,
         loser=loser_name,
         loser_roll=loser_roll,
-        pot=duel.challenger_stake + duel.target_stake,
+        # Если цель выиграла, арестованная часть в банк дуэли не входила
+        pot=duel.challenger_stake + duel.target_stake - (deposit_part if target_won else 0),
         fee=duel.commission,
     )
     if duel.tie_count:
         text = f"{DUEL_TIE_LINE}\n{text}"
+    if deposit_part > 0 and not target_won:
+        text += "\n" + DEPOSIT_COLLECTED_LINE.format(target=target_name, part=deposit_part)
     return text
 
 
@@ -396,10 +467,13 @@ def call_police(
             db_session, game_id, duel.challenger_id, duel.challenger_stake,
             duel.created_year, "duel_refund", auto_commit=False,
         )
-        add_coins(
-            db_session, game_id, duel.target_id, duel.target_stake,
-            duel.created_year, "duel_refund", auto_commit=False,
-        )
+        # Часть ставки цели с вклада не списывалась: возвращать нечего, арест снимается отменой.
+        target_refund = duel.target_stake - (duel.target_deposit_part or 0)
+        if target_refund > 0:
+            add_coins(
+                db_session, game_id, duel.target_id, target_refund,
+                duel.created_year, "duel_refund", auto_commit=False,
+            )
         duel.status = DUEL_STATUS_CANCELLED
         duel.resolved_at = now
         db_session.add(duel)

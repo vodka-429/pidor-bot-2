@@ -33,7 +33,7 @@ from bot.handlers.game.config import is_test_chat, get_config
 from bot.handlers.game.draw_schedule_service import (
     as_utc, choose_next_draw_at, format_draw_locked, format_next_draw,
 )
-from bot.handlers.game.coin_service import add_coins, get_balance, get_leaderboard, get_leaderboard_by_year, compute_redistribution_swap
+from bot.handlers.game.coin_service import add_coins, get_balance, get_leaderboard, get_leaderboard_by_year, get_leaderboard_by_year_with_deposits, compute_redistribution_swap
 from bot.handlers.game.shop_service import is_leap_year, get_days_in_year, spend_coins
 from bot.utils import escape_markdown2, escape_word, format_number, ECallbackContext, get_allowed_final_voting_closers
 
@@ -410,7 +410,8 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         _coin_swap = None
         if is_self_pidor and config.constants.coin_swap_enabled:
             _coin_swap = compute_redistribution_swap(
-                context.db_session, context.game.id, cur_year, winner, players
+                context.db_session, context.game.id, cur_year, winner, players,
+                include_deposits=True,
             )
             if _coin_swap:
                 rich_user, winner_final, rich_coins, delta = _coin_swap
@@ -435,6 +436,16 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
             )
             if duel_results:
                 duels_block = format_duels_block(context.db_session, duel_results)
+
+        # Вклады: выплата созревших (после дуэлей - арестованные вклады сначала разбираются).
+        # Работает и при выключенном флаге: койны на вкладе не должны зависнуть.
+        from datetime import date as _date, timedelta as _timedelta
+        from bot.handlers.game.deposit_service import settle_matured_deposits, format_deposit_payouts_block
+        paid_deposits = settle_matured_deposits(
+            context.db_session, context.game.id,
+            _date(cur_year, 1, 1) + _timedelta(days=cur_day - 1),
+        )
+        deposits_block = format_deposit_payouts_block(context.db_session, paid_deposits)
 
         # Проверяем и выдаём достижения (если включены)
         from bot.handlers.game.achievement_service import check_and_award_achievements
@@ -543,6 +554,10 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         if duels_block:
             stage4_message += f"\n\n{duels_block}"
 
+        # Добавить выплаты по вкладам (если были)
+        if deposits_block:
+            stage4_message += f"\n\n{deposits_block}"
+
         # Добавить информацию о полученных достижениях (если есть)
         if awarded_achievements:
             from bot.handlers.game.achievement_service import format_achievements_block
@@ -565,9 +580,9 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
                     poor_name=html_escape(winner.full_username()),
                     rich_name=html_escape(rich_user.full_username()),
                     poor_before=winner_final,
-                    poor_after=rich_coins,
+                    poor_after=winner_final + delta,
                     rich_before=rich_coins,
-                    rich_after=winner_final,
+                    rich_after=rich_coins - delta,
                 ),
                 parse_mode="HTML"
             )
@@ -1467,15 +1482,32 @@ async def pidorcoinsme_cmd(update: Update, context: GECallbackContext):
     logger.info(f"pidorcoinsme_cmd started for chat {update.effective_chat.id}")
 
     # Получаем баланс текущего пользователя
-    balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+    from bot.handlers.game.deposit_service import settle_matured_deposits
+    from bot.handlers.game.coin_service import get_open_deposit_amounts
+    from bot.handlers.game.text_static import COINS_PERSONAL_DEPOSIT
 
-    await update.effective_chat.send_message(
-        COINS_PERSONAL.format(
-            username=escape_markdown2(context.tg_user.full_username()),
-            amount=format_number(balance)
-        ),
-        parse_mode="MarkdownV2"
+    # Созревшие вклады выплачиваются тихо, до подсчёта баланса
+    settle_matured_deposits(
+        context.db_session, context.game.id, current_datetime().date(), auto_commit=True
     )
+    balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
+    deposit_amount = get_open_deposit_amounts(context.db_session, context.game.id).get(context.tg_user.id, 0)
+
+    message = COINS_PERSONAL.format(
+        username=escape_markdown2(context.tg_user.full_username()),
+        amount=format_number(balance)
+    )
+    if deposit_amount > 0:
+        from bot.handlers.game.deposit_service import get_open_deposit
+        from bot.handlers.game.shop_helpers import format_date_readable
+        deposit = get_open_deposit(context.db_session, context.game.id, context.tg_user.id)
+        matures = format_date_readable(
+            deposit.matures_on.year, deposit.matures_on.timetuple().tm_yday
+        ) if deposit is not None else ""
+        message += COINS_PERSONAL_DEPOSIT.format(
+            amount=format_number(deposit_amount), matures=escape_markdown2(matures),
+        )
+    await update.effective_chat.send_message(message, parse_mode="MarkdownV2")
     logger.info(f"Showed coin balance for user {context.tg_user.id}: {balance} coins")
 
 
@@ -1488,7 +1520,8 @@ async def pidorcoinsstats_cmd(update: Update, context: GECallbackContext):
     cur_year = current_datetime().year
 
     # Получаем топ по койнам за текущий год
-    leaderboard = get_leaderboard_by_year(context.db_session, context.game.id, cur_year, limit=50)
+    # Тела открытых вкладов считаются в годовом топе независимо от флага: койны нельзя спрятать на вкладе
+    leaderboard = get_leaderboard_by_year_with_deposits(context.db_session, context.game.id, cur_year, limit=50)
 
     if len(leaderboard) == 0:
         await update.effective_chat.send_message(
@@ -1525,19 +1558,26 @@ async def pidorshop_cmd(update: Update, context: GECallbackContext):
 
     logger.info(f"pidorshop_cmd started for chat {update.effective_chat.id}, user {context.tg_user.id}")
 
+    from bot.handlers.game.deposit_service import add_deposit_status, settle_matured_deposits
+
+    current_dt = current_datetime()
+    current_date = current_dt.date()
+    config = get_config(update.effective_chat.id)
+
+    # Созревшие вклады выплачиваются тихо, до подсчёта баланса
+    settle_matured_deposits(context.db_session, context.game.id, current_date, auto_commit=True)
+
     # Получаем баланс текущего пользователя
     balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
     logger.debug(f"User {context.tg_user.id} balance: {balance}")
 
     # Получаем информацию об активных эффектах
-    current_dt = current_datetime()
-    current_date = current_dt.date()
-    config = get_config(update.effective_chat.id)
-
     active_effects = get_active_effects(
         context.db_session, context.game.id, context.tg_user.id,
         current_date, immunity_cooldown_days=config.constants.immunity_cooldown_days
     )
+    if config.constants.deposit_enabled:
+        add_deposit_status(context.db_session, context.game.id, context.tg_user.id, active_effects)
 
     # Создаём клавиатуру магазина с owner_user_id для проверки прав и информацией об активных эффектах
     # ВАЖНО: используем tg_id (Telegram ID), а не id (внутренний ID БД)
@@ -2805,6 +2845,15 @@ async def handle_shop_bank_callback(update: Update, context: GECallbackContext):
     # Формируем сообщение
     response_text = BANK_INFO.format(balance=format_number(bank.balance))
 
+    # Вклады: тела и зарезервированные проценты лежат вне свободной части банка
+    from bot.handlers.game.deposit_service import get_bank_deposit_totals
+    from bot.handlers.game.text_static import BANK_INFO_DEPOSITS
+    deposits_amount, deposits_interest = get_bank_deposit_totals(context.db_session, context.game.id)
+    if deposits_amount > 0 or deposits_interest > 0:
+        response_text += BANK_INFO_DEPOSITS.format(
+            amount=format_number(deposits_amount), interest=format_number(deposits_interest),
+        )
+
     await query.answer()
     await query.edit_message_text(
         text=response_text,
@@ -2967,18 +3016,25 @@ async def handle_shop_back_callback(update: Update, context: GECallbackContext):
         await query.answer(SHOP_ERROR_NOT_YOUR_SHOP, show_alert=True)
         return
 
+    from bot.handlers.game.deposit_service import add_deposit_status, settle_matured_deposits
+
+    current_dt = current_datetime()
+    current_date = current_dt.date()
+    config = get_config(update.effective_chat.id)
+
+    # Созревшие вклады выплачиваются тихо, до подсчёта баланса
+    settle_matured_deposits(context.db_session, context.game.id, current_date, auto_commit=True)
+
     # Получаем баланс текущего пользователя
     balance = get_balance(context.db_session, context.game.id, context.tg_user.id)
 
     # Получаем информацию об активных эффектах
-    current_dt = current_datetime()
-    current_date = current_dt.date()
-
-    config = get_config(update.effective_chat.id)
     active_effects = get_active_effects(
         context.db_session, context.game.id, context.tg_user.id,
         current_date, immunity_cooldown_days=config.constants.immunity_cooldown_days
     )
+    if config.constants.deposit_enabled:
+        add_deposit_status(context.db_session, context.game.id, context.tg_user.id, active_effects)
 
     # Создаём клавиатуру магазина
     keyboard = create_shop_keyboard(owner_user_id=context.tg_user.tg_id, chat_id=update.effective_chat.id, active_effects=active_effects)

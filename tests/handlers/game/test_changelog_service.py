@@ -11,12 +11,14 @@ from bot.handlers.game.changelog_service import (
     CHANGELOG_FOOTER,
     COIN_DUEL_RELEASE_ID,
     CURRENT_RELEASE_ID,
+    DEPOSIT_RELEASE_ID,
     RANDOM_START_RELEASE_ID,
     RELEASES,
     TELEGRAM_MESSAGE_LIMIT,
     Release,
     build_coin_duel_changelog_html,
     build_current_changelog_html,
+    build_deposit_changelog_html,
     select_releases,
     send_current_changelog,
 )
@@ -305,3 +307,22 @@ def test_changelog_only_mentions_features_enabled_in_chat():
     assert "Койновый дождь" in html
     assert "Победная фраза" in html
     assert "Telegram-титулы" not in html
+
+
+@pytest.mark.unit
+def test_deposit_release_is_visible_only_where_flag_is_on():
+    with at(LATEST):
+        enabled = ids(select_releases(GameConstants(changelog_enabled=True, deposit_enabled=True)))
+        disabled = ids(select_releases(GameConstants(changelog_enabled=True)))
+        assert DEPOSIT_RELEASE_ID in enabled
+        assert DEPOSIT_RELEASE_ID not in disabled
+
+
+@pytest.mark.unit
+def test_deposit_changelog_text():
+    html = build_deposit_changelog_html(GameConstants(deposit_max_amount=150))
+    assert 'До 150 🪙' in html
+    assert '/pidorshop' in html
+    assert '/pidornews' not in html
+    assert '—' not in html
+    assert 'после обновления' not in html.lower()

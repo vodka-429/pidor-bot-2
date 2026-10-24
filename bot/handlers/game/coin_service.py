@@ -5,7 +5,7 @@ from typing import Dict, Iterable, List, Tuple, Optional
 from sqlalchemy import func
 from sqlmodel import select
 
-from bot.app.models import PidorCoinTransaction, TGUser
+from bot.app.models import DEPOSIT_STATUS_OPEN, CoinDeposit, PidorCoinTransaction, TGUser
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
@@ -93,6 +93,20 @@ def get_balances(db_session, game_id: int, user_ids: Iterable[int]) -> Dict[int,
     return balances
 
 
+def get_open_deposit_amounts(db_session, game_id: int) -> Dict[int, int]:
+    """Тела открытых вкладов чата: {user_id: amount}."""
+    rows = db_session.exec(
+        select(CoinDeposit.user_id, CoinDeposit.amount).where(
+            CoinDeposit.game_id == game_id,
+            CoinDeposit.status == DEPOSIT_STATUS_OPEN,
+        )
+    ).all()
+    amounts: Dict[int, int] = {}
+    for user_id, amount in rows:
+        amounts[user_id] = amounts.get(user_id, 0) + amount
+    return amounts
+
+
 def get_leaderboard(db_session, game_id: int, limit: int = 50) -> List[Tuple[TGUser, int]]:
     """
     Получить топ по койнам за всё время.
@@ -118,7 +132,7 @@ def get_leaderboard(db_session, game_id: int, limit: int = 50) -> List[Tuple[TGU
     return db_session.exec(stmt).all()
 
 
-def get_leaderboard_by_year(db_session, game_id: int, year: int, limit: int = 50) -> List[Tuple[TGUser, int]]:
+def get_leaderboard_by_year(db_session, game_id: int, year: int, limit: Optional[int] = 50) -> List[Tuple[TGUser, int]]:
     """
     Получить топ по койнам за конкретный год.
 
@@ -126,7 +140,7 @@ def get_leaderboard_by_year(db_session, game_id: int, year: int, limit: int = 50
         db_session: Сессия базы данных
         game_id: ID игры (чата)
         year: Год для статистики
-        limit: Количество записей в топе (по умолчанию 10)
+        limit: Количество записей в топе (по умолчанию 10), None — без ограничения
 
     Returns:
         Список кортежей (TGUser, сумма койнов за год), отсортированный по убыванию
@@ -147,18 +161,49 @@ def get_leaderboard_by_year(db_session, game_id: int, year: int, limit: int = 50
     return db_session.exec(stmt).all()
 
 
+def get_leaderboard_by_year_with_deposits(
+    db_session, game_id: int, year: int, limit: int = 50
+) -> List[Tuple[TGUser, int]]:
+    """
+    Топ за год с открытыми вкладами: тело вклада прибавляется к годовой сумме игрока,
+    чтобы койны нельзя было спрятать на вкладе. Без вкладов — то же, что get_leaderboard_by_year.
+    """
+    deposits = get_open_deposit_amounts(db_session, game_id)
+    if not deposits:
+        return get_leaderboard_by_year(db_session, game_id, year, limit=limit)
+
+    totals: Dict[int, List] = {
+        user.id: [user, coins]
+        for user, coins in get_leaderboard_by_year(db_session, game_id, year, limit=None)
+    }
+    for user_id, amount in deposits.items():
+        if user_id in totals:
+            totals[user_id][1] += amount
+            continue
+        user = db_session.get(TGUser, user_id)
+        if user is not None:
+            totals[user_id] = [user, amount]
+
+    board = sorted(((user, coins) for user, coins in totals.values()), key=lambda item: item[1], reverse=True)
+    return board[:limit]
+
+
 def compute_redistribution_swap(
     db_session,
     game_id: int,
     cur_year: int,
     winner: TGUser,
     active_players: List[TGUser],
+    include_deposits: bool = False,
 ) -> Optional[Tuple[TGUser, int, int, int]]:
     """
     Рассчитать своп монет для self-pidor из bottom-N%.
 
     Вызывать ПОСЛЕ add_coins(self_pidor_coins, auto_commit=False) —
     autoflush включит их в leaderboard-запрос автоматически.
+
+    include_deposits: тела открытых вкладов считаются частью годового баланса. Сам своп
+    двигает только кошельки, поэтому delta не больше кошелька богатого игрока.
 
     Returns:
         (rich_user, winner_final_coins, rich_coins, delta) или None.
@@ -170,14 +215,15 @@ def compute_redistribution_swap(
     swap_size = max(1, round(n * 0.1))
 
     active_ids = {p.id for p in active_players}
+    deposits = get_open_deposit_amounts(db_session, game_id) if include_deposits else {}
     raw = get_leaderboard_by_year(db_session, game_id, cur_year, limit=n + 20)
 
-    board = [(u, c) for u, c in raw if u.id in active_ids]
+    board = [(u, c + deposits.get(u.id, 0)) for u, c in raw if u.id in active_ids]
 
     board_ids = {u.id for u, _ in board}
     for p in active_players:
         if p.id not in board_ids:
-            board.append((p, 0))
+            board.append((p, deposits.get(p.id, 0)))
 
     board.sort(key=lambda x: x[1], reverse=True)
 
@@ -194,6 +240,8 @@ def compute_redistribution_swap(
         return None
 
     delta = rich_coins - winner_final
+    if deposits.get(rich_user.id, 0) > 0:
+        delta = min(delta, max(get_balance(db_session, game_id, rich_user.id), 0))
     if delta <= 0:
         return None
 

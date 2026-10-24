@@ -53,6 +53,37 @@ def test_double_chance_price_step_default_and_override(tmp_path, monkeypatch, re
     assert get_config(-100999).constants.double_chance_price_step == 0
 
 
+def test_deposit_defaults_and_chat_overrides(tmp_path, monkeypatch, reset_global_config):
+    assert GameConstants().deposit_enabled is False
+    assert GameConstants().deposit_max_amount == 200
+    path = tmp_path / 'game-config.json'
+    path.write_text(json.dumps({
+        'enabled_chats': [-1003932067905, -1001392307997],
+        'chat_overrides': {
+            '-1003932067905': {'deposit_enabled': True, 'deposit_max_amount': 150},
+        },
+    }))
+    monkeypatch.setenv('GAME_CONFIG_PATH', str(path))
+    test_chat = get_config(-1003932067905).constants
+    assert test_chat.deposit_enabled is True
+    assert test_chat.deposit_max_amount == 150
+    other_chat = get_config(-1001392307997).constants
+    assert other_chat.deposit_enabled is False
+    assert other_chat.deposit_max_amount == 200
+    assert get_config(-100999).constants.deposit_enabled is False
+
+
+def test_deposit_defaults_from_config_file(tmp_path, monkeypatch, reset_global_config):
+    path = tmp_path / 'game-config.json'
+    path.write_text(json.dumps({
+        'enabled_chats': [-1001],
+        'defaults': {'deposit_enabled': True, 'deposit_max_amount': 120},
+    }))
+    monkeypatch.setenv('GAME_CONFIG_PATH', str(path))
+    constants = get_config(-1001).constants
+    assert (constants.deposit_enabled, constants.deposit_max_amount) == (True, 120)
+
+
 @pytest.fixture
 def temp_config_file():
     """Create a temporary config file for testing."""

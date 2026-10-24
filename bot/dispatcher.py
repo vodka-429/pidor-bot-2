@@ -46,6 +46,13 @@ from bot.handlers.game.economy_pilot_handlers import (
     handle_shop_title_input_callback,
     handle_shop_title_verify_callback,
 )
+from bot.handlers.game.deposit_handlers import (
+    handle_shop_deposit_callback,
+    handle_shop_deposit_open_callback,
+    handle_shop_deposit_term_callback,
+    handle_shop_deposit_withdraw_callback,
+    handle_shop_deposit_withdraw_confirm_callback,
+)
 from bot.handlers.game.duel_handlers import (
     handle_shop_duel_callback,
     handle_shop_duel_stake_callback,
@@ -169,6 +176,11 @@ def init_dispatcher(application: Application, db_engine):
     application.add_handler(CallbackQueryHandler(handle_shop_duel_stake_callback, pattern=r'^shop_duel_x_\d+_\d+_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_police_callback, pattern=r'^shop_police_\d+$'))
     application.add_handler(CallbackQueryHandler(handle_shop_police_confirm_callback, pattern=r'^shop_police_ok_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_deposit_callback, pattern=r'^shop_deposit_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_deposit_term_callback, pattern=r'^shop_deposit_t_\d+_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_deposit_open_callback, pattern=r'^shop_deposit_x_\d+_\d+_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_deposit_withdraw_callback, pattern=r'^shop_deposit_w_\d+$'))
+    application.add_handler(CallbackQueryHandler(handle_shop_deposit_withdraw_confirm_callback, pattern=r'^shop_deposit_w_ok_\d+$'))
 
     # Totalizator shop handler
     application.add_handler(CallbackQueryHandler(handle_shop_totalizator_callback, pattern=r'^shop_totalizator_\d+$'))

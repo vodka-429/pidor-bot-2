@@ -33,6 +33,7 @@
     "duel_max_stake": 20,
     "duel_max_leverage": 3,
     "police_cooldown_days": 7,
+    "deposit_max_amount": 200,
     "game_result_time_delay": 2,
     "reroll_timeout_minutes": 5,
     "reroll_enabled": true,
@@ -51,7 +52,8 @@
     "changelog_enabled": false,
     "random_start_enabled": false,
     "duel_enabled": false,
-    "duel_same_day": false
+    "duel_same_day": false,
+    "deposit_enabled": false
   },
   "chat_overrides": {
     "-1001234567890": {

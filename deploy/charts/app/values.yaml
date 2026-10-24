@@ -40,6 +40,7 @@ gameConfig:
       duel_enabled: true
       duel_same_day: true
       double_chance_price_step: 4
+      deposit_enabled: true
     "-1001392307997":
       random_start_enabled: true
       totalizator_enabled: true

@@ -456,3 +456,61 @@ def test_compute_redistribution_swap_correct_index_mapping(mock_leaderboard, moc
     rich_user, _, _, _ = result
     # 2nd-to-last (winner_idx=1 in bottom ascending) → maps to board[1] = 2nd richest
     assert rich_user.id == players[1].id
+
+
+# ---- compute_redistribution_swap with deposits ----
+
+@pytest.mark.unit
+@patch("bot.handlers.game.coin_service.get_balance", return_value=50)
+@patch("bot.handlers.game.coin_service.get_open_deposit_amounts")
+@patch("bot.handlers.game.coin_service.get_leaderboard_by_year")
+def test_swap_counts_deposits_and_caps_delta_by_rich_wallet(
+    mock_leaderboard, mock_deposits, mock_balance, mock_db_session
+):
+    """Тело вклада считается в годовом балансе, но своп двигает только кошелёк богатого."""
+    players = [_make_player(i) for i in range(1, 12)]
+    winner = players[-1]
+    board = [(players[i], 100 - i * 5) for i in range(10)] + [(winner, 22)]
+    mock_leaderboard.return_value = board
+    mock_deposits.return_value = {players[0].id: 20}
+
+    result = compute_redistribution_swap(
+        mock_db_session, 1, 2026, winner, players, include_deposits=True
+    )
+
+    rich_user, winner_final, rich_coins, delta = result
+    assert rich_user.id == players[0].id
+    assert (winner_final, rich_coins) == (22, 120)     # 100 за год + 20 на вкладе
+    assert delta == 50                                 # не больше кошелька (get_balance = 50)
+
+
+@pytest.mark.unit
+@patch("bot.handlers.game.coin_service.get_open_deposit_amounts")
+@patch("bot.handlers.game.coin_service.get_leaderboard_by_year")
+def test_swap_ignores_deposits_when_disabled(mock_leaderboard, mock_deposits, mock_db_session):
+    players = [_make_player(i) for i in range(1, 12)]
+    winner = players[-1]
+    mock_leaderboard.return_value = [(players[i], 100 - i * 5) for i in range(10)] + [(winner, 22)]
+    mock_deposits.return_value = {players[0].id: 20}
+
+    result = compute_redistribution_swap(mock_db_session, 1, 2026, winner, players)
+
+    mock_deposits.assert_not_called()
+    assert result[2:] == (100, 78)
+
+
+@pytest.mark.unit
+@patch("bot.handlers.game.coin_service.get_balance", return_value=0)
+@patch("bot.handlers.game.coin_service.get_open_deposit_amounts")
+@patch("bot.handlers.game.coin_service.get_leaderboard_by_year")
+def test_swap_skipped_when_rich_wallet_is_empty(
+    mock_leaderboard, mock_deposits, mock_balance, mock_db_session
+):
+    players = [_make_player(i) for i in range(1, 12)]
+    winner = players[-1]
+    mock_leaderboard.return_value = [(players[i], 100 - i * 5) for i in range(10)] + [(winner, 22)]
+    mock_deposits.return_value = {players[0].id: 100}
+
+    assert compute_redistribution_swap(
+        mock_db_session, 1, 2026, winner, players, include_deposits=True
+    ) is None

@@ -1215,3 +1215,20 @@ def test_get_shop_items_with_duel_enabled():
     assert by_callback['shop_police']['name'] == '🚔 Вызвать ментов'
     assert by_callback['shop_police']['price'] == 30
     assert 'shop_duel' not in {item['callback_data'] for item in get_shop_items()}
+
+
+@pytest.mark.unit
+def test_get_shop_items_with_deposit_enabled():
+    """The deposit button appears only with deposit_enabled."""
+    from unittest.mock import patch as _patch
+    from bot.handlers.game.config import ChatConfig, GameConstants
+
+    config = ChatConfig(chat_id=-1001, constants=GameConstants(deposit_enabled=True, deposit_max_amount=150))
+    with _patch('bot.handlers.game.shop_service.get_config', return_value=config):
+        items = get_shop_items(-1001)
+
+    by_callback = {item['callback_data']: item for item in items}
+    assert by_callback['shop_deposit']['name'] == '💼 Вклад'
+    assert by_callback['shop_deposit']['price'] is None
+    assert 'до 150 койнов' in by_callback['shop_deposit']['description']
+    assert 'shop_deposit' not in {item['callback_data'] for item in get_shop_items()}

@@ -426,6 +426,12 @@ def format_shop_menu_message(balance: int, chat_id: int, user_name: str = None, 
             statuses.append("🎲 Двойной шанс уже куплен на завтра")
         if active_effects.get('prediction_exists'):
             statuses.append("🔮 Предсказание уже создано")
+        if active_effects.get('deposit_amount'):
+            from bot.handlers.game.text_static import SHOP_STATUS_DEPOSIT
+            statuses.append(escape_markdown2(SHOP_STATUS_DEPOSIT.format(
+                amount=active_effects['deposit_amount'],
+                matures=active_effects.get('deposit_matures', ''),
+            )))
 
     status_info = ""
     if statuses:

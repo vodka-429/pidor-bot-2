@@ -350,6 +350,18 @@ def get_shop_items(chat_id: int = 0) -> List[Dict[str, any]]:
             'callback_data': 'shop_police'
         })
 
+    if constants.deposit_enabled:
+        from bot.handlers.game.text_static import DEPOSIT_SHOP_DESCRIPTION, DEPOSIT_SHOP_NAME
+        items.append({
+            'name': DEPOSIT_SHOP_NAME,
+            'short_name': DEPOSIT_SHOP_NAME,
+            'price': None,
+            'description': (
+                f'{DEPOSIT_SHOP_DESCRIPTION} Один вклад на игрока, до {constants.deposit_max_amount} койнов.'
+            ),
+            'callback_data': 'shop_deposit'
+        })
+
     # Банк чата (всегда доступен)
     items.append({
         'name': '🏦 Банк чата',

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Optional, List
 
-from sqlalchemy import UniqueConstraint, Column, BigInteger, DateTime, Index
+from sqlalchemy import UniqueConstraint, Column, BigInteger, DateTime, Index, text
 from sqlmodel import SQLModel, Field, Relationship
 
 
@@ -388,6 +388,42 @@ class UserAchievement(SQLModel, table=True):
     )
 
 
+class CoinDeposit(SQLModel, table=True):
+    """
+    Вклад игрока. Тело (amount) лежит здесь, а не в кошельке и не в ChatBank.balance;
+    проценты (interest) зарезервированы из банка чата при открытии.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", nullable=False)
+    user_id: int = Field(foreign_key="tguser.id", nullable=False)
+    amount: int = Field(nullable=False)          # Текущее тело вклада (может уменьшиться)
+    initial_amount: int = Field(nullable=False)  # Сумма при открытии
+    rate_bp: int = Field(nullable=False)         # Ключевая ставка ЦБ * 100, зафиксирована при открытии
+    term_days: int = Field(nullable=False)       # 7 | 14 | 30
+    interest: int = Field(nullable=False)        # Зарезервированные проценты
+    opened_date: date = Field(nullable=False)
+    matures_on: date = Field(nullable=False)
+    status: str = Field(default="open", nullable=False)  # open | paid | withdrawn | collected
+    paid_interest: int = Field(default=0, nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    closed_at: Optional[datetime] = Field(default=None)
+
+    __table_args__ = (
+        Index('ix_coindeposit_game_status', 'game_id', 'status', 'matures_on'),
+        Index(
+            'unique_open_coin_deposit', 'game_id', 'user_id', unique=True,
+            postgresql_where=text("status = 'open'"),
+            sqlite_where=text("status = 'open'"),
+        ),
+    )
+
+
+DEPOSIT_STATUS_OPEN = "open"
+DEPOSIT_STATUS_PAID = "paid"
+DEPOSIT_STATUS_WITHDRAWN = "withdrawn"
+DEPOSIT_STATUS_COLLECTED = "collected"
+
+
 class CoinDuel(SQLModel, table=True):
     """Дуэль «раз на раз»: ставки списаны при создании, разборка на розыгрыше дня year+day."""
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -406,6 +442,9 @@ class CoinDuel(SQLModel, table=True):
     tie_count: int = Field(default=0, nullable=False)
     winner_id: Optional[int] = Field(default=None, foreign_key="tguser.id")
     commission: int = Field(default=0, nullable=False)
+    # Часть ставки цели, не покрытая кошельком: вклад цели арестован до разборки
+    target_deposit_id: Optional[int] = Field(default=None, foreign_key="coindeposit.id")
+    target_deposit_part: int = Field(default=0, nullable=False, sa_column_kwargs={"server_default": "0"})
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     resolved_at: Optional[datetime] = Field(default=None)
 
