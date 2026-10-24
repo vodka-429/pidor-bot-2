@@ -3,9 +3,8 @@ import logging
 import secrets
 from datetime import date, datetime, timedelta
 from html import escape as html_escape
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
 
-from sqlalchemy import func
 from sqlmodel import select
 
 from bot.app.models import (
@@ -13,13 +12,12 @@ from bot.app.models import (
     Game,
     GamePlayer,
     GameResult,
-    PidorCoinTransaction,
     PoliceCall,
     TGUser,
     UserAchievement,
 )
 from bot.handlers.game.cbr_service import calculate_commission_amount
-from bot.handlers.game.coin_service import add_coins
+from bot.handlers.game.coin_service import add_coins, get_balances
 from bot.handlers.game.config import get_config_by_game_id
 from bot.handlers.game.shop_service import (
     calculate_next_day,
@@ -44,38 +42,6 @@ POLICE_ACHIEVEMENT_CODE = "police_caller"
 
 def _day_of_year(value: date) -> int:
     return value.timetuple().tm_yday
-
-
-def get_year_balance(db_session, game_id: int, user_id: int, year: int) -> int:
-    """Баланс игрока за год (сумма транзакций этого года)."""
-    result = db_session.exec(
-        select(func.sum(PidorCoinTransaction.amount)).where(
-            PidorCoinTransaction.game_id == game_id,
-            PidorCoinTransaction.user_id == user_id,
-            PidorCoinTransaction.year == year,
-        )
-    ).first()
-    return result if result is not None else 0
-
-
-def get_year_balances(db_session, game_id: int, year: int, user_ids: Iterable[int]) -> Dict[int, int]:
-    """Годовые балансы набора игроков одним запросом; у игроков без транзакций — 0."""
-    ids = [user_id for user_id in user_ids if user_id is not None]
-    balances = {user_id: 0 for user_id in ids}
-    if not ids:
-        return balances
-    rows = db_session.exec(
-        select(PidorCoinTransaction.user_id, func.sum(PidorCoinTransaction.amount))
-        .where(
-            PidorCoinTransaction.game_id == game_id,
-            PidorCoinTransaction.year == year,
-            PidorCoinTransaction.user_id.in_(ids),
-        )
-        .group_by(PidorCoinTransaction.user_id)
-    ).all()
-    for user_id, total in rows:
-        balances[user_id] = total or 0
-    return balances
 
 
 def get_duel_target_day(db_session, game_id: int, current_date: date, same_day: bool) -> Tuple[int, int]:
@@ -119,7 +85,7 @@ def format_leverage(k10: int) -> str:
 
 
 def calc_target_stake(stake: int, k10: int, target_balance: int) -> int:
-    """Ставка цели: ceil(k * stake), но не больше годового баланса цели."""
+    """Ставка цели: ceil(k * stake), но не больше баланса цели за всё время."""
     return min(-(-k10 * stake // 10), target_balance)
 
 
@@ -180,13 +146,12 @@ def get_duel_targets(
     db_session,
     game_id: int,
     challenger_id: int,
-    year: int,
     active_players: Iterable[TGUser],
 ) -> List[Tuple[TGUser, int]]:
-    """Активные игроки со строго большим годовым балансом, чем у вызывающего (по убыванию)."""
+    """Активные игроки со строго большим балансом за всё время, чем у вызывающего (по убыванию)."""
     players = [player for player in active_players if player.id is not None]
-    balances = get_year_balances(
-        db_session, game_id, year, [player.id for player in players] + [challenger_id]
+    balances = get_balances(
+        db_session, game_id, [player.id for player in players] + [challenger_id]
     )
     challenger_balance = balances.get(challenger_id, 0)
     targets = [
@@ -199,7 +164,7 @@ def get_duel_targets(
 
 
 def get_stake_options(challenger_balance: int, min_stake: int, max_stake: int) -> List[int]:
-    """Доступные кнопки ставок: 2 / 5 / 10 / 20 в пределах лимитов и годового баланса."""
+    """Доступные кнопки ставок: 2 / 5 / 10 / 20 в пределах лимитов и баланса за всё время."""
     return [
         amount for amount in DUEL_STAKE_OPTIONS
         if min_stake <= amount <= max_stake and amount <= challenger_balance
@@ -244,7 +209,7 @@ def create_duel(
         return False, "target_busy", None
 
     created_year = current_date.year
-    balances = get_year_balances(db_session, game_id, created_year, [challenger_id, target_id])
+    balances = get_balances(db_session, game_id, [challenger_id, target_id])
     challenger_balance = balances.get(challenger_id, 0)
     target_balance = balances.get(target_id, 0)
     if challenger_id == target_id or target_balance <= challenger_balance:

@@ -1,6 +1,6 @@
 """Service functions for working with pidor coins."""
 import logging
-from typing import List, Tuple, Optional
+from typing import Dict, Iterable, List, Tuple, Optional
 
 from sqlalchemy import func
 from sqlmodel import select
@@ -72,6 +72,25 @@ def get_balance(db_session, game_id: int, user_id: int) -> int:
     logger.debug(f"get_balance result: {result}, type: {type(result)}")
     # func.sum() возвращает скалярное значение (int), а не кортеж
     return result if result is not None else 0
+
+
+def get_balances(db_session, game_id: int, user_ids: Iterable[int]) -> Dict[int, int]:
+    """Балансы за всё время для набора игроков одним запросом; у игроков без транзакций — 0."""
+    ids = [user_id for user_id in user_ids if user_id is not None]
+    balances = {user_id: 0 for user_id in ids}
+    if not ids:
+        return balances
+    rows = db_session.exec(
+        select(PidorCoinTransaction.user_id, func.sum(PidorCoinTransaction.amount))
+        .where(
+            PidorCoinTransaction.game_id == game_id,
+            PidorCoinTransaction.user_id.in_(ids),
+        )
+        .group_by(PidorCoinTransaction.user_id)
+    ).all()
+    for user_id, total in rows:
+        balances[user_id] = total or 0
+    return balances
 
 
 def get_leaderboard(db_session, game_id: int, limit: int = 50) -> List[Tuple[TGUser, int]]:
