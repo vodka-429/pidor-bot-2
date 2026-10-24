@@ -47,6 +47,7 @@ gameConfig:
       telegram_title_enabled: true
       duel_enabled: true
       double_chance_price_step: 4
+      deposit_enabled: true
     "-1002189152002":
       reroll_enabled: false
     "-1003671793100":
