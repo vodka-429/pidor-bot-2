@@ -138,8 +138,10 @@ async def test_term_callback_shows_only_covered_amounts(mock_update, mock_contex
 
     keyboard = query.edit_message_text.call_args[1]["reply_markup"]
     callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
-    assert "shop_deposit_x_7_20_100" in callbacks
-    assert "shop_deposit_x_7_76_100" in callbacks
+    # Банк покрывает не больше 3: «всё» (66) даёт тот же процент, что 50, и скрыто.
+    assert "shop_deposit_x_7_10_100" in callbacks
+    assert "shop_deposit_x_7_50_100" in callbacks
+    assert "shop_deposit_x_7_66_100" not in callbacks
     assert not any(data.startswith("shop_deposit_x_7_100") or data.startswith("shop_deposit_x_7_200")
                    for data in callbacks)
     assert "shop_back_100" in callbacks

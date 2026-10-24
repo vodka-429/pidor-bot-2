@@ -153,27 +153,30 @@ def _txns(session, user, reason):
 @pytest.mark.unit
 def test_interest_by_term_at_21_percent():
     assert calc_interest(100, 2100, 30) == 21
-    assert calc_interest(100, 2100, 14) == 10     # 10.5 -> 10
+    assert calc_interest(100, 2100, 14) == 11     # 10.5 -> 11 (половина вверх)
     assert calc_interest(100, 2100, 7) == 5       # 5.25 -> 5
 
 
 @pytest.mark.unit
 def test_interest_by_term_at_16_5_percent():
-    assert calc_interest(100, 1650, 30) == 16
+    assert calc_interest(100, 1650, 30) == 17     # 16.5 -> 17
     assert calc_interest(100, 1650, 14) == 8      # 8.25 -> 8
     assert calc_interest(100, 1650, 7) == 4       # 4.125 -> 4
 
 
 @pytest.mark.unit
-def test_interest_rounds_down_without_minimum():
-    assert calc_interest(19, 2100, 7) == 0
-    assert calc_interest(20, 2100, 7) == 1
+def test_interest_rounds_to_nearest():
+    assert calc_interest(9, 2100, 7) == 0         # 0.4725
+    assert calc_interest(10, 2100, 7) == 1        # 0.525
+    assert calc_interest(50, 1400, 7) == 2        # 1.75
+    assert calc_interest(29, 1400, 7) == 1        # 1.015
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize("rate_bp,term,expected", [
-    (2100, 7, 20), (2100, 14, 10), (2100, 30, 5),
-    (1650, 7, 25), (1650, 14, 13), (1650, 30, 7),
+    (2100, 7, 10), (2100, 14, 5), (2100, 30, 3),
+    (1650, 7, 13), (1650, 14, 7), (1650, 30, 4),
+    (1400, 7, 15),
 ])
 def test_min_amount_is_smallest_with_interest_at_least_one(rate_bp, term, expected):
     assert calc_min_amount(rate_bp, term) == expected
@@ -198,18 +201,29 @@ def test_rate_helpers():
 
 @pytest.mark.unit
 def test_amount_options_cover_only_what_bank_can_pay():
-    assert get_amount_options(2100, 7, 200, wallet=1000, bank_free=100) == ([20, 50, 100, 200], "")
-    # Банк покрывает проценты не больше 3: интерес(76)=3, интерес(77)=4
-    assert get_amount_options(2100, 7, 200, wallet=1000, bank_free=3) == ([20, 50, 76], "")
-    assert get_amount_options(2100, 7, 200, wallet=60, bank_free=100) == ([20, 50, 60], "")
+    assert get_amount_options(2100, 7, 200, wallet=1000, bank_free=100) == ([10, 50, 100, 200], "")
+    # Банк покрывает проценты не больше 4: интерес(85)=4, интерес(86)=5
+    assert get_amount_options(2100, 7, 200, wallet=1000, bank_free=4) == ([10, 50, 85], "")
+    assert get_amount_options(2100, 7, 200, wallet=80, bank_free=100) == ([10, 50, 80], "")
+
+
+@pytest.mark.unit
+def test_amount_options_hide_duplicate_percent():
+    # 3.5% за 7 дней: 15 -> +1, 50 -> +2, 61 -> +2 (дубль 50), 100 -> +4, 200 -> +7
+    assert get_amount_options(1400, 7, 200, wallet=61, bank_free=100) == ([15, 50], "")
+    assert get_amount_options(1400, 7, 200, wallet=1000, bank_free=100) == ([15, 50, 100, 200], "")
+    # «Всё» с тем же процентом, что у меньшей суммы, тоже скрыто (50 и 60 дают +3)
+    assert get_amount_options(2100, 7, 200, wallet=60, bank_free=100) == ([10, 50], "")
+    # Минимум показан всегда, даже если кошелёк равен минимуму
+    assert get_amount_options(1400, 7, 200, wallet=15, bank_free=100) == ([15], "")
 
 
 @pytest.mark.unit
 def test_amount_options_failures():
     assert get_amount_options(2100, 7, 200, wallet=1000, bank_free=0) == ([], "bank_empty")
-    assert get_amount_options(2100, 7, 200, wallet=10, bank_free=100) == ([], "insufficient_funds")
+    assert get_amount_options(2100, 7, 200, wallet=9, bank_free=100) == ([], "insufficient_funds")
     assert get_amount_options(0, 7, 200, wallet=1000, bank_free=100) == ([], "rate_too_low")
-    assert get_amount_options(2100, 7, 15, wallet=1000, bank_free=100) == ([], "rate_too_low")
+    assert get_amount_options(2100, 7, 9, wallet=1000, bank_free=100) == ([], "rate_too_low")
 
 
 # --- open ---
@@ -238,7 +252,7 @@ def test_open_rejections_change_nothing(deposit_session, env):
     before = _total_money(session, game)
 
     assert open_deposit(session, game.id, players[1].id, 201, 30, TODAY)[1] == "invalid_amount"   # потолок
-    assert open_deposit(session, game.id, players[0].id, 19, 7, TODAY)[1] == "invalid_amount"     # процент 0
+    assert open_deposit(session, game.id, players[0].id, 9, 7, TODAY)[1] == "invalid_amount"      # процент 0
     assert open_deposit(session, game.id, players[0].id, 50, 10, TODAY)[1] == "invalid_term"
     assert open_deposit(session, game.id, players[4].id, 50, 7, TODAY)[1] == "insufficient_funds"  # на руках 20
     env.rate = 0.0
@@ -317,7 +331,7 @@ def test_payout_later_than_maturity(deposit_session, env):
     session, game, players = deposit_session
     _open(session, game, players[0], 100, 14, TODAY)
     assert len(settle_matured_deposits(session, game.id, TODAY + timedelta(days=40))) == 1
-    assert get_balance(session, game.id, players[0].id) == 110
+    assert get_balance(session, game.id, players[0].id) == 111
 
 
 @pytest.mark.unit
