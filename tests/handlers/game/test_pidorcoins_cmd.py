@@ -85,10 +85,12 @@ async def test_pidorcoinsstats_cmd_shows_leaderboard(mock_update, mock_context, 
 
 @pytest.mark.asyncio
 async def test_pidorcoinsstats_cmd_marks_only_players_with_deposit(mock_update, mock_context, mock_db_session, sample_players):
-    """Только у игрока с открытым вкладом в топе есть пометка 💼."""
+    """Только у игрока с открытым вкладом есть пометка 💼, а его сумма включает тело вклада."""
+    # Годовые суммы по транзакциям; патч вкладов виден и в get_leaderboard_by_year_with_deposits,
+    # поэтому у игрока 2 итог 50 + 100 = 150
     mock_db_session.exec.return_value.all.return_value = [
         (sample_players[0], 150),
-        (sample_players[1], 100),
+        (sample_players[1], 50),
         (sample_players[2], 50),
     ]
 
@@ -97,11 +99,12 @@ async def test_pidorcoinsstats_cmd_marks_only_players_with_deposit(mock_update, 
 
     text = mock_update.effective_chat.send_message.call_args[0][0]
     assert text.count("💼") == 1
-    assert "\\(💼 100\\)" in text
     lines = text.split("\n")
-    assert "💼 100" in next(item for item in lines if "100 койн" in item)
-    assert "💼" not in next(item for item in lines if "150 койн" in item)
-    assert "💼" not in next(item for item in lines if "50 койн" in item and "150" not in item)
+    depositor = next(item for item in lines if "player2" in item)
+    assert "150 койн" in depositor and "\\(💼 100\\)" in depositor
+    for name in ("player1", "player3"):
+        assert "💼" not in next(item for item in lines if name in item)
+    assert "50 койн" in next(item for item in lines if "player3" in item)
 
 
 @pytest.mark.asyncio
