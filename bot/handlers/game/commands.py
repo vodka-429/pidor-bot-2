@@ -1466,13 +1466,18 @@ async def pidorfinalclose_cmd(update: Update, context: GECallbackContext):
     logger.info(f"Final voting manually closed for game {context.game.id}, year {cur_year}, winners: {winners_log}")
 
 
-def build_coins_table(player_list: list[tuple[TGUser, int]]) -> str:
-    """Построить таблицу для отображения топа по койнам"""
+def build_coins_table(player_list: list[tuple[TGUser, int]], deposits: Optional[dict] = None) -> str:
+    """Построить таблицу для отображения топа по койнам (deposits: user_id -> тело открытого вклада)"""
+    from bot.handlers.game.text_static import COINS_LIST_DEPOSIT
+    deposits = deposits or {}
     result = []
     for number, (tg_user, amount) in enumerate(player_list, 1):
+        deposit_amount = deposits.get(tg_user.id, 0)
+        deposit = COINS_LIST_DEPOSIT.format(amount=format_number(deposit_amount)) if deposit_amount > 0 else ""
         result.append(COINS_LIST_ITEM.format(number=number,
                                              username=escape_markdown2(tg_user.full_username()),
-                                             amount=format_number(amount)))
+                                             amount=format_number(amount),
+                                             deposit=deposit))
     return ''.join(result)
 
 
@@ -1530,7 +1535,9 @@ async def pidorcoinsstats_cmd(update: Update, context: GECallbackContext):
         )
         return
 
-    player_table = build_coins_table(leaderboard)
+    from bot.handlers.game.coin_service import get_open_deposit_amounts
+    deposits = get_open_deposit_amounts(context.db_session, context.game.id)
+    player_table = build_coins_table(leaderboard, deposits)
     answer = COINS_CURRENT_YEAR.format(player_stats=player_table,
                                        player_count=len(context.game.players))
     await update.effective_chat.send_message(answer, parse_mode="MarkdownV2")

@@ -84,6 +84,30 @@ async def test_pidorcoinsstats_cmd_shows_leaderboard(mock_update, mock_context, 
 
 
 @pytest.mark.asyncio
+async def test_pidorcoinsstats_cmd_marks_only_players_with_deposit(mock_update, mock_context, mock_db_session, sample_players):
+    """Только у игрока с открытым вкладом есть пометка 💼, а его сумма включает тело вклада."""
+    # Годовые суммы по транзакциям; патч вкладов виден и в get_leaderboard_by_year_with_deposits,
+    # поэтому у игрока 2 итог 50 + 100 = 150
+    mock_db_session.exec.return_value.all.return_value = [
+        (sample_players[0], 150),
+        (sample_players[1], 50),
+        (sample_players[2], 50),
+    ]
+
+    with patch("bot.handlers.game.coin_service.get_open_deposit_amounts", return_value={sample_players[1].id: 100}):
+        await pidorcoinsstats_cmd(mock_update, mock_context)
+
+    text = mock_update.effective_chat.send_message.call_args[0][0]
+    assert text.count("💼") == 1
+    lines = text.split("\n")
+    depositor = next(item for item in lines if "player2" in item)
+    assert "150 койн" in depositor and "\\(💼 100\\)" in depositor
+    for name in ("player1", "player3"):
+        assert "💼" not in next(item for item in lines if name in item)
+    assert "50 койн" in next(item for item in lines if "player3" in item)
+
+
+@pytest.mark.asyncio
 async def test_pidorcoinsstats_cmd_empty(mock_update, mock_context, mock_db_session, sample_players):
     """Test that pidorcoinsstats_cmd handles empty leaderboard correctly."""
     # Mock the get_leaderboard_by_year function to return empty list

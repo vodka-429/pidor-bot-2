@@ -311,11 +311,30 @@ def roll_die() -> int:
     return secrets.randbelow(6) + 1
 
 
+def calc_duel_settlement(duel: CoinDuel, winner_id: int, collected: int) -> Tuple[int, int, int]:
+    """
+    Расчёт выплаты дуэли: (own, winnings, fee).
+
+    own — собственная ставка победителя (возвращается целиком), winnings — то, что реально
+    пришло от проигравшего, fee — комиссия с выигрыша (не больше самого выигрыша, 0 при нулевом).
+    Победителю достаётся own + winnings - fee.
+    """
+    deposit_part = duel.target_deposit_part or 0
+    if winner_id == duel.challenger_id:
+        own = duel.challenger_stake
+        winnings = duel.target_stake - deposit_part + collected
+    else:
+        own = duel.target_stake - deposit_part
+        winnings = duel.challenger_stake
+    fee = min(calculate_commission_amount(winnings), winnings) if winnings > 0 else 0
+    return own, winnings, fee
+
+
 def resolve_duels_for_day(db_session, game_id: int, year: int, day: int, pay_year: int) -> List[CoinDuel]:
     """
     Разыграть все ожидающие дуэли дня. Без коммита — коммитит розыгрыш.
 
-    Победитель получает банк дуэли за вычетом комиссии, комиссия уходит в банк чата.
+    Победитель забирает свою ставку и выигрыш за вычетом комиссии с выигрыша, комиссия уходит в банк чата.
     Блокирует строку Game, как create_duel и call_police, чтобы менты или новая
     дуэль не пересеклись с розыгрышем (двойная выплата).
     """
@@ -342,9 +361,8 @@ def resolve_duels_for_day(db_session, game_id: int, year: int, day: int, pay_yea
             deposit = db_session.get(CoinDeposit, duel.target_deposit_id)
             if deposit is not None and deposit.status == DEPOSIT_STATUS_OPEN:
                 collected = collect_deposit_part(db_session, deposit, deposit_part, pay_year, now)
-        pot = duel.challenger_stake + duel.target_stake - deposit_part + collected
-        fee = calculate_commission_amount(pot)
-        payout = pot - fee
+        own, winnings, fee = calc_duel_settlement(duel, winner_id, collected)
+        payout = own + winnings - fee
         if payout > 0:
             add_coins(db_session, game_id, winner_id, payout, pay_year, "duel_win", auto_commit=False)
 
@@ -358,8 +376,8 @@ def resolve_duels_for_day(db_session, game_id: int, year: int, day: int, pay_yea
         db_session.add(duel)
         bank.balance += fee
         logger.info(
-            "Duel %s resolved: rolls %s:%s ties=%s winner=%s pot=%s fee=%s",
-            duel.id, challenger_roll, target_roll, ties, winner_id, pot, fee,
+            "Duel %s resolved: rolls %s:%s ties=%s winner=%s winnings=%s fee=%s",
+            duel.id, challenger_roll, target_roll, ties, winner_id, winnings, fee,
         )
 
     bank.updated_at = now
@@ -389,7 +407,8 @@ def format_duel_result_html(duel: CoinDuel, challenger: TGUser, target: TGUser) 
         loser=loser_name,
         loser_roll=loser_roll,
         # Если цель выиграла, арестованная часть в банк дуэли не входила
-        pot=duel.challenger_stake + duel.target_stake - (deposit_part if target_won else 0),
+        # Сумма на руки победителю (с допущением collected == deposit_part)
+        pot=duel.challenger_stake + duel.target_stake - (deposit_part if target_won else 0) - duel.commission,
         fee=duel.commission,
     )
     if duel.tie_count:
