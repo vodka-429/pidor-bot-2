@@ -159,7 +159,8 @@ COIN_SWAP_MESSAGE = (
 COINS_PERSONAL = """{username}, у тебя *{amount}* пидор\\-койн\\(ов\\)\\!"""
 COINS_CURRENT_YEAR = """Топ\\-50 по *пидор\\-койнам* за текущий год\\:\n\n{player_stats}\nВсего участников — {player_count}"""
 COINS_ALL_TIME = """Топ\\-50 по *пидор\\-койнам* за все время\\:\n\n{player_stats}\nВсего участников — {player_count}"""
-COINS_LIST_ITEM = """*{number}\\.* {username} — {amount} койн\\(ов\\)\n"""
+COINS_LIST_ITEM = """*{number}\\.* {username} — {amount} койн\\(ов\\){deposit}\n"""
+COINS_LIST_DEPOSIT = " \\(💼 {amount}\\)"
 COIN_EARNED = """🎉 Поздравляем\\! Вы получили *{amount}* пидор\\-койн\\(ов\\) за победу в розыгрыше\\!"""
 
 # Сообщения для достижений

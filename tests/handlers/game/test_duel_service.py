@@ -22,6 +22,7 @@ from bot.handlers.game.duel_service import (
     calc_leverage,
     calc_target_stake,
     call_police,
+    calc_duel_settlement,
     create_duel,
     format_duel_result_html,
     format_duels_block,
@@ -321,7 +322,7 @@ def test_create_duel_same_day_mode_binds_to_today(duel_session):
 def test_resolve_pays_winner_pot_minus_fee(duel_session, duel_env):
     session, game, players = duel_session
     challenger, target = players[0], players[1]
-    _, _, duel = create_duel(session, game.id, challenger.id, target.id, 5, TODAY)   # pot 18, fee 1
+    _, _, duel = create_duel(session, game.id, challenger.id, target.id, 5, TODAY)   # выигрыш 13, fee 1
 
     with patch("bot.handlers.game.duel_service.secrets.randbelow", side_effect=[5, 0]):
         results = resolve_duels_for_day(session, game.id, YEAR, TOMORROW_DAY, YEAR)
@@ -347,7 +348,7 @@ def test_format_duel_result_challenger_wins(duel_session, duel_env):
     duel = results[0]
     assert duel.winner_id == players[0].id
     text = format_duel_result_html(duel, players[0], players[1])
-    assert text == "player0 🎲6 дал пизды player1 🎲1 и уходит с 18 💰 (−1 в банк)"
+    assert text == "player0 🎲6 дал пизды player1 🎲1 и уходит с 17 💰 (−1 в банк)"
 
 
 @pytest.mark.unit
@@ -374,7 +375,7 @@ def test_resolve_rerolls_on_tie(duel_session, duel_env):
     assert duel.winner_id == players[1].id
     text = format_duel_result_html(duel, players[0], players[1])
     assert text.startswith("🎲 Ничья, перебрасывают…\n")
-    assert "player1 🎲5 дал пизды player0 🎲1 и уходит с 18 💰 (−1 в банк)" in text
+    assert "player1 🎲5 дал пизды player0 🎲1 и уходит с 17 💰 (−1 в банк)" in text
     assert "Раз на раз за гаражами" not in text
 
     block = format_duels_block(session, results)
@@ -392,6 +393,95 @@ def test_resolve_ignores_other_days_and_resolved(duel_session, duel_env):
         assert len(resolve_duels_for_day(session, game.id, YEAR, TOMORROW_DAY, YEAR)) == 1
     session.commit()
     assert resolve_duels_for_day(session, game.id, YEAR, TOMORROW_DAY, YEAR) == []
+
+
+def _duel(challenger_stake, target_stake, deposit_part=0):
+    return CoinDuel(
+        game_id=1, challenger_id=1, target_id=2, created_year=YEAR, created_day=1,
+        year=YEAR, day=2, challenger_stake=challenger_stake, target_stake=target_stake,
+        target_deposit_part=deposit_part,
+    )
+
+
+@pytest.mark.unit
+def test_calc_duel_settlement_challenger_wins(duel_env):
+    # Выигрыш 60, комиссия 6, своя ставка 20 возвращается целиком
+    assert calc_duel_settlement(_duel(20, 60), 1, 0) == (20, 60, 6)
+
+
+@pytest.mark.unit
+def test_calc_duel_settlement_target_wins(duel_env):
+    # Выигрыш 20, комиссия 2, своя ставка цели 60 возвращается целиком
+    assert calc_duel_settlement(_duel(20, 60), 2, 0) == (60, 20, 2)
+
+
+@pytest.mark.unit
+def test_calc_duel_settlement_with_deposit_part(duel_env):
+    # Часть цели с вклада: проиграла - собрано 22, выиграла - арест снят и выигрыша с неё нет
+    assert calc_duel_settlement(_duel(20, 52, 22), 1, 22) == (20, 52, 5)
+    assert calc_duel_settlement(_duel(20, 52, 22), 1, 0) == (20, 30, 3)
+    assert calc_duel_settlement(_duel(20, 52, 22), 2, 0) == (30, 20, 2)
+
+
+@pytest.mark.unit
+def test_calc_duel_settlement_zero_winnings_has_no_fee(duel_env):
+    # Вся ставка цели - с вклада, который не удалось собрать: выигрыша нет, комиссия 0, без исключения
+    assert calc_duel_settlement(_duel(10, 20, 20), 1, 0) == (10, 0, 0)
+
+
+@pytest.mark.unit
+def test_calc_duel_settlement_fee_not_above_winnings():
+    with patch("bot.handlers.game.duel_service.calculate_commission_amount", return_value=5):
+        assert calc_duel_settlement(_duel(2, 2), 1, 0) == (2, 2, 2)
+
+
+def _resolve_custom(session, game, players, challenger_stake, target_stake, rolls):
+    for player, amount in ((players[0], challenger_stake), (players[1], target_stake)):
+        session.add(PidorCoinTransaction(
+            game_id=game.id, user_id=player.id, amount=-amount, year=YEAR, reason="duel_stake",
+        ))
+    session.add(CoinDuel(
+        game_id=game.id, challenger_id=players[0].id, target_id=players[1].id,
+        created_year=YEAR, created_day=TODAY_DAY, year=YEAR, day=TOMORROW_DAY,
+        challenger_stake=challenger_stake, target_stake=target_stake,
+    ))
+    session.commit()
+    before = (get_balance(session, game.id, players[0].id), get_balance(session, game.id, players[1].id))
+    with patch("bot.handlers.game.duel_service.secrets.randbelow", side_effect=rolls):
+        results = resolve_duels_for_day(session, game.id, YEAR, TOMORROW_DAY, YEAR)
+    session.commit()
+    return results[0], before
+
+
+@pytest.mark.unit
+def test_resolve_20_vs_60_challenger_wins_pays_tax_on_winnings(duel_session, duel_env):
+    session, game, players = duel_session
+    duel, before = _resolve_custom(session, game, players, 20, 60, [5, 0])
+    assert (duel.winner_id, duel.commission) == (players[0].id, 6)
+    assert get_balance(session, game.id, players[0].id) == before[0] + 20 + 60 - 6
+    assert get_balance(session, game.id, players[1].id) == before[1]
+    assert _bank_balance(session, game.id) == 6
+    assert "уходит с 74 💰 (−6 в банк)" in format_duel_result_html(duel, players[0], players[1])
+
+
+@pytest.mark.unit
+def test_resolve_20_vs_60_target_wins_pays_tax_on_winnings(duel_session, duel_env):
+    session, game, players = duel_session
+    duel, before = _resolve_custom(session, game, players, 20, 60, [0, 5])
+    assert (duel.winner_id, duel.commission) == (players[1].id, 2)
+    assert get_balance(session, game.id, players[1].id) == before[1] + 60 + 20 - 2
+    assert get_balance(session, game.id, players[0].id) == before[0]
+    assert _bank_balance(session, game.id) == 2
+    assert "уходит с 78 💰 (−2 в банк)" in format_duel_result_html(duel, players[0], players[1])
+
+
+@pytest.mark.unit
+def test_resolve_min_stake_two_fee_not_above_winnings(duel_session, duel_env):
+    session, game, players = duel_session
+    duel, before = _resolve_custom(session, game, players, 2, 2, [5, 0])
+    # Мок-комиссия max(1, 2 // 10) = 1: выигрыш 2, на руки 2 + 2 - 1
+    assert duel.commission == 1
+    assert get_balance(session, game.id, players[0].id) == before[0] + 3
 
 
 # --- police ---

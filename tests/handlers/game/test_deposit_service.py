@@ -474,18 +474,18 @@ def test_arrest_then_target_loses_deposit_is_collected(deposit_session, env):
 
     assert results[0].winner_id == players[3].id
     assert deposit.status == "collected"
-    # Банк дуэли: 10 + 20 (недостача с вклада) = 30, комиссия 3
-    assert results[0].commission == 3
-    assert get_balance(session, game.id, players[3].id) == 40 + 27
+    # Выигрыш: 20 (недостача с вклада), комиссия с выигрыша 2, на руки 10 + 20 - 2
+    assert results[0].commission == 2
+    assert get_balance(session, game.id, players[3].id) == 40 + 28
     assert get_balance(session, game.id, players[2].id) == 80     # тело 100 - недостача 20
-    assert _bank(session, game) == BANK_START - 5 + 5 + 3          # проценты вернулись + комиссия
+    assert _bank(session, game) == BANK_START - 5 + 5 + 2          # проценты вернулись + комиссия
     assert _total_money(session, game) == before
     assert get_open_deposit(session, game.id, players[2].id) is None
     assert settle_matured_deposits(session, game.id, TOMORROW) == []
 
     text = format_duel_result_html(results[0], players[3], players[2])
     assert "вклад закрыт досрочно" in text and "20 🪙" in text
-    assert "уходит с 30 💰" in text
+    assert "уходит с 28 💰 (−2 в банк)" in text
 
 
 @pytest.mark.unit
@@ -501,13 +501,13 @@ def test_arrest_then_target_wins_deposit_intact(deposit_session, env):
 
     assert results[0].winner_id == players[2].id
     assert deposit.status == "open" and deposit.amount == 100
-    # В банк дуэли вошла только ставка вызывающего: 10, комиссия 1, выигрыш 9
+    # Цель выиграла: своей ставки с кошелька нет, выигрыш 10, комиссия 1, на руки 9
     assert results[0].commission == 1
     assert get_balance(session, game.id, players[2].id) == 9
     assert get_balance(session, game.id, players[3].id) == 40
     assert _total_money(session, game) == before
     assert deposit.id not in get_arrested_deposit_ids(session, game.id, TOMORROW)
-    assert "уходит с 10 💰" in format_duel_result_html(results[0], players[3], players[2])
+    assert "уходит с 9 💰 (−1 в банк)" in format_duel_result_html(results[0], players[3], players[2])
 
     # Арест снят: срок давно вышел, выплата проходит один раз
     assert len(settle_matured_deposits(session, game.id, TOMORROW)) == 1
@@ -588,10 +588,10 @@ def test_mixed_target_loses_collects_shortfall_only(deposit_session, env):
         results = resolve_duels_for_day(session, game.id, YEAR, TOMORROW_DAY, YEAR)
     session.commit()
 
-    # Банк дуэли: 20 + 30 (кошелёк) + 22 (вклад) = 72, комиссия 7
-    assert results[0].commission == 7
+    # Выигрыш: 30 (кошелёк) + 22 (вклад) = 52, комиссия с выигрыша 5, на руки 20 + 52 - 5
+    assert results[0].commission == 5
     assert deposit.status == "collected"
-    assert get_balance(session, game.id, players[3].id) == 30 + 65
+    assert get_balance(session, game.id, players[3].id) == 30 + 67
     assert get_balance(session, game.id, players[2].id) == 78      # 100 - 22 вернулось с вклада
     assert _total_money(session, game) == before
 
