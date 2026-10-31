@@ -31,13 +31,13 @@ gameConfig:
     coin_rain_enabled: true
     custom_phrase_enabled: true
     changelog_enabled: true
+    duel_enabled: true
   chat_overrides:
     "-1003932067905":
       random_start_enabled: true
       max_missed_days_for_final_voting: 100
       totalizator_enabled: true
       telegram_title_enabled: true
-      duel_enabled: true
       duel_same_day: true
       double_chance_price_step: 4
       deposit_enabled: true
@@ -45,7 +45,6 @@ gameConfig:
       random_start_enabled: true
       totalizator_enabled: true
       telegram_title_enabled: true
-      duel_enabled: true
       double_chance_price_step: 4
       deposit_enabled: true
     "-1002189152002":
