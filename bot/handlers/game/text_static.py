@@ -694,8 +694,9 @@ POLICE_ANNOUNCEMENT = (
 )
 
 DUEL_ERROR_TARGET_NOT_RICHER = "❌ Этот уже богаче не станет - выбирай того, у кого больше"
-DUEL_ERROR_TARGET_BUSY = "❌ У {target} на завтра уже есть разборка"
+DUEL_ERROR_TARGET_BUSY = "❌ У {target} на этот розыгрыш уже есть разборка"
 DUEL_ERROR_ALREADY_CHALLENGED = "❌ Ты сегодня уже звал кого-то"
+DUEL_ERROR_ALREADY_IN_DUEL = "❌ У тебя на этот розыгрыш уже есть разборка"
 DUEL_ERROR_POLICE_ON_DUTY = "❌ Менты уже дежурят у гаражей"
 POLICE_ERROR_COOLDOWN = "❌ Ты недавно звонил в полицию. Следующий звонок: {date}"
 

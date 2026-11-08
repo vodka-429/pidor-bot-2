@@ -19,10 +19,10 @@ from bot.handlers.game.duel_service import (
     get_duel_target_day,
     get_duel_targets,
     get_duel_wealths,
+    get_player_duel,
     get_police_call,
     get_stake_options,
     get_target_capacity,
-    get_target_duel,
 )
 from bot.handlers.game.membership_service import get_active_players
 from bot.handlers.game.shop_helpers import format_date_readable
@@ -31,6 +31,7 @@ from bot.handlers.game.text_static import (
     ACHIEVEMENTS_EARNED_HEADER,
     DUEL_ANNOUNCEMENT,
     DUEL_ERROR_ALREADY_CHALLENGED,
+    DUEL_ERROR_ALREADY_IN_DUEL,
     DUEL_ERROR_POLICE_ON_DUTY,
     DUEL_ERROR_TARGET_BUSY,
     DUEL_ERROR_TARGET_NOT_RICHER,
@@ -104,6 +105,7 @@ def _duel_error_text(reason: str, target: TGUser = None, min_stake: int = 2) -> 
         "feature_disabled": DUEL_ERROR_DISABLED,
         "police_on_duty": DUEL_ERROR_POLICE_ON_DUTY,
         "already_challenged": DUEL_ERROR_ALREADY_CHALLENGED,
+        "already_in_duel": DUEL_ERROR_ALREADY_IN_DUEL,
         "target_busy": DUEL_ERROR_TARGET_BUSY.format(target=target_name),
         "target_not_richer": DUEL_ERROR_TARGET_NOT_RICHER,
         "insufficient_funds": f"❌ Недостаточно койнов. Минимум {min_stake} 🪙.",
@@ -134,6 +136,9 @@ async def handle_shop_duel_callback(update: Update, context: ECallbackContext):
         return
     if get_challenger_duel_today(db, context.game.id, context.tg_user.id, today) is not None:
         await query.answer(DUEL_ERROR_ALREADY_CHALLENGED, show_alert=True)
+        return
+    if get_player_duel(db, context.game.id, context.tg_user.id, fight_year, fight_day) is not None:
+        await query.answer(DUEL_ERROR_ALREADY_IN_DUEL, show_alert=True)
         return
 
     targets = get_duel_targets(
@@ -182,7 +187,10 @@ async def handle_shop_duel_target_callback(update: Update, context: ECallbackCon
         await query.answer(DUEL_ERROR_GENERIC, show_alert=True)
         return
     fight_year, fight_day = get_duel_target_day(db, context.game.id, today, c.duel_same_day)
-    if get_target_duel(db, context.game.id, target_id, fight_year, fight_day) is not None:
+    if get_player_duel(db, context.game.id, context.tg_user.id, fight_year, fight_day) is not None:
+        await query.answer(DUEL_ERROR_ALREADY_IN_DUEL, show_alert=True)
+        return
+    if get_player_duel(db, context.game.id, target_id, fight_year, fight_day) is not None:
         await query.answer(_duel_error_text("target_busy", target), show_alert=True)
         return
 
