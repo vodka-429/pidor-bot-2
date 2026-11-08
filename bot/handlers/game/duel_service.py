@@ -132,11 +132,12 @@ def get_challenger_duel_today(db_session, game_id: int, challenger_id: int, curr
     ).first()
 
 
-def get_target_duel(db_session, game_id: int, target_id: int, year: int, day: int) -> Optional[CoinDuel]:
+def get_player_duel(db_session, game_id: int, user_id: int, year: int, day: int) -> Optional[CoinDuel]:
+    """Разборка игрока в любой роли в конкретном чате и на конкретный розыгрыш."""
     return db_session.exec(
         select(CoinDuel).where(
             CoinDuel.game_id == game_id,
-            CoinDuel.target_id == target_id,
+            (CoinDuel.challenger_id == user_id) | (CoinDuel.target_id == user_id),
             CoinDuel.year == year,
             CoinDuel.day == day,
         )
@@ -231,7 +232,7 @@ def create_duel(
 
     Returns:
         (success, reason, duel). Коды ошибок: feature_disabled, not_registered,
-        police_on_duty, already_challenged, target_busy, target_not_richer,
+        police_on_duty, already_challenged, already_in_duel, target_busy, target_not_richer,
         invalid_stake, insufficient_funds.
     """
     config = get_config_by_game_id(db_session, game_id)
@@ -252,7 +253,9 @@ def create_duel(
         return False, "police_on_duty", None
     if get_challenger_duel_today(db_session, game_id, challenger_id, current_date) is not None:
         return False, "already_challenged", None
-    if get_target_duel(db_session, game_id, target_id, fight_year, fight_day) is not None:
+    if get_player_duel(db_session, game_id, challenger_id, fight_year, fight_day) is not None:
+        return False, "already_in_duel", None
+    if get_player_duel(db_session, game_id, target_id, fight_year, fight_day) is not None:
         return False, "target_busy", None
 
     created_year = current_date.year

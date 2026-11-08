@@ -1,5 +1,5 @@
 """Tests for «Раз на раз» (coin duel) and police services."""
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -29,6 +29,7 @@ from bot.handlers.game.duel_service import (
     format_leverage,
     get_duel_target_day,
     get_duel_targets,
+    get_player_duel,
     get_stake_options,
     resolve_duels_for_day,
 )
@@ -270,6 +271,60 @@ def test_create_duel_target_busy(duel_session, duel_env):
     session, game, players = duel_session
     assert create_duel(session, game.id, players[0].id, players[3].id, 2, TODAY)[0] is True
     assert create_duel(session, game.id, players[4].id, players[3].id, 2, TODAY)[1] == "target_busy"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "first_pair,second_pair,expected_reason",
+    [
+        ((0, 1), (1, 3), "already_in_duel"),
+        ((1, 3), (0, 1), "target_busy"),
+    ],
+)
+def test_create_duel_rejects_second_fight_in_other_role(
+    duel_session, duel_env, first_pair, second_pair, expected_reason
+):
+    session, game, players = duel_session
+    first_challenger, first_target = [players[index] for index in first_pair]
+    assert create_duel(
+        session, game.id, first_challenger.id, first_target.id, 2, TODAY
+    )[0] is True
+    balances_before = [get_balance(session, game.id, player.id) for player in players]
+    challenger, target = [players[index] for index in second_pair]
+
+    success, reason, duel = create_duel(
+        session, game.id, challenger.id, target.id, 2, TODAY
+    )
+
+    assert (success, reason, duel) == (False, expected_reason, None)
+    assert len(session.exec(select(CoinDuel)).all()) == 1
+    assert [get_balance(session, game.id, player.id) for player in players] == balances_before
+
+
+@pytest.mark.unit
+def test_player_can_fight_in_other_role_on_next_draw_day(duel_session, duel_env):
+    session, game, players = duel_session
+    assert create_duel(session, game.id, players[0].id, players[1].id, 2, TODAY)[0] is True
+
+    success, reason, duel = create_duel(
+        session, game.id, players[1].id, players[3].id, 2, TODAY + timedelta(days=1)
+    )
+
+    assert (success, reason) == (True, "success")
+    assert duel.day == TOMORROW_DAY + 1
+
+
+@pytest.mark.unit
+def test_player_duel_lookup_checks_both_roles_and_scopes_to_chat_and_draw(duel_session, duel_env):
+    session, game, players = duel_session
+    _, _, duel = create_duel(session, game.id, players[0].id, players[1].id, 2, TODAY)
+
+    for player in players[:2]:
+        assert get_player_duel(session, game.id, player.id, YEAR, TOMORROW_DAY) == duel
+        assert get_player_duel(session, game.id + 1, player.id, YEAR, TOMORROW_DAY) is None
+        assert get_player_duel(session, game.id, player.id, YEAR + 1, TOMORROW_DAY) is None
+        assert get_player_duel(session, game.id, player.id, YEAR, TOMORROW_DAY + 1) is None
+    assert get_player_duel(session, game.id, players[2].id, YEAR, TOMORROW_DAY) is None
 
 
 @pytest.mark.unit

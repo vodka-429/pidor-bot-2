@@ -1,6 +1,7 @@
 """Tests for «Раз на раз» and police Telegram handlers."""
 import re
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,11 +12,17 @@ from bot.handlers.game.duel_handlers import (
     duel_target_callback,
     handle_shop_duel_callback,
     handle_shop_duel_stake_callback,
+    handle_shop_duel_target_callback,
     handle_shop_police_confirm_callback,
     police_callback,
     police_confirm_callback,
 )
-from bot.handlers.game.text_static import SHOP_ERROR_NOT_YOUR_SHOP
+from bot.handlers.game.config import ChatConfig, GameConstants
+from bot.handlers.game.text_static import (
+    DUEL_ERROR_ALREADY_IN_DUEL,
+    DUEL_ERROR_TARGET_BUSY,
+    SHOP_ERROR_NOT_YOUR_SHOP,
+)
 
 BIG_TG_ID = 9_999_999_999_999
 BIG_DB_ID = 2_147_483_647
@@ -49,6 +56,80 @@ def _game_query(mock_context, game):
     query.filter_by.return_value = query
     query.one_or_none.return_value = game
     mock_context.db_session.query.return_value = query
+
+
+def _duel_query(mock_update, data):
+    query = MagicMock()
+    query.data = data
+    query.from_user.id = 100
+    query.answer = AsyncMock()
+    query.edit_message_text = AsyncMock()
+    mock_update.callback_query = query
+    return query
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize("handler,data", [
+    (handle_shop_duel_callback, "shop_duel_100"),
+    (handle_shop_duel_target_callback, "shop_duel_t_5_100"),
+])
+async def test_busy_challenger_cannot_open_or_continue_duel_menu(
+    handler, data, mock_update, mock_context, mock_game
+):
+    _game_query(mock_context, mock_game)
+    query = _duel_query(mock_update, data)
+    config = ChatConfig(chat_id=-1001, constants=GameConstants(duel_enabled=True))
+    with patch("bot.handlers.game.duel_handlers.get_config", return_value=config), patch(
+        "bot.handlers.game.duel_handlers.get_police_call", return_value=None
+    ), patch(
+        "bot.handlers.game.duel_handlers.get_challenger_duel_today", return_value=None
+    ), patch(
+        "bot.handlers.game.duel_handlers.get_player_duel", return_value=object()
+    ):
+        await handler(mock_update, mock_context)
+
+    query.answer.assert_awaited_once_with(DUEL_ERROR_ALREADY_IN_DUEL, show_alert=True)
+    query.edit_message_text.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_busy_target_cannot_be_selected_from_old_menu(mock_update, mock_context, mock_game):
+    _game_query(mock_context, mock_game)
+    query = _duel_query(mock_update, "shop_duel_t_5_100")
+    mock_context.db_session.get.return_value = SimpleNamespace(full_username=lambda: "@target")
+    config = ChatConfig(chat_id=-1001, constants=GameConstants(duel_enabled=True))
+    with patch("bot.handlers.game.duel_handlers.get_config", return_value=config), patch(
+        "bot.handlers.game.duel_handlers.get_player_duel", side_effect=[None, object()]
+    ):
+        await handle_shop_duel_target_callback(mock_update, mock_context)
+
+    query.answer.assert_awaited_once_with(
+        DUEL_ERROR_TARGET_BUSY.format(target="@target"), show_alert=True
+    )
+    query.edit_message_text.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason,expected_text", [
+    ("already_in_duel", DUEL_ERROR_ALREADY_IN_DUEL),
+    ("target_busy", DUEL_ERROR_TARGET_BUSY.format(target="@target")),
+])
+async def test_old_stake_button_reports_busy_player_without_announcing_duel(
+    reason, expected_text, mock_update, mock_context, mock_game
+):
+    _game_query(mock_context, mock_game)
+    query = _duel_query(mock_update, "shop_duel_x_5_10_100")
+    mock_context.db_session.get.return_value = SimpleNamespace(full_username=lambda: "@target")
+    with patch(
+        "bot.handlers.game.duel_handlers.create_duel", return_value=(False, reason, None)
+    ):
+        await handle_shop_duel_stake_callback(mock_update, mock_context)
+
+    query.answer.assert_awaited_once_with(expected_text, show_alert=True)
+    query.edit_message_text.assert_not_awaited()
 
 
 @pytest.mark.asyncio
