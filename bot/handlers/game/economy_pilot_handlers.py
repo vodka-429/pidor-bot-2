@@ -3,7 +3,7 @@ import json
 import logging
 from html import escape as html_escape
 
-from telegram import ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatMemberStatus
 from telegram.error import TelegramError
 
@@ -35,6 +35,9 @@ from bot.utils import ECallbackContext, format_number
 
 logger = logging.getLogger(__name__)
 
+SHOP_INPUT_TTL_SECONDS = 5 * 60
+SHOP_INPUT_KINDS = ("victory_phrase_input", "telegram_title_input")
+
 
 def _owner_id(callback_data: str) -> int:
     return int(callback_data.rsplit("_", 1)[1])
@@ -59,6 +62,11 @@ def _get_draft(context, chat_id: int, for_update: bool = False):
 
 
 def _save_draft(context, chat_id: int, payload: dict) -> None:
+    payload = dict(payload)
+    if payload.get("kind") in SHOP_INPUT_KINDS:
+        payload["expires_at"] = current_datetime().timestamp() + SHOP_INPUT_TTL_SECONDS
+    else:
+        payload.pop("expires_at", None)
     logger.info(
         "SHOP_DRAFT_SAVE_START chat_id=%s user_id=%s kind=%s prompt_message_id=%s",
         chat_id,
@@ -111,9 +119,9 @@ async def _send_shop_input_prompt(
     chat_id: int,
     user,
     text: str,
-    placeholder: str,
+    kind: str,
 ) -> int:
-    """Send a selective ForceReply prompt and return its message id."""
+    """Ask for an explicit reply without changing anyone's chat composer."""
     logger.info(
         "SHOP_INPUT_PROMPT_SEND_START chat_id=%s user_id=%s",
         chat_id,
@@ -121,12 +129,18 @@ async def _send_shop_input_prompt(
     )
     prompt = await context.bot.send_message(
         chat_id=chat_id,
-        text=f"{user.mention_html()}, {text}",
-        parse_mode="HTML",
-        reply_markup=ForceReply(
-            selective=True,
-            input_field_placeholder=placeholder,
+        text=(
+            f"{user.mention_html()}, {text}\n\n"
+            "↩️ Ответьте именно на это сообщение.\n"
+            "Режим ввода закроется через 5 минут."
         ),
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                "❌ Отмена",
+                callback_data=f"shop_{kind}_clear_draft_{user.id}",
+            ),
+        ]]),
     )
     logger.info(
         "SHOP_INPUT_PROMPT_SEND_DONE chat_id=%s user_id=%s prompt_message_id=%s",
@@ -138,12 +152,22 @@ async def _send_shop_input_prompt(
 
 
 def _is_expected_shop_reply(message, payload: dict) -> bool:
-    """Require a reply to the exact ForceReply prompt stored in the draft."""
+    """Require a reply to the exact prompt stored in this user's draft."""
     expected_prompt_id = payload.get("prompt_message_id")
     if expected_prompt_id is None:
         return False
     reply = message.reply_to_message
     return reply is not None and reply.message_id == expected_prompt_id
+
+
+def _is_shop_input_expired(payload: dict) -> bool:
+    """Legacy prompts without a deadline are also no longer accepted."""
+    expires_at = payload.get("expires_at")
+    return (
+        not isinstance(expires_at, (int, float))
+        or isinstance(expires_at, bool)
+        or not expires_at > current_datetime().timestamp()
+    )
 
 
 def _back_button(owner_id: int) -> InlineKeyboardButton:
@@ -288,7 +312,7 @@ async def handle_shop_phrase_position_callback(update: Update, context: ECallbac
             f"Одна строка, не больше {CUSTOM_PHRASE_MAX_LENGTH} символов. "
             "Перед списанием койнов бот покажет предпросмотр."
         ),
-        "Введите победную фразу",
+        "phrase",
     )
     _save_draft(context, update.effective_chat.id, {
         "kind": "victory_phrase_input",
@@ -304,7 +328,7 @@ async def _repeat_phrase_prompt(update: Update, context: ECallbackContext, paylo
         update.effective_chat.id,
         update.effective_user,
         f"{error} Попробуйте ещё раз.",
-        "Введите победную фразу",
+        "phrase",
     )
     payload["prompt_message_id"] = prompt_message_id
     _save_draft(context, update.effective_chat.id, payload)
@@ -409,7 +433,7 @@ async def handle_shop_title_input_callback(update: Update, context: ECallbackCon
             f"Не больше {TELEGRAM_TITLE_MAX_LENGTH} символов, без emoji и переносов строки. "
             "Перед списанием койнов бот покажет предпросмотр."
         ),
-        "Введите новый титул",
+        "title",
     )
     _save_draft(context, update.effective_chat.id, {
         "kind": "telegram_title_input",
@@ -424,7 +448,7 @@ async def _repeat_title_prompt(update: Update, context: ECallbackContext, payloa
         update.effective_chat.id,
         update.effective_user,
         f"{error} Попробуйте ещё раз.",
-        "Введите новый титул",
+        "title",
     )
     payload["prompt_message_id"] = prompt_message_id
     _save_draft(context, update.effective_chat.id, payload)
@@ -697,6 +721,13 @@ async def handle_shop_text_input(update: Update, context: ECallbackContext):
         return
 
     kind = payload.get("kind")
+    if kind in SHOP_INPUT_KINDS and _is_shop_input_expired(payload):
+        _delete_draft(context, update.effective_chat.id)
+        if _is_expected_shop_reply(update.message, payload):
+            await update.message.reply_text(
+                "⌛ Время ввода истекло. Откройте /pidorshop и начните заново."
+            )
+        return
     logger.info(
         "SHOP_TEXT_INPUT_DRAFT_LOADED chat_id=%s user_id=%s kind=%s "
         "expected_prompt_message_id=%s",
@@ -734,6 +765,7 @@ async def handle_shop_text_input(update: Update, context: ECallbackContext):
             return
         payload.update(kind="victory_phrase_confirm", phrase=phrase)
         payload.pop("prompt_message_id", None)
+        payload.pop("expires_at", None)
         _save_draft(context, update.effective_chat.id, payload)
         preview = render_custom_victory_phrase(context.tg_user, phrase, payload["position"])
         keyboard = InlineKeyboardMarkup([[
@@ -790,6 +822,26 @@ async def handle_shop_draft_cancel_callback(update: Update, context: ECallbackCo
     query = update.callback_query
     owner_id = _owner_id(query.data)
     if await _reject_foreign_shop(query, owner_id):
+        return
+    draft = _get_draft(context, update.effective_chat.id)
+    if draft is None:
+        await query.answer("❌ Запрос уже закрыт", show_alert=True)
+        return
+    try:
+        payload = json.loads(draft.value)
+    except (TypeError, json.JSONDecodeError):
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    expected_prefix = "victory_phrase_" if query.data.startswith("shop_phrase_") else "telegram_title_"
+    kind = payload.get("kind")
+    if not isinstance(kind, str) or not kind.startswith(expected_prefix):
+        await query.answer("❌ Запрос устарел", show_alert=True)
+        return
+    if kind in SHOP_INPUT_KINDS and (
+        query.message is None or query.message.message_id != payload.get("prompt_message_id")
+    ):
+        await query.answer("❌ Запрос устарел", show_alert=True)
         return
     _delete_draft(context, update.effective_chat.id)
     await query.edit_message_text("❌ Покупка отменена. Койны не списывались.")
