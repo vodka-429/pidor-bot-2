@@ -673,7 +673,6 @@ DUEL_SHOP_DESCRIPTION = (
     "смотря насколько он жирнее. Разборка завтра на розыгрыше, кости кидает бот."
 )
 DUEL_SELECT_TARGET = "С кем раз на раз? (только с теми, кто богаче тебя)"
-DUEL_BUSY_TARGET_HINT = "🔒 — уже участвует в разборке на этот розыгрыш."
 DUEL_SELECT_STAKE = "Сколько ставишь? {target} ответит ×{k}"
 DUEL_ANNOUNCEMENT = (
     "🥊 <b>{challenger} вызывает {target} раз на раз!</b>\n"

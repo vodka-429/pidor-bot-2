@@ -31,7 +31,6 @@ from bot.handlers.game.text_static import (
     ACHIEVEMENT_EARNED_NO_REWARD_TEMPLATE,
     ACHIEVEMENTS_EARNED_HEADER,
     DUEL_ANNOUNCEMENT,
-    DUEL_BUSY_TARGET_HINT,
     DUEL_ERROR_ALREADY_CHALLENGED,
     DUEL_ERROR_ALREADY_IN_DUEL,
     DUEL_ERROR_POLICE_ON_DUTY,
@@ -152,9 +151,6 @@ async def handle_shop_duel_callback(update: Update, context: ECallbackContext):
         return
 
     busy_player_ids = get_duel_player_ids(db, context.game.id, fight_year, fight_day)
-    text = DUEL_SELECT_TARGET
-    if any(player.id in busy_player_ids for player, _ in targets):
-        text += f"\n\n{DUEL_BUSY_TARGET_HINT}"
     buttons = [
         InlineKeyboardButton(
             f"{'🔒 ' if player.id in busy_player_ids else ''}{_player_label(player)} · {balance} 🪙",
@@ -165,7 +161,7 @@ async def handle_shop_duel_callback(update: Update, context: ECallbackContext):
     rows = [buttons[index:index + 2] for index in range(0, len(buttons), 2)]
     rows.append([_back_button(owner_id)])
     await query.edit_message_text(
-        html_escape(text),
+        html_escape(DUEL_SELECT_TARGET),
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(rows),
     )

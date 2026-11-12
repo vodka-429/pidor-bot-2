@@ -19,7 +19,6 @@ from bot.handlers.game.duel_handlers import (
 )
 from bot.handlers.game.config import ChatConfig, GameConstants
 from bot.handlers.game.text_static import (
-    DUEL_BUSY_TARGET_HINT,
     DUEL_ERROR_ALREADY_IN_DUEL,
     DUEL_ERROR_TARGET_BUSY,
     DUEL_SELECT_TARGET,
@@ -114,7 +113,7 @@ async def test_target_menu_marks_players_busy_for_selected_draw(
     )
     query.edit_message_text.assert_awaited_once()
     text = query.edit_message_text.await_args.args[0]
-    assert text == DUEL_SELECT_TARGET + (f"\n\n{DUEL_BUSY_TARGET_HINT}" if busy_ids else "")
+    assert text == DUEL_SELECT_TARGET
     rows = query.edit_message_text.await_args.kwargs["reply_markup"].inline_keyboard
     assert len(rows) == 2
     for button, (player, balance) in zip(rows[0], targets):
