@@ -27,6 +27,7 @@ from bot.handlers.game.duel_service import (
     format_duel_result_html,
     format_duels_block,
     format_leverage,
+    get_duel_player_ids,
     get_duel_target_day,
     get_duel_targets,
     get_player_duel,
@@ -161,6 +162,34 @@ def test_target_day_new_year(duel_session):
 
 
 # --- targets ---
+
+@pytest.mark.unit
+@pytest.mark.parametrize("status", ["pending", "resolved", "cancelled"])
+def test_duel_player_ids_include_both_roles_only_for_selected_chat_and_draw(duel_session, status):
+    session, game, players = duel_session
+    other_game = Game(chat_id=-1002)
+    session.add(other_game)
+    session.commit()
+    assert get_duel_player_ids(session, game.id, YEAR, TOMORROW_DAY) == set()
+
+    def add_duel(game_id, challenger, target, year=YEAR, day=TOMORROW_DAY, created_day=TODAY_DAY):
+        session.add(CoinDuel(
+            game_id=game_id, challenger_id=challenger.id, target_id=target.id,
+            created_year=year, created_day=created_day, year=year, day=day,
+            challenger_stake=2, target_stake=4, status=status,
+        ))
+
+    add_duel(game.id, players[0], players[1])
+    add_duel(game.id, players[2], players[3])
+    add_duel(game.id, players[4], players[0], day=TODAY_DAY, created_day=TODAY_DAY - 1)
+    add_duel(game.id, players[4], players[0], year=YEAR - 1)
+    add_duel(other_game.id, players[4], players[0])
+    session.commit()
+
+    assert get_duel_player_ids(session, game.id, YEAR, TOMORROW_DAY) == {
+        player.id for player in players[:4]
+    }
+
 
 @pytest.mark.unit
 def test_duel_targets_only_strictly_richer(duel_session):

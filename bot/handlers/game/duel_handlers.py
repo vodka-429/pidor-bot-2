@@ -16,6 +16,7 @@ from bot.handlers.game.duel_service import (
     create_duel,
     format_leverage,
     get_challenger_duel_today,
+    get_duel_player_ids,
     get_duel_target_day,
     get_duel_targets,
     get_duel_wealths,
@@ -149,9 +150,10 @@ async def handle_shop_duel_callback(update: Update, context: ECallbackContext):
         await query.answer(DUEL_ERROR_NO_TARGETS, show_alert=True)
         return
 
+    busy_player_ids = get_duel_player_ids(db, context.game.id, fight_year, fight_day)
     buttons = [
         InlineKeyboardButton(
-            f"{_player_label(player)} · {balance} 🪙",
+            f"{'🔒 ' if player.id in busy_player_ids else ''}{_player_label(player)} · {balance} 🪙",
             callback_data=duel_target_callback(player.id, owner_id),
         )
         for player, balance in targets
