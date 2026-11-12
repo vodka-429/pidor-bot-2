@@ -19,8 +19,10 @@ from bot.handlers.game.duel_handlers import (
 )
 from bot.handlers.game.config import ChatConfig, GameConstants
 from bot.handlers.game.text_static import (
+    DUEL_BUSY_TARGET_HINT,
     DUEL_ERROR_ALREADY_IN_DUEL,
     DUEL_ERROR_TARGET_BUSY,
+    DUEL_SELECT_TARGET,
     SHOP_ERROR_NOT_YOUR_SHOP,
 )
 
@@ -66,6 +68,62 @@ def _duel_query(mock_update, data):
     query.edit_message_text = AsyncMock()
     mock_update.callback_query = query
     return query
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize("busy_ids", [set(), {2}, {2, 3}])
+@pytest.mark.parametrize("same_day,fight_year,fight_day", [
+    (False, 2027, 1),
+    (True, 2026, 365),
+])
+async def test_target_menu_marks_players_busy_for_selected_draw(
+    busy_ids, same_day, fight_year, fight_day, mock_update, mock_context, mock_game
+):
+    _game_query(mock_context, mock_game)
+    query = _duel_query(mock_update, "shop_duel_100")
+    targets = [
+        (SimpleNamespace(id=2, first_name="Alice", last_name="Target"), 100),
+        (SimpleNamespace(id=3, first_name="Bob", last_name=None), 50),
+    ]
+    config = ChatConfig(
+        chat_id=-1001, constants=GameConstants(duel_enabled=True, duel_same_day=same_day)
+    )
+    with patch("bot.handlers.game.duel_handlers.get_config", return_value=config), patch(
+        "bot.handlers.game.duel_handlers.current_datetime", return_value=datetime(2026, 12, 31, 12)
+    ), patch(
+        "bot.handlers.game.duel_handlers.get_duel_target_day", return_value=(fight_year, fight_day)
+    ) as get_target_day, patch(
+        "bot.handlers.game.duel_handlers.get_police_call", return_value=None
+    ), patch(
+        "bot.handlers.game.duel_handlers.get_challenger_duel_today", return_value=None
+    ), patch(
+        "bot.handlers.game.duel_handlers.get_player_duel", return_value=None
+    ), patch(
+        "bot.handlers.game.duel_handlers.get_duel_targets", return_value=targets
+    ), patch(
+        "bot.handlers.game.duel_handlers.get_duel_player_ids", return_value=busy_ids
+    ) as get_busy_players:
+        await handle_shop_duel_callback(mock_update, mock_context)
+
+    get_target_day.assert_called_once_with(
+        mock_context.db_session, mock_game.id, datetime(2026, 12, 31, 12).date(), same_day
+    )
+    get_busy_players.assert_called_once_with(
+        mock_context.db_session, mock_game.id, fight_year, fight_day
+    )
+    query.edit_message_text.assert_awaited_once()
+    text = query.edit_message_text.await_args.args[0]
+    assert text == DUEL_SELECT_TARGET + (f"\n\n{DUEL_BUSY_TARGET_HINT}" if busy_ids else "")
+    rows = query.edit_message_text.await_args.kwargs["reply_markup"].inline_keyboard
+    assert len(rows) == 2
+    for button, (player, balance) in zip(rows[0], targets):
+        name = player.first_name + (f" {player.last_name}" if player.last_name else "")
+        prefix = "🔒 " if player.id in busy_ids else ""
+        assert button.text == f"{prefix}{name} · {balance} 🪙"
+        assert button.callback_data == duel_target_callback(player.id, 100)
+    assert rows[1][0].callback_data == "shop_back_100"
+    query.answer.assert_awaited_once_with()
 
 
 @pytest.mark.unit

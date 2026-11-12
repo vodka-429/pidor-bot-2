@@ -144,6 +144,18 @@ def get_player_duel(db_session, game_id: int, user_id: int, year: int, day: int)
     ).first()
 
 
+def get_duel_player_ids(db_session, game_id: int, year: int, day: int) -> set[int]:
+    """Занятые игроки в обеих ролях на розыгрыш, независимо от статуса дуэли."""
+    participants = db_session.exec(
+        select(CoinDuel.challenger_id, CoinDuel.target_id).where(
+            CoinDuel.game_id == game_id,
+            CoinDuel.year == year,
+            CoinDuel.day == day,
+        )
+    ).all()
+    return {player_id for pair in participants for player_id in pair}
+
+
 def get_pending_duels(db_session, game_id: int, year: int, day: int) -> List[CoinDuel]:
     return list(db_session.exec(
         select(CoinDuel).where(
