@@ -70,6 +70,9 @@ class GameConstants:
 
         Прочее:
             birthday_bonus_multiplier: Множитель шанса стать пидором в свой ДР (по умолчанию: 4)
+            bot_username_aliases: Дополнительные имена этого бота для команд в чате.
+                Основное имя и имена, полученные через getChat, принимаются автоматически.
+                Пустой список по умолчанию; можно задать в defaults или chat_overrides.
     """
     # Цены
     immunity_price: int = 10
@@ -131,6 +134,9 @@ class GameConstants:
 
     # Множитель попадания в пул для именинника
     birthday_bonus_multiplier: int = 4
+
+    # Ручное дополнение к автоматически полученным активным именам бота.
+    bot_username_aliases: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -369,6 +375,7 @@ def get_config(chat_id: int) -> ChatConfig:
         'coin_swap_enabled': global_config.defaults.coin_swap_enabled,
         'birthday_enabled': global_config.defaults.birthday_enabled,
         'birthday_bonus_multiplier': global_config.defaults.birthday_bonus_multiplier,
+        'bot_username_aliases': global_config.defaults.bot_username_aliases,
         'coin_rain_enabled': global_config.defaults.coin_rain_enabled,
         'custom_phrase_enabled': global_config.defaults.custom_phrase_enabled,
         'telegram_title_enabled': global_config.defaults.telegram_title_enabled,
@@ -390,6 +397,9 @@ def get_config(chat_id: int) -> ChatConfig:
         for key, value in overrides.items():
             if key in constants_dict:
                 constants_dict[key] = value
+
+    # Список в конфигурации чата не должен изменять глобальные defaults или overrides.
+    constants_dict['bot_username_aliases'] = list(constants_dict['bot_username_aliases'])
 
     # Создаём объект GameConstants с применёнными переопределениями
     constants = GameConstants(**constants_dict)

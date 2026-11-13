@@ -1,22 +1,37 @@
 from unittest.mock import AsyncMock
 
 import pytest
-from telegram import Chat, Message, MessageEntity, Update, User
+from telegram import AcceptedGiftTypes, Chat, ChatFullInfo, Message, MessageEntity, Update, User
+from telegram.error import BadRequest, NetworkError
 from telegram.ext import Application, CallbackContext, CommandHandler, filters
 
-from bot.command_handler import AliasCommandHandler
+from bot.command_handler import AliasCommandHandler, load_bot_username_aliases
 from bot.dispatcher import init_dispatcher
 from bot.handlers.game.commands import current_datetime
+from bot.handlers.game.config import ChatConfig, GameConstants
+
+
+def bot_chat_info(*, bot_id=123, active_usernames=()):
+    return ChatFullInfo(
+        id=bot_id, type=Chat.PRIVATE, accent_color_id=0, max_reaction_count=0,
+        accepted_gift_types=AcceptedGiftTypes(False, False, False, False, False),
+        active_usernames=active_usernames,
+    )
 
 
 @pytest.fixture
-def application(mocker):
+async def application(mocker):
     mocker.patch('bot.dispatcher.get_enabled_chats', return_value=[-123])
+    mocker.patch('bot.command_handler.get_config', return_value=ChatConfig(chat_id=-123))
     app = Application.builder().token('123:test').build()
     app.bot._bot_user = User(
         id=123, first_name='PidorVodkaBot', is_bot=True, username='PidorVodkaBot',
     )
     init_dispatcher(app, None)
+    mocker.patch.object(type(app.bot), 'get_chat', new_callable=AsyncMock, return_value=bot_chat_info(
+        active_usernames=['PidorVodkaBot', 'PidorVodkaGay'],
+    ))
+    await load_bot_username_aliases(app)
     return app
 
 
@@ -115,6 +130,7 @@ def test_alias_accepts_mixed_case_command(application):
 ])
 def test_alias_preserves_argument_constraints(application, has_args, arguments, accepted):
     handler = AliasCommandHandler('test', AsyncMock(), has_args=has_args)
+    handler.active_usernames = frozenset({'pidorvodkagay'})
     update = command_update(application, f'/test@PidorVodkaGay{arguments}')
 
     assert bool(handler.check_update(update)) is accepted
@@ -123,6 +139,7 @@ def test_alias_preserves_argument_constraints(application, has_args, arguments, 
 @pytest.mark.asyncio
 async def test_alias_preserves_data_filters(application):
     handler = AliasCommandHandler('test', AsyncMock(), filters=filters.Regex(r'value=(\d+)'))
+    handler.active_usernames = frozenset({'pidorvodkagay'})
     update = command_update(application, '/test@PidorVodkaGay value=42')
     context = CallbackContext(application)
     result = handler.check_update(update)
@@ -132,3 +149,83 @@ async def test_alias_preserves_data_filters(application):
 
     assert context.args == ['value=42']
     assert context.matches[0].group(1) == '42'
+
+
+@pytest.mark.asyncio
+async def test_discovery_accepts_new_aliases_and_replaces_old_ones(application):
+    application.bot.get_chat.reset_mock()
+    application.bot.get_chat.return_value = bot_chat_info(
+        active_usernames=['PidorVodkaBot', 'AnotherAliasGame'],
+    )
+
+    await load_bot_username_aliases(application)
+
+    application.bot.get_chat.assert_awaited_once_with(123)
+    handler = handler_for(application, 'pidorshop')
+    assert handler.check_update(command_update(application, '/pidorshop@AnotherAliasGame'))
+    assert not handler.check_update(command_update(application, '/pidorshop@PidorVodkaGay'))
+
+
+@pytest.mark.asyncio
+async def test_discovery_retries_by_current_username(application):
+    application.bot.get_chat.reset_mock()
+    application.bot.get_chat.side_effect = [
+        BadRequest('Chat not found'),
+        bot_chat_info(
+            active_usernames=['PidorVodkaBot', 'AnotherAliasAi'],
+        ),
+    ]
+
+    await load_bot_username_aliases(application)
+
+    assert [call.args[0] for call in application.bot.get_chat.await_args_list] == [
+        123, '@PidorVodkaBot',
+    ]
+    assert handler_for(application, 'pidorshop').check_update(
+        command_update(application, '/pidorshop@AnotherAliasAi'),
+    )
+
+
+@pytest.mark.asyncio
+async def test_discovery_rejects_different_bot_id(application, caplog):
+    application.bot.get_chat.return_value = bot_chat_info(
+        bot_id=999,
+        active_usernames=['OtherBot'],
+    )
+
+    await load_bot_username_aliases(application)
+
+    assert not handler_for(application, 'pidorshop').check_update(
+        command_update(application, '/pidorshop@OtherBot'),
+    )
+    assert 'different bot ID' in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('error', [NetworkError('API unavailable'), BadRequest('Chat not found')])
+async def test_discovery_failure_keeps_primary_and_configured_aliases(application, mocker, caplog, error):
+    application.bot.get_chat.side_effect = error
+    handler = handler_for(application, 'pidorshop')
+    handler.active_usernames = frozenset()
+    mocker.patch('bot.command_handler.get_config', return_value=ChatConfig(
+        chat_id=-123, constants=GameConstants(bot_username_aliases=[' @ManualAliasAi ']),
+    ))
+
+    await load_bot_username_aliases(application)
+
+    for suffix in ('', '@PidorVodkaBot', '@ManualAliasAi'):
+        assert handler.check_update(command_update(application, f'/pidorshop{suffix}'))
+    assert not handler.check_update(command_update(application, '/pidorshop@PidorVodkaGay'))
+    assert 'configured bot_username_aliases' in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_discovery_handles_missing_active_usernames(application, caplog):
+    application.bot.get_chat.return_value = bot_chat_info()
+
+    await load_bot_username_aliases(application)
+
+    handler = handler_for(application, 'pidorshop')
+    assert handler.check_update(command_update(application, '/pidorshop@PidorVodkaBot'))
+    assert not handler.check_update(command_update(application, '/pidorshop@PidorVodkaGay'))
+    assert 'no active bot usernames' in caplog.text

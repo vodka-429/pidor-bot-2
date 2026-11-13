@@ -84,6 +84,29 @@ def test_deposit_defaults_from_config_file(tmp_path, monkeypatch, reset_global_c
     assert (constants.deposit_enabled, constants.deposit_max_amount) == (True, 120)
 
 
+def test_bot_username_aliases_defaults_and_chat_overrides(tmp_path, monkeypatch, reset_global_config):
+    assert GameConstants().bot_username_aliases == []
+    path = tmp_path / 'game-config.json'
+    path.write_text(json.dumps({
+        'defaults': {'bot_username_aliases': ['DefaultAliasAi']},
+        'chat_overrides': {
+            '-123': {'bot_username_aliases': ['@TestAliasGame']},
+            '-456': {'bot_username_aliases': []},
+        },
+    }))
+    monkeypatch.setenv('GAME_CONFIG_PATH', str(path))
+
+    overrides = get_config(-123).constants.bot_username_aliases
+    assert overrides == ['@TestAliasGame']
+    overrides.append('UnrelatedAliasAi')
+    assert get_config(-123).constants.bot_username_aliases == ['@TestAliasGame']
+    assert get_config(-456).constants.bot_username_aliases == []
+    defaults = get_config(-789).constants.bot_username_aliases
+    assert defaults == ['DefaultAliasAi']
+    defaults.append('UnrelatedAliasAi')
+    assert get_config(-789).constants.bot_username_aliases == ['DefaultAliasAi']
+
+
 @pytest.fixture
 def temp_config_file():
     """Create a temporary config file for testing."""

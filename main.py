@@ -11,6 +11,7 @@ from telegram.ext import Application
 from telegram.request import HTTPXRequest
 
 from bot.dispatcher import init_dispatcher
+from bot.command_handler import load_bot_username_aliases
 from bot.chat_migration import migrate_configured_chat_ids
 from bot.handlers.game.config import get_chat_migrations
 from bot.polling_health import (
@@ -100,6 +101,7 @@ async def main():
     
     # Initialize and start polling
     await application.initialize()
+    await load_bot_username_aliases(application)
     await application.start()
     
     # Get bot info
