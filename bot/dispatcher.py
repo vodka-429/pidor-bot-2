@@ -1,9 +1,11 @@
 import logging
 
 from telegram import Update
-from telegram.ext import Application, CommandHandler, filters, \
+from telegram.ext import Application, filters, \
     CallbackQueryHandler, InlineQueryHandler, MessageHandler, \
     ChatJoinRequestHandler, PollHandler
+
+from bot.command_handler import AliasCommandHandler as CommandHandler
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
