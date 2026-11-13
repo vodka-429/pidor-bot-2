@@ -1,9 +1,13 @@
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
 from telegram import AcceptedGiftTypes, Chat, ChatFullInfo, Message, MessageEntity, Update, User
 from telegram.error import BadRequest, NetworkError
-from telegram.ext import Application, CallbackContext, CommandHandler, filters
+from telegram.ext import (
+    Application, CallbackContext, CommandHandler, ContextTypes, ExtBot,
+    SimpleUpdateProcessor, filters,
+)
 
 from bot.command_handler import AliasCommandHandler, load_bot_username_aliases
 from bot.dispatcher import init_dispatcher
@@ -23,7 +27,19 @@ def bot_chat_info(*, bot_id=123, active_usernames=()):
 async def application(mocker):
     mocker.patch('bot.dispatcher.get_enabled_chats', return_value=[-123])
     mocker.patch('bot.command_handler.get_config', return_value=ChatConfig(chat_id=-123))
-    app = Application.builder().token('123:test').build()
+    # Command routing tests do not need a scheduler, updater, or persistence.
+    app = Application(
+        bot=ExtBot('123:test'),
+        update_queue=asyncio.Queue(),
+        updater=None,
+        job_queue=None,
+        update_processor=SimpleUpdateProcessor(1),
+        persistence=None,
+        context_types=ContextTypes(),
+        post_init=None,
+        post_shutdown=None,
+        post_stop=None,
+    )
     app.bot._bot_user = User(
         id=123, first_name='PidorVodkaBot', is_bot=True, username='PidorVodkaBot',
     )
