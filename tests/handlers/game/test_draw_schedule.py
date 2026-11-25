@@ -272,6 +272,55 @@ async def test_chats_have_independent_schedules(scheduled_game):
     assert as_utc(env.session.get(Game, first_game_id).next_draw_at) == first_opening
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('opening_balance,partner_balance', [
+    (4, 612),   # +10 would move the poorest player up to second from the bottom.
+    (14, 228),  # +10 would take the second-poorest player out of the bottom two.
+])
+async def test_self_draw_swaps_opening_balances_before_bonus_and_duel(
+    scheduled_game, mocker, opening_balance, partner_balance,
+):
+    from bot.handlers.game.coin_service import add_coins, get_balance
+    from bot.handlers.game.duel_service import create_duel
+
+    env = scheduled_game
+    env.config.constants.coin_swap_enabled = True
+    env.config.constants.duel_enabled = True
+    winner, leader = env.players
+    others = [TGUser(tg_id=i, first_name=f'Player{i}') for i in range(3, 26)]
+    env.game.players.extend(others)
+    env.session.flush()
+    today = env.clock.return_value.date()
+    balances = [opening_balance + 5, 627, 228, 13, 15, *range(50, 70)]
+    for player, balance in zip([winner, leader, *others], balances):
+        add_coins(env.session, env.game.id, player.id, balance, today.year, 'seed', auto_commit=False)
+    created, reason, duel = create_duel(
+        env.session, env.game.id, winner.id, leader.id, 5, today - timedelta(days=1),
+    )
+    assert created, reason
+    assert (duel.challenger_stake, duel.target_stake) == (5, 15)
+    _force_winner(mocker, winner)
+    mocker.patch('bot.handlers.game.duel_service.roll_die', side_effect=[6, 1])
+    mocker.patch('bot.handlers.game.duel_service.calculate_commission_amount', return_value=2)
+
+    await pidor_cmd(env.update, env.context)
+
+    partner = leader if partner_balance == 612 else others[0]
+    transactions = env.session.exec(select(PidorCoinTransaction).where(
+        PidorCoinTransaction.user_id == winner.id,
+    ).order_by(PidorCoinTransaction.id)).all()
+    assert [(tx.reason, tx.amount) for tx in transactions] == [
+        ('seed', opening_balance + 5), ('duel_stake', -5),
+        ('coin_swap_receive', partner_balance - opening_balance),
+        ('self_pidor_win', 10), ('duel_win', 18),
+    ]
+    assert get_balance(env.session, env.game.id, partner.id) == opening_balance
+    assert get_balance(env.session, env.game.id, winner.id) == partner_balance + 10 + 18
+    receipt = env.update.effective_chat.send_message.await_args.args[0]
+    assert f'{opening_balance} → {partner_balance}' in receipt
+    assert f'{partner_balance} → {opening_balance}' in receipt
+
+
 def _reroll_env(env, winner_idx, today_winner_idx, previous_winner_idx=None):
     """Prepare a drawn day with `today_winner_idx` as winner; optionally a win on the previous day."""
     from bot.handlers.game.coin_service import add_coins
