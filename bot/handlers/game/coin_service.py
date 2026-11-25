@@ -199,15 +199,14 @@ def compute_redistribution_swap(
     """
     Рассчитать своп монет для self-pidor из bottom-N%.
 
-    Вызывать ПОСЛЕ add_coins(self_pidor_coins, auto_commit=False) —
-    autoflush включит их в leaderboard-запрос автоматически.
+    Вызывать до начисления наград и выплат текущего розыгрыша.
 
     include_deposits: тела открытых вкладов считаются частью годового баланса. Сам своп
     двигает только кошельки, поэтому delta не больше кошелька богатого игрока.
 
     Returns:
-        (rich_user, winner_final_coins, rich_coins, delta) или None.
-        После свопа: winner → rich_coins, rich_user → winner_final_coins.
+        (rich_user, winner_before, rich_coins, delta) или None.
+        Балансы указаны до свопа. Богатый игрок передаёт победителю delta койнов.
     """
     n = len(active_players)
     if n <= 10:
@@ -232,21 +231,21 @@ def compute_redistribution_swap(
     if not any(u.id == winner.id for u, _ in bottom_n):
         return None
 
-    winner_final = next(c for u, c in board if u.id == winner.id)
+    winner_before = next(c for u, c in board if u.id == winner.id)
     winner_idx = next(i for i, (u, _) in enumerate(bottom_n) if u.id == winner.id)
     rich_user, rich_coins = board[winner_idx]
 
     if rich_user.id == winner.id:
         return None
 
-    delta = rich_coins - winner_final
+    delta = rich_coins - winner_before
     if deposits.get(rich_user.id, 0) > 0:
         delta = min(delta, max(get_balance(db_session, game_id, rich_user.id), 0))
     if delta <= 0:
         return None
 
     logger.debug(
-        f"Redistribution swap: winner {winner.id} ({winner_final} coins) "
+        f"Redistribution swap: winner {winner.id} ({winner_before} coins) "
         f"↔ rich {rich_user.id} ({rich_coins} coins), delta={delta}"
     )
-    return (rich_user, winner_final, rich_coins, delta)
+    return (rich_user, winner_before, rich_coins, delta)

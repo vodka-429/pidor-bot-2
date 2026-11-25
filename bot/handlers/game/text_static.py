@@ -150,7 +150,7 @@ COIN_INFO = """\n\n<code>🎉 {winner_username}: +{amount} пидор-койн(�
 COIN_INFO_SELF_PIDOR = """\n\n<code>🎉 Сам себе пидор! +{amount} пидор-койн(ов)</code>"""
 
 COIN_SWAP_MESSAGE = (
-    "🔄 <b>Перераспределение богатства!</b>\n\n"
+    "🔄 <b>Перераспределение богатства!</b>\nБалансы до бонусов и выплат розыгрыша\n\n"
     "<b>{poor_name}</b>: {poor_before} → {poor_after} монет(ы)\n"
     "<b>{rich_name}</b>: {rich_before} → {rich_after} монет(ы)"
 )

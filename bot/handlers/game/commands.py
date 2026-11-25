@@ -347,6 +347,20 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
 
         winner = selection_result.winner
         winner_had_double_chance = selection_result.had_double_chance
+        is_self_pidor = winner.id == context.tg_user.id
+
+        # Пару и сумму свопа определяют балансы до всех наград этого розыгрыша.
+        coin_swap = None
+        if is_self_pidor and config.constants.coin_swap_enabled:
+            coin_swap = compute_redistribution_swap(
+                context.db_session, context.game.id, cur_year, winner, players,
+                include_deposits=True,
+            )
+            if coin_swap:
+                rich_user, _, _, delta = coin_swap
+                add_coins(context.db_session, context.game.id, winner.id, delta, cur_year, "coin_swap_receive", auto_commit=False)
+                spend_coins(context.db_session, context.game.id, rich_user.id, delta, cur_year, "coin_swap_give", auto_commit=False)
+                logger.info(f"Coin swap: {winner.id} +{delta}, {rich_user.id} -{delta}")
 
         # Если сработала защита - показываем сообщение и начисляем койны
         if selection_result.had_immunity and selection_result.protected_player:
@@ -389,9 +403,6 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
 
         context.game.results.append(GameResult(game_id=context.game.id, year=cur_year, day=cur_day, winner=winner))
 
-        # Проверяем, является ли победитель тем же, кто запустил команду
-        is_self_pidor = winner.id == context.tg_user.id
-
         if is_self_pidor:
             # Начислить специальные койны с множителем
             self_pidor_coins = config.constants.coins_per_win * config.constants.self_pidor_multiplier
@@ -405,19 +416,6 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
             # Начислить койны игроку, который запустил команду (без коммита)
             add_coins(context.db_session, context.game.id, context.tg_user.id, config.constants.coins_per_command, cur_year, "command_execution", auto_commit=False)
             logger.debug(f"Awarded {config.constants.coins_per_command} coin to command executor {context.tg_user.id}")
-
-        # Своп монет при self-pidor из bottom-N (после начисления монет — autoflush включит их в запрос)
-        _coin_swap = None
-        if is_self_pidor and config.constants.coin_swap_enabled:
-            _coin_swap = compute_redistribution_swap(
-                context.db_session, context.game.id, cur_year, winner, players,
-                include_deposits=True,
-            )
-            if _coin_swap:
-                rich_user, winner_final, rich_coins, delta = _coin_swap
-                add_coins(context.db_session, context.game.id, winner.id, delta, cur_year, "coin_swap_receive", auto_commit=False)
-                spend_coins(context.db_session, context.game.id, rich_user.id, delta, cur_year, "coin_swap_give", auto_commit=False)
-                logger.info(f"Coin swap: {winner.id} +{delta} ({winner_final}->{rich_coins}), {rich_user.id} -{delta}")
 
         # Обрабатываем предсказания на текущий день
         predictions_results = process_predictions(
@@ -572,15 +570,15 @@ async def pidor_cmd(update: Update, context: GECallbackContext):
         await send_result_with_reroll_button(update, context, stage4_message, cur_year, cur_day)
 
         # Сообщение о свопе монет (если сработал)
-        if _coin_swap:
+        if coin_swap:
             from html import escape as html_escape
-            rich_user, winner_final, rich_coins, delta = _coin_swap
+            rich_user, winner_before, rich_coins, delta = coin_swap
             await update.effective_chat.send_message(
                 COIN_SWAP_MESSAGE.format(
                     poor_name=html_escape(winner.full_username()),
                     rich_name=html_escape(rich_user.full_username()),
-                    poor_before=winner_final,
-                    poor_after=winner_final + delta,
+                    poor_before=winner_before,
+                    poor_after=winner_before + delta,
                     rich_before=rich_coins,
                     rich_after=rich_coins - delta,
                 ),
